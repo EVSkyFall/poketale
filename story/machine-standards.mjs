@@ -50,7 +50,8 @@ export const JOURNEYS_STANDARD = 'swsh';
 // world is the bot's (story/compat.mjs compatWorld): its starting region (1 Kanto ... 9 Paldea) keeps Kanto in its
 // original era when the journey starts there, and in the Johto era otherwise; a Journeys story uses one standard
 // everywhere, also where no region is known. Without a world, a region names the standard printed on its discs.
-export function regionStandard(region, { startRegion = null, journeys = false } = {}) {
+export function regionStandard(region, world) {
+	const { startRegion = null, journeys = false } = world ?? {};
 	if (journeys) return JOURNEYS_STANDARD;
 	switch (region) {
 		case 'kanto': return startRegion && startRegion !== 1 ? 'gs' : 'rb';
@@ -70,7 +71,7 @@ export function regionStandard(region, { startRegion = null, journeys = false } 
 // regionMachines mark keep the Scarlet/Violet reading they always had (story/setting-changes.mjs RULES).
 export const withMachineStandard = (reading, region, world) => ({
 	...reading,
-	machineStd: reading?.regionMachines ? regionStandard(region, world ?? undefined) ?? DEFAULT_STANDARD : DEFAULT_STANDARD,
+	machineStd: reading?.regionMachines ? regionStandard(region, world) ?? DEFAULT_STANDARD : DEFAULT_STANDARD,
 });
 
 const ORDER = new Map(STANDARD_IDS.map((s, i) => [s, i]));

@@ -712,7 +712,8 @@ function parseOp(op, value, errors, warnings, reading) {
     case 'item': {
       const { emoji, rest } = splitEmoji(value);
 
-      const discNumber = reading?.regionMachines ? discNumberEnds(rest, reading) : (reading?.regionMachines === false ? LEGACY_TM_NUMBER : BARE_DISC_NUMBER).test(rest);
+      const discNumber = reading?.regionMachines ? discNumberEnds(rest, reading)
+        : reading?.regionMachines === false ? LEGACY_TM_NUMBER.test(rest) : BARE_DISC_NUMBER.test(rest) && !SIGNED_COUNT.test(rest.trim());
       const { name, n } = discNumber ? { name: rest, n: 1 } : tailCount(rest, 1);
       const item = itemOf(name, emoji, value, errors, reading);
       if (!item) return null;
