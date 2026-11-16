@@ -110,8 +110,8 @@ function discNumberEnds(rest, reading) {
   const m = DISC_NUMBER_END.exec(text);
   if (!m) return false;
   if (LATIN_KIND.test(m[3]) && !m[2] && /[\p{L}\p{N}]$/u.test(m[1])) return false;
-  const before = m[1].replace(PAREN, ' ').trim();
-  return !before || !!moveNamed(before, reading);
+  const left = m[1].replace(PAREN, ' ').replace(/[\s\-:.#]+/g, ' ').trim();
+  return !left || !!moveNamed(m[1], reading);
 }
 
 const kindOf = word => {
@@ -153,7 +153,7 @@ function dropGloss(raw) {
 // A move as the bot writes it: as it is, with its Korean gloss dropped (Thunderbolt(10만볼트)), or inside one pair of
 // parentheses (TM (Thunderbolt(10만볼트)))
 function moveNamed(raw, reading) {
-  const text = String(raw ?? '').trim();
+  const text = String(raw ?? '').trim().replace(/[\s\-:.#]+$/, '');
   const inner = OUTER_PAREN.exec(text)?.[1];
   for (const t of new Set([text, dropGloss(text), inner, inner && dropGloss(inner)])) {
     const move = t && lookupId('moves', t, { reading });
