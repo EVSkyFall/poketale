@@ -9,7 +9,7 @@ import { toID, koSpellings, readsOfficial } from '../names/index.js';
 import { DEFAULT_EMOJI, customItemId, splitEmoji } from './custom-items.mjs';
 import { ruleNote } from './failure.mjs';
 import { readTime, regionIn } from './compat.mjs';
-import { DEFAULT_STANDARD, regionStandard, isMachineId as isTm } from './machine-standards.mjs';
+import { DEFAULT_STANDARD, regionStandard, parseMachineId, isMachineId as isTm } from './machine-standards.mjs';
 import { machineByMove, machineByNumber, hasMachineKind, nearestStandards } from './item-info.mjs';
 import { norm } from './norm.mjs';
 
@@ -57,66 +57,108 @@ export function lookupId(kind, raw, { allLetters = false, reading } = {}) {
   const { names, aliases } = reverse[`${kind}:${official}`] ?? buildReverse(kind, official);
   const k = norm(raw);
   // In story text a disc number follows the region's standard ("TM011" in Kanto is not Paldea's tm011, and "TR04"
-  // is the Galar disc rather than Showdown's TR04 item); only a disc's own full name is taken as it is
-  if (kind === 'items' && reading?.regionMachines && machineParts(raw) !== null) {
-    const named = names.get(id) ?? names.get(k);
-    return named && isTm(named) ? named : machineRef(raw, reading);
+  // is the Galar disc rather than Showdown's TR04 item); a disc's own full name or id is taken as it is
+  if (kind === 'items' && reading?.regionMachines) {
+    const own = discNamed(raw, names);
+    if (own) return own;
+    const ref = machineRef(raw, reading);
+    if (ref !== undefined) return ref;
   }
   if (id && Object.hasOwn(table, id)) return id;
-  return names.get(id) ?? names.get(k) ?? aliases.get(k) ?? (kind === 'items' ? machineRef(raw, reading) : null);
+  return names.get(id) ?? names.get(k) ?? aliases.get(k) ?? (kind === 'items' && !reading?.regionMachines ? legacyTmId(raw, reading) : null);
+}
+
+// The reading before region standards, kept as it was for messages before a chat's regionMachines mark and for text
+// read outside a message: Scarlet/Violet TMs only, by number or by move
+function legacyTmId(raw, reading) {
+  const m = /^\s*(?:tm|기술\s*머신)\s*[-:.#]?\s*(.+?)\s*$/i.exec(raw) ?? /^\s*(.+?)\s*[-:.]?\s*(?:tm|기술\s*머신)\s*$/i.exec(raw);
+  if (!m) return null;
+  if (/^\d{1,3}$/.test(m[1])) return machineByNumber(DEFAULT_STANDARD, 'tm', Number(m[1]));
+  const move = lookupId('moves', m[1], { reading });
+  return move ? machineByMove(DEFAULT_STANDARD, move, 'tm', { exact: true }) : null;
 }
 
 const MACHINE_KIND_WORDS = Object.freeze({ tm: ['tm', '기술머신'], hm: ['hm', '비전머신'], tr: ['tr', '기술레코드'] });
 const KIND_WORD = '(tm|hm|tr|기술\\s*머신|비전\\s*머신|기술\\s*레코드)';
 const MACHINE_HEAD = new RegExp(`^\\s*${KIND_WORD}(.*)$`, 'i');
-const MACHINE_TAIL = new RegExp(`^(.*?\\S)(\\s*)[-:.]?\\s*${KIND_WORD}\\s*$`, 'i');
+const MACHINE_TAIL = new RegExp(`^(.*?)([\\s\\-:.]*)${KIND_WORD}\\s*$`, 'i');
+const MACHINE_AFTER = new RegExp(`^(.*?\\S)\\s+${KIND_WORD}\\s*[-:.#]?\\s*(\\d{1,3})\\s*$`, 'i');
 const LATIN_KIND = /^[a-z]+$/i;
+// Parentheses, also the fullwidth ones a Japanese reply uses (built from code points so the font subset ignores them)
+const [WIDE_OPEN, WIDE_CLOSE] = [0xff08, 0xff09].map(c => String.fromCharCode(c));
+const PAREN = new RegExp(`[(${WIDE_OPEN}]([^()${WIDE_OPEN}${WIDE_CLOSE}]*)[)${WIDE_CLOSE}]`, 'g');
 
 const kindOf = word => {
   const w = word.toLowerCase().replace(/\s+/g, '');
   return Object.keys(MACHINE_KIND_WORDS).find(kind => MACHINE_KIND_WORDS[kind].includes(w));
 };
 
-// { kind, rest } when the text names a TM/HM/TR ("TM11", "HM03 Surf", "기술머신 거품광선", "Surf HM"), else null.
-// A Latin kind word must stand apart from what follows it (Tri-Pass is not a TR).
+// { kind, rest } when the text names a TM/HM/TR ("TM11", "HM03 Surf", "TM: Surf", "기술머신 거품광선", "Surf HM",
+// "거품광선 기술머신11"), else null; rest is "<number> <move>" in whatever parts were written. A Latin kind word must
+// stand apart from the rest (Tri-Pass is not a TR).
 function machineParts(raw) {
   const text = String(raw ?? '');
   const head = MACHINE_HEAD.exec(text);
-  if (head && (!LATIN_KIND.test(head[1]) || /^\s*[-:.#]?\s*\d|^\s+\S/.test(head[2]))) return { kind: kindOf(head[1]), rest: head[2] };
+  if (head && head[2].trim() && (!LATIN_KIND.test(head[1]) || /^[\s\-:.#\d]/.test(head[2]))) return { kind: kindOf(head[1]), rest: head[2] };
+  const after = MACHINE_AFTER.exec(text);
+  if (after) return { kind: kindOf(after[2]), rest: `${after[3]} ${after[1]}` };
   const tail = MACHINE_TAIL.exec(text);
-  if (tail && (!LATIN_KIND.test(tail[3]) || tail[2])) return { kind: kindOf(tail[3]), rest: tail[1] };
+  if (tail && tail[1].trim() && (!LATIN_KIND.test(tail[3]) || tail[2])) return { kind: kindOf(tail[3]), rest: tail[1] };
   return null;
 }
 
-// A disc named in story text. The standard is a region written in parentheses ("TM11 (Kanto)"), else the
-// message's (reading.machineStd). A move name wins over a number that does not match it; a move the standard has
-// no disc for, or a kind it has none of (HMs in Paldea), is looked up in the nearest standards instead. "TM" is
-// often said of any disc, so it takes the standard's disc of whatever kind (TM Surf in Kanto is HM03); "HM" and
-// "TR" are said on purpose and keep their kind (HM03 Surf in Paldea is still an HM).
-// Without reading.regionMachines (messages before a chat's mark, and text read outside a message) it reads the way
-// it always did: Scarlet/Violet TMs only, by number or by move.
-function machineRef(raw, reading) {
-  if (!reading?.regionMachines) {
-    const parts = machineParts(raw);
-    if (parts?.kind !== 'tm') return null;
-    const m = /^[\s\-:.#]*(\d{1,3})?\s*$/.exec(parts.rest);
-    if (m) return m[1] === undefined ? null : machineByNumber(DEFAULT_STANDARD, 'tm', Number(m[1]));
-    const move = lookupId('moves', parts.rest.trim(), { reading });
-    return move ? machineByMove(DEFAULT_STANDARD, move, 'tm', { exact: true }) : null;
+// The bot is shown names as English(Korean) the first time; a trailing Korean gloss after English text is dropped
+function dropGloss(text) {
+  if (!text.endsWith(')')) return text;
+  let depth = 0;
+  for (let i = text.length - 1; i >= 0; i--) {
+    if (text[i] === ')') depth++;
+    else if (text[i] === '(' && --depth === 0) {
+      const before = text.slice(0, i);
+      return /[가-힣]/.test(text.slice(i)) && /[a-z]/i.test(before) ? before.trim() : text;
+    }
   }
+  return text;
+}
+
+// A disc's full name (TM11 Bubble Beam (Kanto) / 기술머신11 거품광선 (관동)) or a region disc's id written as it is (tm011rb)
+function discNamed(raw, names) {
+  for (const text of new Set([String(raw ?? ''), dropGloss(String(raw ?? ''))])) {
+    const id = toID(text), named = names.get(id) ?? names.get(norm(text));
+    if (named && isTm(named)) return named;
+    const disc = parseMachineId(id);
+    if (disc && disc.std !== DEFAULT_STANDARD && Object.hasOwn(itemsTable, id)) return id;
+  }
+  return null;
+}
+
+// A region in parentheses names the standard printed on that region's discs ((Kanto) is Red/Blue whatever era the
+// bot's world is in); a region without discs (Hisui) is read as Scarlet/Violet
+const tagStandard = region => regionStandard(region) ?? DEFAULT_STANDARD;
+
+// A disc named in story text: undefined when the text is not one, null when it is but names no disc. The standard
+// is a region written in parentheses ("TM11 (Kanto)"), else the message's (reading.machineStd). A move name wins over
+// a number that does not match it; a move the standard has no disc for, or a kind it has none of (HMs in Paldea), is
+// looked up in the nearest standards instead. "TM" is often said of any disc, so it takes the standard's disc of
+// whatever kind (TM Surf in Kanto is HM03); "HM" and "TR" are said on purpose and keep their kind (HM03 Surf in Paldea
+// is still an HM).
+function machineRef(raw, reading) {
   let tagged = null;
-  const text = String(raw ?? '').replace(/[(\uFF08]([^()\uFF08\uFF09]*)[)\uFF09]/g, (all, inner) => {
-    const std = regionStandard(regionIn(inner), reading?.startRegion);
-    if (!std) return all;
-    tagged ??= std;
+  const text = dropGloss(String(raw ?? '')).replace(PAREN, (all, inner) => {
+    const region = regionIn(inner);
+    if (!region) return all;
+    tagged ??= tagStandard(region);
     return ' ';
   });
-  const parts = machineParts(text);
-  if (!parts) return null;
+  const parts = machineParts(text.trim());
+  if (!parts) return undefined;
   const std = tagged ?? reading?.machineStd ?? DEFAULT_STANDARD;
-  const m = /^[\s\-:.#]*(\d{1,3}(?!\d))?\s*[-:.]?\s*(.*?)\s*$/.exec(parts.rest);
-  const number = m[1] === undefined ? null : Number(m[1]);
-  const move = m[2] ? lookupId('moves', m[2], { reading }) : null;
+  const rest = parts.rest.replace(/^[\s\-:.#]+/, '').trim();
+  // The whole rest first: Korean move names can start with digits (10만볼트)
+  const whole = lookupId('moves', rest, { reading });
+  const m = /^(\d{1,3})(?!\d)\s*[-:.]?\s*(.*)$/.exec(rest);
+  const number = !whole && m ? Number(m[1]) : null;
+  const move = whole ?? (m?.[2] ? lookupId('moves', m[2].trim(), { reading }) : null);
   if (move) {
     const order = nearestStandards(std);
     const kept = parts.kind === 'tm' ? null : order.map(s => machineByMove(s, move, parts.kind, { exact: true })).find(Boolean);
@@ -376,7 +418,7 @@ function parseSet(value, errors, dest, warnings = errors, reading) {
     } else if (k === 'item') {
       // A name-table item, else a custom item under the name as written (the same reading as item / hold lines)
       const { emoji, rest: name } = splitEmoji(v);
-      const item = itemOf(name, emoji, v, errors, reading);
+      const item = itemOf(name, emoji, v, errors, heldReading(reading));
       if (item) { set.item = item.item; custom = item.custom ?? null; }
     } else if (k === 'moves') {
       const moves = v.split(/[,，、\/]/).map(s => s.trim()).filter(Boolean).map(s => need('moves', s, errors, reading)).filter(Boolean);
@@ -522,6 +564,9 @@ function headRef(value, rest = true, reading) {
   return parts.length ? [parts[0], parts.slice(1).join(' ')] : ['', ''];
 }
 
+// Held items and items used in battle keep the old reading: a disc there is not a bag item (TR43 is Showdown's item for Fling)
+const heldReading = reading => (reading?.regionMachines ? { ...reading, regionMachines: false } : reading);
+
 function itemOf(name, emoji, value, errors, reading) {
   const id = lookupId('items', name, { reading });
   if (id) return { item: id };
@@ -609,7 +654,7 @@ function parseOp(op, value, errors, warnings, reading) {
     case 'item': {
       const { emoji, rest } = splitEmoji(value);
 
-      const { name, n } = /^\s*(?:tm|hm|tr|기술\s*머신|비전\s*머신|기술\s*레코드)\s*[-:.#]?\s*\d{1,3}\s*$/i.test(rest) ? { name: rest, n: 1 } : tailCount(rest, 1);
+      const { name, n } = /(?:^|[\s()])(?:tm|hm|tr|기술\s*머신|비전\s*머신|기술\s*레코드)\s*[-:.#]?\s*\d{1,3}\s*$/i.test(rest) ? { name: rest, n: 1 } : tailCount(rest, 1);
       const item = itemOf(name, emoji, value, errors, reading);
       if (!item) return null;
       if (!Number.isSafeInteger(n)) { errors.push(note('itemCountBig', { value })); return null; }
@@ -632,7 +677,7 @@ function parseOp(op, value, errors, warnings, reading) {
       if (!who) return null;
       if (!rest || NONE.has(norm(rest))) return { op, ref: who, item: null };
       const { emoji, rest: name } = splitEmoji(rest);
-      const item = itemOf(name, emoji, value, errors, reading);
+      const item = itemOf(name, emoji, value, errors, heldReading(reading));
       return item && { op, ref: who, ...item };
     }
     case 'evolve': {
@@ -764,7 +809,7 @@ function actPart(rest, side, errors, key = side, { allLetters = false, reading }
 
     const raw = (m?.[1] ?? after).trim();
     const { emoji, rest: name } = splitEmoji(raw);
-    const item = itemOf(name, emoji, raw, errors, reading);
+    const item = itemOf(name, emoji, raw, errors, heldReading(reading));
     const target = actTarget(m?.[2] ?? m?.[3], reading);
     return { kind: 'item', item: item?.item ?? null, ...(item?.custom ? { raw } : {}), ...(target ? { target } : {}) };
   }

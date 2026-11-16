@@ -11,7 +11,7 @@ import { itemId, customInfo } from './custom-items.mjs';
 import { say } from './screen-text.mjs';
 import { commandsIn } from './commands.mjs';
 import { answeredLine } from './act-prompts.mjs';
-import { dropTaken, statusIn, compatStartRegion } from './compat.mjs';
+import { dropTaken, statusIn, latestStatus, compatStartRegion } from './compat.mjs';
 import { withMachineStandard } from './machine-standards.mjs';
 
 export const QUEUE_VAR = '$pkb_queue';
@@ -310,12 +310,15 @@ export function changesIn(text, chat, ctx, lang) {
   const at = ctx && { ...(index >= 0 ? foldCtxAt(chat, ctx)(index) : ctx), status: statusIn(messages[index]) ?? status };
 
   const reading = index >= 0 ? rulesAt(chat)(index) : undefined;
+  // A reply not saved yet reads its discs like the message it will become, in the region its own or the latest Status Window names
+  const machineReading = reading ?? rulesAt(chat)(messages.length);
+  const machineRegion = (statusIn({ role: 'char', data: text }) ?? (index >= 0 ? at?.status ?? latestStatus(chat, index) : latestStatus(chat)))?.region;
   const chatId = index >= 0 ? messageId(messages[index], index) : null;
   const held = index >= 0 ? heldChanges(chat, table ?? readTable(chat)) : new Set();
   const events = [], errors = [];
   for (const [n, block] of blocks.entries()) {
     if (held.has(changeAt(index, n))) { errors.push(heldLine(lang)); continue; }
-    const { ops, errors: unread } = parseChange(block.body, withMachineStandard(reading, (at?.status ?? statusIn(messages[index]))?.region, compatStartRegion(chat)));
+    const { ops, errors: unread } = parseChange(block.body, withMachineStandard(machineReading, machineRegion, compatStartRegion(chat)));
     errors.push(...unread.map(note => ruleText(note, lang)));
     if (!state) { events.push(...ops.map(op => eventOf({ op, before: null, after: null }, null))); continue; }
     const result = applyOps(state, ops, at, `${chatId}:${block.key}`, table, { trace: true });

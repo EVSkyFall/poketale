@@ -118,7 +118,7 @@ export function heldChanges(chat, table = readTable(chat)) {
   return surveyBattles(chat, table).held;
 }
 
-export const stateVars = () => [TABLE_VAR, SAVE_VAR, QUEUE_VAR, IMPORT_VAR, SETTING_CHANGES_VAR, `$${LEAGUE_VAR}`, `$${UNOVA_ERA_VAR}`];
+export const stateVars = () => [TABLE_VAR, SAVE_VAR, QUEUE_VAR, IMPORT_VAR, SETTING_CHANGES_VAR, `$${LEAGUE_VAR}`, `$${UNOVA_ERA_VAR}`, '$yp_StartRegion'];
 
 const BOOK_FIELDS = ['badges', 'league', 'gyms'];
 
