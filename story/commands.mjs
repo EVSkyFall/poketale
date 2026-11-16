@@ -7,16 +7,17 @@ const spot = (index, start) => index * 1e6 + start;
 
 export const readActAt = (chat, index, body) => parseAct(body, rulesAt(chat)(index));
 
-export const commandsIn = (message, index) => (message?.role === 'user' ? actsIn(message, index) : []);
+export const commandsIn = (message, index, reading) => (message?.role === 'user' ? actsIn(message, index, reading) : []);
 
 export function actBlocks(chat) {
   const messages = chat?.message ?? [];
-  const blocks = messages.flatMap((message, index) => actsIn(message, index)
+  const readAt = rulesAt(chat);
+  const blocks = messages.flatMap((message, index) => actsIn(message, index, readAt(index))
     .map(block => ({ ...block, index, at: spot(index, block.start), ...readActAt(chat, index, block.body) })));
   return blocks.filter(block => !answersCommands(chat, block.index));
 }
 
-export const answersCommands = (chat, index) => chat?.message?.[index]?.role !== 'user' && commandsIn(chat?.message?.[index - 1], index - 1).length > 0;
+export const answersCommands = (chat, index) => chat?.message?.[index]?.role !== 'user' && commandsIn(chat?.message?.[index - 1], index - 1, rulesAt(chat)(index - 1)).length > 0;
 
 function livePlans(chat, attempt, blocks = actBlocks(chat)) {
   const byKey = new Map(blocks.map(block => [block.key, block]));

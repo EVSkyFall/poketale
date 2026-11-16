@@ -1,4 +1,3 @@
-// Image transport order for the selected route.
 export const PICTURE_ROUTES = Object.freeze(['auto', 'direct', 'risu']);
 export const DEFAULT_PICTURE_ROUTE = 'auto';
 

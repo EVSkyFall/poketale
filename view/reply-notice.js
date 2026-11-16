@@ -1,4 +1,3 @@
-// Reply badge and close confirmation for auxiliary screens.
 import { pixelSvg } from './amie-art.js';
 
 export const BADGE_OUT = 9;

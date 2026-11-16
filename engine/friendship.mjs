@@ -1,4 +1,6 @@
-// Friendship changes and battle benefits.
+// Modified for PokeTale on 2026-11-16. See THIRD-PARTY-NOTICES.md.
+// Adapted layouts: PlayNav, revision 7f1b4dcb8ca1cc85180272c165842374924f1564.
+// Copyright (c) 2026 poooooby, MIT License. See THIRD-PARTY-NOTICES.md.
 export const FRIENDSHIP_MAX = 255;
 
 const DEFAULT_FRIENDSHIP = 50;

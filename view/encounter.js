@@ -1,5 +1,5 @@
 // from pokerogue src/phases/encounter-phase.ts (doEncounter, doEncounterCommon) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-05. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-16. See view/LICENSE-NOTE.md.
 // from pokerogue src/phases/battle-phase.ts (hideEnemyTrainer) @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/phases/summon-phase.ts (preSummon's player ball throw) @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/field/trainer.ts (sprites, tint/untint, playAnim) @ 7d7da4a8 (AGPL-3.0-only)
@@ -11,6 +11,7 @@ import { PokemonSprite } from './sprites/pokemon.js';
 import { BattleInfo } from './ui/battle-info.js';
 import { checkPosition, teamOf, infoLayout } from './positions.js';
 import { setColorMatrix, BLACK } from './color-matrix.js';
+import { parseRecolorKey, loadRecoloredAtlas } from './sprites/recolor.js';
 import { SHOWDOWN_TRAINER } from '../story/named.mjs';
 
 export const DEFAULT_TRAINER = 'ace_trainer_m';
@@ -50,9 +51,13 @@ export class BattleEncounter {
       return fallback;
     };
 
-    const enemyPick = name => (showdownTrainerId(name) ? name : pick(name, key => isEnemyTrainer(trainers, key), DEFAULT_TRAINER, 'trainer'));
-    this.enemyKey = enemyPick(enemyTrainer);
-    this.enemyKey2 = enemyTrainer2 == null ? null : enemyPick(enemyTrainer2);
+    const enemyPick = (name, black) => {
+      const { sprite, combo } = parseRecolorKey(name);
+      if (combo && isEnemyTrainer(trainers, sprite)) return black ? sprite : name;
+      return showdownTrainerId(name) ? name : pick(name, key => isEnemyTrainer(trainers, key), DEFAULT_TRAINER, 'trainer');
+    };
+    this.enemyKey = enemyPick(enemyTrainer, enemyBlack);
+    this.enemyKey2 = enemyTrainer2 == null ? null : enemyPick(enemyTrainer2, enemyBlack2);
     this.playerKey = pick(playerTrainer, key => PLAYER_TRAINERS.includes(key) || ['m', 'f'].includes(key), PLAYER_TRAINERS[0], 'player trainer');
     if (['m', 'f'].includes(this.playerKey)) this.playerKey = `trainer_${this.playerKey}_back`;
     const enemy = enemyTrainer != null || this.scene.options.wild === false;
@@ -96,8 +101,10 @@ export class BattleEncounter {
 
   async load(key) {
     const { trainers } = await fieldAtlases();
-    const json = atlasJson(trainers[key]);
-    await this.scene.assets.image(key, `images/trainer/${key}.png`, json);
+    const { sprite, combo } = parseRecolorKey(key);
+    const json = atlasJson(trainers[sprite]);
+    if (combo) await loadRecoloredAtlas(this.scene.assets, key, `images/trainer/${sprite}.png`, json);
+    else await this.scene.assets.image(key, `images/trainer/${key}.png`, json);
     const frames = animFrames(json);
     if (frames.length && !this.scene.anims.exists(key)) {
       this.scene.anims.create({ key, frames: frames.map(frame => ({ key, frame })), frameRate: 24, repeat: -1 });
@@ -132,13 +139,13 @@ export class BattleEncounter {
   }
 
   makeEnemyTrainer() {
-    const s = this.scene, key = this.enemyKey, pair = !!this.enemyKey2;
+    const s = this.scene, key = this.enemyKey, pair = !!this.enemyKey2, home = pair ? -4 : 0;
     const container = s.add.container(-72, 80);
-    const trainer = { container, ...this.addFigure(container, key, pair ? -4 : 0, this.enemyBlack ? BLACK_SHADOW.enemy : null) };
-    const tintSprite = s.add.sprite(pair ? -4 : 0, 0, key).setOrigin(0.5, 1).setVisible(false);
+    const trainer = { container, home, ...this.addFigure(container, key, home, this.enemyBlack ? BLACK_SHADOW.enemy : null) };
+    const tintSprite = s.add.sprite(home, 0, key).setOrigin(0.5, 1).setVisible(false);
     container.add(tintSprite); trainer.figures.push(tintSprite);
     if (!pair) return { ...trainer, tintSprite };
-    const partner = { key: this.enemyKey2, ...this.addFigure(container, this.enemyKey2, 28, this.enemyBlack2 ? BLACK_SHADOW.enemy : null) };
+    const partner = { key: this.enemyKey2, home: 28, ...this.addFigure(container, this.enemyKey2, 28, this.enemyBlack2 ? BLACK_SHADOW.enemy : null) };
     partner.tintSprite = s.add.sprite(28, 0, this.enemyKey2).setOrigin(0.5, 1).setVisible(false);
     container.add(partner.tintSprite); partner.figures.push(partner.tintSprite);
     return { ...trainer, tintSprite, partner };

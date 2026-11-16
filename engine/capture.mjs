@@ -64,7 +64,6 @@ export function heavyBallRate(weighthg) {
 	return 30;
 }
 
-// Ball modifier. { master } or { mod: multiplier in 1/4096 units, rateAdd }
 export function ballModifier(ballId, ctx) {
 	const ball = BALLS[ballId];
 	if (!ball) throw new Error(`모르는 볼 "${ballId}"`);
@@ -74,7 +73,6 @@ export function ballModifier(ballId, ctx) {
 	return { master: false, mod, rateAdd: ball.rateAdd ? ball.rateAdd(ctx) : 0 };
 }
 
-// Status modifier (sleep/freeze 2.5, paralysis/poison/toxic/burn 1.5). [numerator, denominator]
 export function statusBonus(status) {
 	if (status === 'slp' || status === 'frz') return [5, 2];
 	if (status === 'par' || status === 'psn' || status === 'tox' || status === 'brn') return [3, 2];

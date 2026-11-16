@@ -1,7 +1,7 @@
 import { createNamer, trainerName, secondName, partnerName, stageTrainer, ownLabel } from './ai-names.mjs';
 import { outcomeOf } from './outcome.mjs';
 import { STATS } from '../engine/mon.mjs';
-import { keyLines, summaryLine, turnSpan } from './narrate.mjs';
+import { keyLines, summaryLine, endFacts, turnSpan } from './narrate.mjs';
 import { customText } from './custom-items.mjs';
 
 export const OUTCOME_EN = { win: 'Win', lose: 'Loss', forfeit: 'Forfeit (loss)', run: 'Ran away', capture: 'Caught', stop: 'Stopped' };
@@ -40,11 +40,20 @@ export function resultLine({ outcome, battle, kind, caught = null, evolutions = 
 
 export const RESULT_LINE_RE = /\[Battle (?:Result \||result:)[^\]\n]*\]/;
 
+const resultHead = (opponent, outcome) => `The battle against ${opponent} is over. Skip the battle itself and continue the story from right after it. Result: ${outcomeText(outcome)}.`;
+
+export const sentFormat = (format, ended) => (format === 'result' && !ended ? 'summary' : format);
+
 const turnsText = span => (span.fromTurn === span.toTurn ? `turn ${span.fromTurn}` : `turns ${span.fromTurn}–${span.toTurn}`);
 
-export function storyOoc(format, { battle, result = null, ended = false, first = true, read, screen = [], stage = 1, lang = 'ko', en = null }) {
+export function storyOoc(format, { battle, own = null, result = null, ended = false, first = true, read, whole = null, screen = [], stage = 1, lang = 'ko', en = null }) {
   const namer = createNamer({ lang, en });
   const opponent = battle?.wild ? `the wild ${wildMons(battle).map(mon => namer.species(mon.species)).join(' and ')}` : trainersText(battle, ' and ');
+  format = sentFormat(format, ended);
+  if (format === 'result') {
+    const facts = endFacts(whole ?? read, namer, { evolutions: result?.evolutions ?? [] });
+    return `(OOC: ${[resultHead(opponent, outcomeOf(result)), ...(facts ? [facts] : [])].join('\n')})`;
+  }
   const summary = format === 'summary';
   const span = turnSpan(read);
   const outcome = ended ? ` Result: ${outcomeText(outcomeOf(result))}.` : '';
@@ -66,7 +75,7 @@ export function storyOoc(format, { battle, result = null, ended = false, first =
     head = `The battle against ${opponent} is still going on. ${narrate}${facts}`;
   }
   const body = summary ? summaryLine(read, namer, { evolutions: ended ? result?.evolutions : [], sides })
-    : format === 'log' ? (screen ?? []).join('\n') : keyLines(read, namer, sides).join('\n');
+    : format === 'log' ? (screen ?? []).join('\n') : keyLines(read, namer, sides, { battle, own }).join('\n');
   if (!body) return `(OOC: ${head})`;
   const told = stage > 1 && first ? [BACK_TO_BACK.oocLine(battle)] : [];
   return `(OOC: ${[head, ...told, body].join('\n')})`;
@@ -79,7 +88,21 @@ const STAT_EN = { hp: 'HP', atk: 'Atk', def: 'Def', spa: 'SpA', spd: 'SpD', spe:
 const STAT_FULL = { hp: 'HP', atk: 'Attack', def: 'Defense', spa: 'Sp. Atk', spd: 'Sp. Def', spe: 'Speed' };
 const signed = n => `${n > 0 ? '+' : ''}${n}`;
 
-export function logLine(event, namer = createNamer({ lang: 'en' })) {
+const yen = n => `¥${Number(n).toLocaleString('en-US')}`;
+const signedYen = (n, plus = '+') => `${n < 0 ? '-' : plus}${yen(Math.abs(n))}`;
+const itemList = (lines, name) => lines.map(l => `${name(l.item)} ×${l.count}`).join(', ');
+export const SHOP_LOG = {
+
+  shop: ({ buy = [], bonus = [], sell = [], spent = 0, got = 0 }, name, money = null) => {
+    const parts = [buy.length && `bought ${itemList(buy, name)} for ${yen(spent)}`, bonus.length && `got ${itemList(bonus, name)} free`,
+      sell.length && `sold ${itemList(sell, name)} for ${yen(got)}`].filter(Boolean);
+    const said = parts.length > 1 ? `${parts.slice(0, -1).join(', ')}, and ${parts.at(-1)}` : parts[0] ?? 'bought nothing';
+    const now = Number.isFinite(money) ? `, money now ${signedYen(money, '')}` : '';
+    return `${USER} ${said} (net ${signedYen(got - spent)}${now})`;
+  },
+};
+
+export function logLine(event, namer = createNamer({ lang: 'en' }), money = null) {
 
   const monEn = w => (w?.egg ? 'Egg' : w?.name ? w.name : w?.species ? namer.species(w.species) : w?.ref ?? 'Pokémon');
 
@@ -145,6 +168,7 @@ export function logLine(event, namer = createNamer({ lang: 'en' })) {
     }
     case 'hatch': return `${event.slot ? `The Egg in party #${event.slot}` : 'An Egg'} hatched into ${namer.species(event.who?.species)}`;
     case 'item': return `${itemEn(event.item)} ${signed(event.delta)}`;
+    case 'shop': return SHOP_LOG.shop(event, id => namer.items(id), money);
     case 'add': return `${USER} got ${namer.species(event.who?.species)} Lv${event.level}${event.box ? ', sent to storage' : ''}`;
 
     case 'rest': return `${USER}'s party took a short rest and regained half of their max HP and PP`;
@@ -152,9 +176,14 @@ export function logLine(event, namer = createNamer({ lang: 'en' })) {
   }
 }
 
-export function pkbLog(events, { lang = 'ko', en = null } = {}) {
+export function pkbLog(events, { lang = 'ko', en = null, money = null } = {}) {
   const namer = createNamer({ lang, en });
-  const parts = (events ?? []).map(e => logLine(e, namer)).filter(Boolean);
+  let balance = Number.isFinite(money) ? money : null;
+  const parts = (events ?? []).map(e => {
+    if (e?.kind !== 'shop' || balance === null) return logLine(e, namer);
+    balance += (e.got ?? 0) - (e.spent ?? 0);
+    return logLine(e, namer, balance >= 0 ? balance : null);
+  }).filter(Boolean);
   if (!parts.length) return '';
   return `<pkb-log>${parts.join('. ')}.</pkb-log>`;
 }

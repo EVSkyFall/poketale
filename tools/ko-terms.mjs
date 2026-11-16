@@ -1,4 +1,3 @@
-// Shared Korean wording for extracted text tables.
 export const KO_TERMS = Object.freeze([
 
   ['지닌 도구를', '지닌 물건을'], ['지닌 도구가', '지닌 물건이'], ['지닌 도구는', '지닌 물건은'], ['지닌 도구와', '지닌 물건과'],

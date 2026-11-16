@@ -14,5 +14,4 @@ export function readStored(raw, { v = 1, shape = () => true } = {}) {
   return shape(value) ? { status: 'ok', value } : { status: 'corrupt', value: null };
 }
 
-// Whether the value is a plain object (for shape checks)
 export const isRecord = value => !!value && typeof value === 'object' && !Array.isArray(value);

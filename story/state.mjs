@@ -1,4 +1,4 @@
-import { findBlocks, findTags, parseChange, parseBattle, battlesIn, hashKey, speciesName, messageId, norm, stripForPrompt } from './blocks.mjs';
+import { findBlocks, findTags, parseChange, parseBattle, battlesIn, hashKey, speciesName, sharedForms, pickForm, messageId, norm, stripBlocksRead } from './blocks.mjs';
 import { expForLevel, calcExpGain, growthOf as growthOfSpecies, DEFAULT_EXP_RATE, storyExpRate, STORY_EXP_PACE } from '../engine/exp.mjs';
 import { STATS, STATUS_IDS, completeSet, toID } from '../engine/mon.mjs';
 import { levelEvolution, usesHeldItem, extraEvolutions, countOf, ABSENT_TRADE_EVOLUTION, EVOLVE_FRIENDSHIP } from '../engine/evolution.mjs';
@@ -10,9 +10,12 @@ import { DEFAULT_FORMAT, DEFAULT_RULE, formatRules, ruleFormat, formatRule } fro
 import { waitingTrainer } from '../engine/core.mjs';
 import { HYPER_TRAIN_LEVEL, expShareOn } from './items.mjs';
 import { say } from './screen-text.mjs';
-import { isCustomItem, itemId, customInfo, addCustomItem, tidyCustomItems, hasTag } from './custom-items.mjs';
+import { isCustomItem, itemId, customInfo, addCustomItem, tidyCustomItems } from './custom-items.mjs';
+import { TOOL_EFFECTS, ownerMonOf } from './tools.mjs';
+import { ITEM_EFFECTS_READY } from './item-effects.mjs';
 import { PARTY_MAX, MAX_LEVEL, MAX_MOVES, MAX_IV, EV_STAT_MAX, EV_TOTAL_MAX, OT_NAME_MAX, BOX_NAME_MAX, PLAYER_NAME } from './rules.mjs';
 import { bossBgm, personalName } from './named.mjs';
+import { foeGimmicks as foeGimmicksOf } from './gimmicks.mjs';
 import { outcomeOf } from './outcome.mjs';
 import { opponentPicture, foePartnerPicture } from './trainer-look.mjs';
 import { readStored, isRecord } from './stored.mjs';
@@ -26,7 +29,7 @@ import { SAVE_VAR } from './save.mjs';
 import { boxOf } from './diary.mjs';
 import { QUEUE_VAR, runAction } from './acts.mjs';
 import { IMPORT_VAR, readImports, applyImport, importPlace, inForce } from './import.mjs';
-import { SETTING_CHANGES_VAR, foldCtxAt, foldValues, ruleValues } from './setting-changes.mjs';
+import { SETTING_CHANGES_VAR, foldCtxAt, foldValues, ruleValues, rulesAt } from './setting-changes.mjs';
 import { enjoymentOf, setEnjoyment, friendshipFor, afterMessage, ENJOY_STEP, canEat, fullnessOf, setFullness, FULL_PER_FOOD, foodFriendship, parsePuff, puffFriendship,
   FREE_GRADE, puffCount, addPuffs, eatsFood, FULL_MAX } from './amie.mjs';
 import { eggChance, breedEgg, giftEgg, eggCycles, hatchSpeed, HATCH_FRIENDSHIP } from '../engine/breeding.mjs';
@@ -82,10 +85,11 @@ export function pruneTable(chat, keep = []) {
   if (tableStatus(chat) !== 'ok') return false;
   const table = readTable(chat);
   const tags = new Set(keep), blocks = new Set();
+  const readAt = rulesAt(chat);
   (chat.message ?? []).forEach((message, i) => {
     const text = String(message?.data ?? '');
     for (const tag of findTags(text)) tags.add(tag.key);
-    for (const block of findBlocks(text)) if (block.kind === 'change') blocks.add(`${messageId(message, i)}:${block.key}`);
+    for (const block of findBlocks(text, readAt(i))) if (block.kind === 'change') blocks.add(`${messageId(message, i)}:${block.key}`);
   });
   const stale = {
     snaps: key => !tags.has(key), meta: key => !tags.has(key), acts: key => !tags.has(key),
@@ -121,6 +125,48 @@ export const stateVars = () => [TABLE_VAR, SAVE_VAR, QUEUE_VAR, IMPORT_VAR, SETT
 
 const BOOK_FIELDS = ['badges', 'league', 'gyms'];
 
+const tagUse = (table, survey) => key => {
+  const meta = table.meta?.[key];
+  const committed = () => survey.battles.get(meta.blockKey)?.committed;
+  if (meta?.storyEnd) return committed() === 'story' ? `${key}=${survey.battles.get(meta.blockKey).ended.outcome}` : null;
+  if (meta && ![undefined, 'done'].includes(committed())) return null;
+  return Object.hasOwn(table.snaps, key) ? key : null;
+};
+
+export function liveActions(chat, { uptoIndex, survey } = {}) {
+  const table = readTable(chat);
+  const messages = chat?.message ?? [];
+  const last = Math.min(uptoIndex ?? messages.length - 1, messages.length - 1);
+  const used = tagUse(table, survey ?? surveyBattles(chat, table));
+  const live = new Map();
+  const take = (id, action, at, told = null) => {
+    if (typeof id !== 'string') return;
+    const was = live.get(id);
+    if (!was) { live.set(id, { action: action ?? null, told, at }); return; }
+    was.action ??= action ?? null;
+    was.told ??= told;
+  };
+  const imports = new Map();
+  for (const imp of readImports(chat).imports.filter(inForce)) {
+    const place = importPlace(messages, imp);
+    if (place <= last) imports.set(place, [...imports.get(place) ?? [], imp]);
+  }
+  const fromImports = place => { for (const imp of imports.get(place) ?? []) for (const action of heldActions(imp)) take(action.id, action, 2 * place + 1); };
+  fromImports(-1);
+  for (let i = 0; i <= last; i++) {
+    for (const { key } of findTags(String(messages[i]?.data ?? ''))) {
+      if (!used(key)) continue;
+      const acted = table.acts?.[key];
+      if (acted?.v === 2) { for (const action of acted.actions ?? []) take(action?.id, action, 2 * i, i); continue; }
+      const storyEnd = table.meta?.[key]?.storyEnd;
+      if (storyEnd) for (const action of storyEnd.actions ?? []) take(action?.id, action, 2 * i);
+      else for (const id of reflectedBy(table, key)) take(id, null, 2 * i);
+    }
+    fromImports(i);
+  }
+  return live;
+}
+
 export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
   const table = readTable(chat);
   const messages = chat?.message ?? [];
@@ -130,17 +176,9 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
   const parts = messages.map(m => String(m?.data ?? ''));
   const survey = given ?? surveyBattles(chat, table);
   const { held } = survey;
+  const used = tagUse(table, survey);
 
-  const committedOf = key => survey.battles.get(table.meta[key].blockKey)?.committed;
-
-  const used = key => {
-    const meta = table.meta?.[key];
-    if (meta?.storyEnd) return committedOf(key) === 'story' ? `${key}=${survey.battles.get(meta.blockKey).ended.outcome}` : null;
-    if (meta && ![undefined, 'done'].includes(committedOf(key))) return null;
-    return Object.hasOwn(table.snaps, key) ? key : null;
-  };
-
-  const heldIn = i => (held.size ? findBlocks(parts[i]).filter(b => b.kind === 'change').map((_, n) => n).filter(n => held.has(changeAt(i, n))).join(',') : '');
+  const heldIn = i => (held.size ? findBlocks(parts[i], ctxAt(i)).filter(b => b.kind === 'change').map((_, n) => n).filter(n => held.has(changeAt(i, n))).join(',') : '');
 
   const imports = new Map();
   for (const imp of readImports(chat).imports.filter(inForce)) {
@@ -152,7 +190,15 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
   const ctxAt = foldCtxAt(chat, ctx);
   const settingsOf = i => foldValues(ctxAt(i));
 
-  const applyImportsAt = (i, start, at) => importsAt(i).reduce((cur, imp) => applyImport(cur, imp, { ...at, ...ruleValues(ctxAt(i, imp.time)) }), start);
+  const applyImportsAt = (i, start, at, reflected, seen) => importsAt(i).reduce((cur, imp) => {
+    const here = { ...at, ...ruleValues(ctxAt(i, imp.time)) };
+    let next = cur;
+    for (const action of heldActions(imp)) {
+      if (!isReflected(action, reflected, seen)) next = runAction(next, action, here).state;
+      reflected.add(action.id);
+    }
+    return applyImport(next, imp, here);
+  }, start);
   const importKeysAt = i => importsAt(i).map(imp => `${hashKey(JSON.stringify(imp))}:${Object.values(ruleValues(ctxAt(i, imp.time))).join(':')}`);
   const importKey = i => [...(i === 0 ? importKeysAt(-1) : []), ...importKeysAt(i)].join(',');
 
@@ -181,7 +227,7 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
     const meta = table.meta?.[key];
     const info = meta?.blockKey && survey.battles.get(meta.blockKey);
     if (!info || (meta.storyEnd ? info.ended?.outcome : meta.outcome) !== 'win') return null;
-    const block = battlesIn(messages[info.index], info.index).find(b => b.key === meta.blockKey);
+    const block = battlesIn(messages[info.index], info.index, ctxAt(info.index)).find(b => b.key === meta.blockKey);
     const spec = block && parseBattle(block.body, ctxAt(info.index)).spec;
     if (!spec?.boss) return null;
     return { index: i, date: status?.date ?? null, party: hatchedParty(now).map(mon => ({ species: mon.set.species, ...(mon.set.name ? { name: mon.set.name } : {}) })),
@@ -198,11 +244,13 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
 
   let status = from ? folds[from - 1].status : null;
   let win = from ? folds[from - 1].win : null;
-  let state = from ? folds[from - 1].after : applyImportsAt(-1, inRule(ctx?.sim, emptyState(), settingsOf(-1).rule), ctxAt(-1));
-  if (!from) state = book(state, -1);
 
   const seen = new Set(parts.slice(0, from).flatMap(text => findTags(text).map(t => t.key)).filter(used));
   const reflected = new Set([...seen].flatMap(key => reflectedBy(table, key)));
+  const importedUpto = n => [...imports].filter(([at]) => at <= n).flatMap(([, list]) => list.flatMap(imp => heldActions(imp).map(action => action.id)));
+  if (from) for (const id of importedUpto(from - 1)) reflected.add(id);
+  let state = from ? folds[from - 1].after : applyImportsAt(-1, inRule(ctx?.sim, emptyState(), settingsOf(-1).rule), ctxAt(-1), reflected, seen);
+  if (!from) state = book(state, -1);
   for (let i = from; i <= last; i++) {
     const name = messageId(messages[i], i);
     const here = ctxAt(i);
@@ -220,7 +268,7 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
 
     const placed = t => { const { storyEnd, blockKey } = table.meta[t.key] ?? {}; const ended = storyEnd && survey.battles.get(blockKey)?.ended; return ended?.index === i ? ended.start : t.start; };
     const tags = findTags(parts[i]).filter(t => used(t.key)).map(t => ({ ...t, type: 'tag', start: placed(t) }));
-    const changes = findBlocks(parts[i]).filter(b => b.kind === 'change').map((b, n) => ({ ...b, type: 'change', n }));
+    const changes = findBlocks(parts[i], here).filter(b => b.kind === 'change').map((b, n) => ({ ...b, type: 'change', n }));
     const fills = {};
     for (const event of [...tags, ...changes].sort((a, b) => a.start - b.start)) {
       if (event.type === 'tag') {
@@ -249,14 +297,17 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
       if (Object.keys(table.fills).length !== before) changed = true;
       ops.forEach((_, j) => { const key = `${name}:${event.key}:${j}`; if (Object.hasOwn(table.fills, key)) fills[key] = table.fills[key]; });
     }
-    state = book(applyImportsAt(i, state, at), i);
+    state = book(applyImportsAt(i, state, at, reflected, seen), i);
     if (keep) folds.push({ key: keyOf(i), after: state, fills, status, win });
   }
 
   const after = inRule(ctx?.sim, state, settingsOf(last + 1).rule);
   const counted = new Set(parts.slice(0, last + 1).flatMap(text => findTags(text).map(t => t.key)).filter(used));
-  return { state: keep && after === state ? clone(state) : after, table, changed, counted, reflected: new Set([...counted].flatMap(key => reflectedBy(table, key))), status };
+  return { state: keep && after === state ? clone(state) : after, table, changed, counted, reflected: new Set([...counted].flatMap(key => reflectedBy(table, key))),
+    imported: new Set(importedUpto(last)), status };
 }
+
+const heldActions = imp => (Array.isArray(imp.held) ? imp.held.filter(action => isRecord(action) && typeof action.id === 'string' && Array.isArray(action.ops)) : []);
 
 export const friendshipOf = (ctx, mon) => mon.friendship ?? baseFriendship(ctx.exp, ctx.sim.Dex.species.get(mon.set.species));
 
@@ -288,7 +339,7 @@ function setCarry(mon, carry) {
   else delete mon.friendshipCarry;
 }
 
-const storyText = text => dropOocs(stripForPrompt(text)).replace(COMPAT_LINE_RE, ' ').normalize('NFKC');
+const storyText = (text, reading) => dropOocs(stripBlocksRead(text, reading)).replace(COMPAT_LINE_RE, ' ').normalize('NFKC');
 
 const PARTICLES = '이|가|은|는|을|를|의|에|에게|에겐|에서|께|한테|한텐|와|과|랑|이랑|하고|도|만|로|으로|야|아|여|이여|처럼|보다|까지|부터|나|이나';
 
@@ -307,7 +358,7 @@ function callNames(ctx, mon) {
 }
 
 export function storyMention(state, text, ctx) {
-  const plain = storyText(text);
+  const plain = storyText(text, ctx);
   const named = state.party.filter(mon => !isEgg(mon) && callNames(ctx, mon).some(name => names(plain, name)));
   if (!named.length) return state;
   const next = clone(state);
@@ -403,11 +454,13 @@ export function evolutionCheck(ctx, mon, party = [], badges = 0) {
   return {
     mon: { species: species.name, gender: mon.set.gender, item: mon.set.item, uid: mon.uid, moves: mon.set.moves, nature: mon.natureOrig ?? mon.set.nature,
       ability: mon.set.ability, stats: { atk: stat('atk'), def: stat('def') }, counts: mon.counts },
-    now: { level: mon.set.level, friendship: friendshipOf(ctx, mon), timeOfDay: status?.timeOfDay ?? 'day', weather: FIELD_WEATHERS[status?.weather] ?? null,
+    now: { level: mon.set.level, friendship: friendshipOf(ctx, mon), timeOfDay: status?.timeOfDay ?? 'day', ...duskClock(ctx, status?.hour), weather: FIELD_WEATHERS[status?.weather] ?? null,
       region: status?.region ?? null, money: status?.money ?? null, badges, trade: ctx.tradeEvolution ?? ABSENT_TRADE_EVOLUTION,
       party: hatched(party).filter(m => m.uid !== mon.uid).map(m => m.set.species) },
   };
 }
+
+const duskClock = (ctx, hour) => (ruleValues(ctx).duskLycanroc && Number.isInteger(hour) ? { clockHour: hour } : {});
 
 export function reflectedBy(table, key) {
   const acted = table.acts?.[key];
@@ -447,8 +500,11 @@ export function applyOps(state, ops, ctx, fillKeyPrefix, table, { trace = false 
   return trace ? { state: next, errors, notes, steps } : { state: next, errors, notes };
 }
 
-function takeCustom(state, id, op, named = true) {
-  if (op.custom) addCustomItem(state, id, op.custom);
+function takeCustom(state, id, op, ctx, named = true) {
+  if (op.custom) {
+    const ownerMon = op.custom.owner ? ownerMonOf(state, ctx.sim.Dex, op.custom.owner) : null;
+    addCustomItem(state, id, { ...op.custom, ...(ownerMon ? { ownerMon } : {}) }, { story: true });
+  }
   if (named && isCustomItem(id) && !customInfo(state, id)) fail('itemNoName');
 }
 
@@ -460,7 +516,6 @@ function applyOp(state, op, ctx, fillKey, fill) {
       let set = fill.known;
       if (!set || toID(set.species) !== toID(op.set.species)) set = fill.made = fillSet(ctx, op.set, rngFor(sim, fillKey));
       const mon = newMon(ctx, clone(set), uniqueUid(state, `m${hashKey(fillKey)}`));
-      takeCustom(state, mon.set.item, op, false);
       if (op.set.hpPercent !== undefined) mon.hp = hpFromPercent(sim, mon.set, op.set.hpPercent, false, format);
       if (op.set.status) mon.status = op.set.status;
       if (mon.hp === 0) mon.status = 'fnt';
@@ -468,6 +523,7 @@ function applyOp(state, op, ctx, fillKey, fill) {
       if (op.ot) mon.ot = String(op.ot).trim().slice(0, OT_NAME_MAX);
             // A full party sends it to the box
       (op.to === 'box' || state.party.length >= PARTY_MAX ? state.box : state.party).push(mon);
+      takeCustom(state, mon.set.item, op, ctx, false);
       markDex(state, sim, mon.set.species, true);
       return;
     }
@@ -492,7 +548,12 @@ function applyOp(state, op, ctx, fillKey, fill) {
       return;
     }
     case 'heal': {
-      if (op.ref === 'all') return healParty(state, ctx, op);
+      if (op.ref === 'all') {
+        healParty(state, ctx, op);
+
+        if (fullHeal(op) && ruleValues(ctx).boxHeal) healBox(state, ctx);
+        return;
+      }
       heal(sim, findMon(state, op.ref, ctx).mon, op, format);
       return;
     }
@@ -508,7 +569,7 @@ function applyOp(state, op, ctx, fillKey, fill) {
     case 'item': {
       const id = itemId(op.item);
       if (!id) fail('itemNoName');
-      takeCustom(state, id, op, op.delta > 0);
+      takeCustom(state, id, op, ctx, op.delta > 0);
 
       if (op.fromBag && (state.bag[id] ?? 0) + op.delta < 0) fail('notInBag');
       const count = Math.max(0, (state.bag[id] ?? 0) + op.delta);
@@ -540,7 +601,7 @@ function applyOp(state, op, ctx, fillKey, fill) {
     case 'hold': {
       const { mon } = findMon(state, op.ref, ctx);
       const item = op.item ? itemId(op.item) : '';
-      takeCustom(state, item, op);
+      takeCustom(state, item, op, ctx);
       if (op.fromBag) {
 
         if (item && !(state.bag[item] > 0)) fail('itemNotInBag', { item });
@@ -553,7 +614,9 @@ function applyOp(state, op, ctx, fillKey, fill) {
     case 'evolve': {
 
       const { mon } = findMon(state, op.ref, ctx);
-      evolve(state, ctx, mon, op.species, { decoration: op.decoration });
+
+      const to = (op.forms && pickForm(op.forms, { species: toID(mon.set.species), gender: mon.set.gender })) || op.species;
+      evolve(state, ctx, mon, to, { decoration: op.decoration });
       return;
     }
     case 'teach': {
@@ -852,6 +915,11 @@ export function healParty(state, ctx, op = {}) {
   const format = stateFormat(state);
   for (const mon of state.party) heal(ctx.sim, mon, op, format);
   if (fullHeal(op)) delete state.restsUsed;
+}
+
+function healBox(state, ctx) {
+  const format = stateFormat(state);
+  for (const mon of state.box) if (!isEgg(mon)) heal(ctx.sim, mon, {}, format);
 }
 
 export const SHORT_RESTS = 2;
@@ -1220,25 +1288,35 @@ export function nextStageSpec(spec, result, state, ctx, { seed }) {
   const now = inRule(ctx.sim, applyBattles(state, before, ctx), formatRule(spec.formatid));
   const { foePartner, double, partner, ...same } = spec;
   return { ...same, seed: [...seed], p1: { ...spec.p1, team: playerTeam(now) }, p2: waiting,
-    ...(spec.bag ? { bag: { ...otherBag(spec.bag), ...battleBag(now), caughtSpecies: [...now.dex.caught] } } : {}), teraOrb: hasTeraOrb(now), before };
+    ...(spec.bag ? { bag: { ...otherBag(spec.bag), ...battleBag(now, toolsIn(spec)), caughtSpecies: [...now.dex.caught] } } : {}), teraOrb: hasTeraOrb(now), before };
 }
 
 const playerTeam = state => hatchedParty(state).map(mon => engineMember(mon, state.customItems));
 
-function battleBag(state) {
-  const items = Object.fromEntries(Object.entries(state.bag).filter(([id]) => BAG_ITEMS[id] || isBall(id) || hasTag(state, id, 'food')));
-  const foods = Object.fromEntries(Object.keys(items).filter(isCustomItem).map(id => { const { name, emoji } = customInfo(state, id); return [id, { name, emoji }]; }));
-  return { items, ...(Object.keys(foods).length ? { foods } : {}) };
+function battleBag(state, setting = true) {
+  const tools = setting && ITEM_EFFECTS_READY;
+  const effectOf = id => customInfo(state, id)?.effect;
+  const isTool = id => TOOL_EFFECTS.includes(effectOf(id));
+  const held = Object.entries(state.bag).filter(([id]) => BAG_ITEMS[id] || isBall(id) || effectOf(id));
+  const items = Object.fromEntries(tools ? held : held.filter(([id]) => !isTool(id)));
+  const story = Object.keys(items).filter(isCustomItem).map(id => [id, customInfo(state, id)]);
+  const foods = Object.fromEntries(story.filter(([, info]) => info.effect === 'food').map(([id, { name, emoji }]) => [id, { name, emoji }]));
+  const toolMap = Object.fromEntries(story.filter(([, info]) => TOOL_EFFECTS.includes(info.effect))
+    .map(([id, { name, emoji, effect, owner, ownerMon }]) => [id, { name, emoji, tag: effect, ...(owner ? { owner } : {}), ...(effect === 'cheer' && ownerMon ? { ownerMon } : {}) }]));
+  return { items, ...(Object.keys(foods).length ? { foods } : {}), ...(Object.keys(toolMap).length ? { tools: toolMap } : {}),
+    ...(tools ? {} : { offTools: held.map(([id]) => id).filter(isTool) }) };
 }
 
-const otherBag = ({ items, foods, ...rest }) => rest;
+export const toolsIn = spec => !Array.isArray(spec?.bag?.offTools);
+
+const otherBag = ({ items, foods, tools, offTools, ...rest }) => rest;
 const hasTeraOrb = state => (state.bag.teraorb ?? 0) > 0;
 
-export function toEngineSpec(state, battle, ctx, { seed, formatid, picture, player, expShare, expRate = DEFAULT_EXP_RATE, status = null } = {}) {
+export function toEngineSpec(state, battle, ctx, { seed, formatid, picture, player, expShare, expRate = DEFAULT_EXP_RATE, status = null, effectItems = true, foeGimmicks = 'pokerogue' } = {}) {
   if (!hatchedParty(state).length) fail('noParty');
   if (!hatchedParty(state).some(m => m.hp !== 0)) fail('allFainted');
   const { sim } = ctx;
-  const { place, time, timeOfDay, weather, terrain } = battleScene(battle, status);
+  const { place, time, timeOfDay, hour, weather, terrain } = battleScene(battle, status);
   const friendshipRate = ctx.friendshipRate ?? 1;
   const { sprite, silhouette } = opponentPicture(battle, picture);
   const bgm = bossBgm({ wild: battle.wild, boss: battle.boss, sprite, name: battle.name, trainerClass: battle.trainerClass });
@@ -1255,6 +1333,11 @@ export function toEngineSpec(state, battle, ctx, { seed, formatid, picture, play
   const foePartner = battle.foePartner && { name: battle.foePartner.name || say(ctx.lang, 'spec.foePartner'),
     team: battle.foePartner.team.map((teamSet, i) => blockMember(sim, teamSet, `foe2-${i + 1}`, null)),
     ...(second.sprite ? { trainerSprite: second.sprite } : {}), ...(second.silhouette ? { trainerSilhouette: true } : {}) };
+
+  const gimmicks = foeGimmicksOf(sim.Dex, foeGimmicks, { battle, region: status?.region ?? null, seed, p2, partner: partner?.team, foePartner: foePartner?.team });
+  if (gimmicks.p2) p2.splice(0, p2.length, ...gimmicks.p2);
+  if (gimmicks.partner) partner.team = gimmicks.partner;
+  if (gimmicks.foePartner) foePartner.team = gimmicks.foePartner;
   return {
     ...(seed ? { seed: [...seed] } : {}),
     formatid: formatid || stateFormat(state),
@@ -1267,7 +1350,7 @@ export function toEngineSpec(state, battle, ctx, { seed, formatid, picture, play
 
     ...(bgm ? { bgm } : {}),
     bag: {
-      ...battleBag(state), wild: !!battle.wild, caughtSpecies: [...state.dex.caught],
+      ...battleBag(state, effectItems), wild: !!battle.wild, caughtSpecies: [...state.dex.caught],
       env: { night: time === 'night', cave: CAVE_BIOMES.has(place), water: WATER_BIOMES.has(place) },
     },
     wild: !!battle.wild,
@@ -1276,9 +1359,11 @@ export function toEngineSpec(state, battle, ctx, { seed, formatid, picture, play
     expRate: storyExpRate(expRate),
     ...(friendshipRate === 1 ? {} : { friendshipRate }),
     ...(timeOfDay === 'day' ? {} : { timeOfDay }),
+    ...duskClock(ctx, hour),
     ...evolutionWorld(ctx, status, state),
     ...(weather ? { weather } : {}), ...(terrain ? { terrain } : {}),
     teraOrb: hasTeraOrb(state),
+    ...(gimmicks.foeGimmick ? { foeGimmick: gimmicks.foeGimmick } : {}),
     biome: place,
     ...(battle.double ? { double: true } : {}), ...(partner ? { partner } : {}), ...(foePartner ? { foePartner } : {}),
   };
@@ -1359,13 +1444,12 @@ export function findMon(state, ref, ctx, { boxFirst = false, egg = false } = {})
     const mon = list.find(m => m.set.name && m.set.name.normalize('NFKC').toLowerCase().replace(/\s+/g, '') === key);
     if (mon) return at(mon);
   }
+
   const species = speciesName(name, ctx);
-  if (species) {
-    const id = toID(species);
-    for (const list of lists) {
-      const mon = list.find(m => toID(m.set.species) === id) ?? list.find(m => toID(ctx.sim.Dex.species.get(m.set.species).baseSpecies) === id);
-      if (mon) return at(mon);
-    }
+  const ids = sharedForms(name, ctx) ?? (species ? [toID(species)] : []);
+  for (const list of lists) {
+    const mon = list.find(m => ids.includes(toID(m.set.species))) ?? list.find(m => ids.includes(toID(ctx.sim.Dex.species.get(m.set.species).baseSpecies)));
+    if (mon) return at(mon);
   }
   fail('notFound', { name });
 }

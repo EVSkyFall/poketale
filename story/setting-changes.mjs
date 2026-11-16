@@ -4,6 +4,7 @@ import { importPlace, anchorAtEnd } from './import.mjs';
 import { isExpRate } from '../engine/exp.mjs';
 import { TRADE_EVOLUTIONS, ABSENT_TRADE_EVOLUTION } from '../engine/evolution.mjs';
 import { RULE_IDS, DEFAULT_RULE } from '../engine/rules.mjs';
+import { ITEM_EFFECTS_READY } from './item-effects.mjs';
 
 export const SETTING_CHANGES_VAR = '$pkb_setting_changes';
 
@@ -17,27 +18,46 @@ const FOLDED = Object.freeze({
 });
 const FOLD_SETTINGS = Object.freeze(Object.keys(FOLDED));
 
-export const RULES = Object.freeze({ startFull: Object.freeze({ old: false, now: true }), officialKo: Object.freeze({ old: false, now: true }) });
+const FROM_NOW = Object.freeze({ old: false, now: true });
+
+export const RULES = Object.freeze({ startFull: FROM_NOW, officialKo: FROM_NOW, aiFormNames: FROM_NOW, ...(ITEM_EFFECTS_READY ? { itemTags: FROM_NOW } : {}),
+  boxHeal: FROM_NOW, foeLooks: FROM_NOW, trainerColors: FROM_NOW, mobStyles: FROM_NOW, duskLycanroc: FROM_NOW, blockEdges: FROM_NOW });
 const RULE_NAMES = Object.freeze(Object.keys(RULES));
 
 export const ruleValues = ctx => Object.fromEntries(RULE_NAMES.map(name => [name, ctx?.[name] ?? RULES[name].now]));
 
 export const foldValues = ctx => ({ ...foldSettings(ctx), ...ruleValues(ctx) });
-const ruleShape = rules => isRecord(rules) && Object.entries(rules).every(([name, mark]) => Object.hasOwn(RULES, name) && isRecord(mark) && typeof mark.time === 'number'
-  && (mark.at === null || isRecord(mark.at)));
+
+const SWITCHED_OFF = ITEM_EFFECTS_READY ? [] : ['itemTags'];
+const KNOWN = Object.freeze([...RULE_NAMES, ...SWITCHED_OFF]);
+
+const FIRST_RULES = Object.freeze(['startFull', 'officialKo']);
+
+const ruleShape = rules => isRecord(rules) && Object.entries(rules).every(([name, mark]) => !KNOWN.includes(name) || (isRecord(mark) && typeof mark.time === 'number'
+  && (mark.at === null || isRecord(mark.at))));
+
+const unknownOf = rules => Object.fromEntries(Object.entries(rules ?? {}).filter(([name]) => !KNOWN.includes(name)));
+
+const placeRules = (marks, value) => {
+  const known = Object.entries(marks).filter(([name]) => KNOWN.includes(name));
+  const more = { ...unknownOf(value?.rulesMore), ...Object.fromEntries(known.filter(([name]) => !FIRST_RULES.includes(name))) };
+  return { rules: { ...unknownOf(value?.rules), ...Object.fromEntries(known.filter(([name]) => FIRST_RULES.includes(name))) }, ...(Object.keys(more).length ? { rulesMore: more } : {}) };
+};
 
 const valuesShape = values => isRecord(values) && Object.entries(values).every(([name, value]) => FOLDED[name]?.valid(value));
 const changeShape = change => isRecord(change) && typeof change.time === 'number' && isRecord(change.at) && valuesShape(change.before);
 
 export function readSettingChanges(chat) {
-  const { status, value } = readStored(chat?.scriptstate?.[SETTING_CHANGES_VAR], {
-    shape: v => Array.isArray(v.changes) && v.changes.every(changeShape) && (v.values === undefined || valuesShape(v.values)) && (v.rule === undefined || FOLDED.rule.valid(v.rule))
-      && (v.rules === undefined || ruleShape(v.rules)),
-  });
+  const { status, value } = readRecord(chat);
   if (isUnreadable(status)) return { status, changes: [], values: null, rules: null };
   const kept = value?.values ?? (value?.rule === undefined ? {} : { rule: value.rule });
-  return { status, changes: status === 'ok' ? value.changes : [], values: foldSettings(kept), rules: value?.rules ?? {} };
+  return { status, changes: status === 'ok' ? value.changes : [], values: foldSettings(kept), rules: { ...value?.rulesMore, ...value?.rules } };
 }
+
+const readRecord = chat => readStored(chat?.scriptstate?.[SETTING_CHANGES_VAR], {
+  shape: v => Array.isArray(v.changes) && v.changes.every(changeShape) && (v.values === undefined || valuesShape(v.values)) && (v.rule === undefined || FOLDED.rule.valid(v.rule))
+    && (v.rules === undefined || ruleShape(v.rules)) && (v.rulesMore === undefined || ruleShape(v.rulesMore)),
+});
 
 export const foldSettings = settings => Object.fromEntries(FOLD_SETTINGS.map(name => [name, settings?.[name] ?? FOLDED[name].none]));
 
@@ -54,13 +74,14 @@ export function recordSettingChange(chat, settings, { now = Date.now() } = {}) {
   const before = behindOf(values, settings), missing = RULE_NAMES.filter(name => !Object.hasOwn(rules, name));
   if (!Object.keys(before).length && !missing.length) return false;
   const messages = chat?.message ?? [];
+  const { value } = readRecord(chat);
   const next = foldSettings(settings);
   const stored = Object.fromEntries(FOLD_SETTINGS.filter(name => next[name] !== FOLDED[name].none).map(name => [name, next[name]]));
 
   const marks = { ...rules, ...Object.fromEntries(missing.map(name => [name, { time: now, at: messages.length ? anchorAtEnd(messages) : null }])) };
   chat.scriptstate ??= {};
   chat.scriptstate[SETTING_CHANGES_VAR] = JSON.stringify({ v: 1, changes: [...changes, ...(messages.length && Object.keys(before).length ? [changeAtEnd(messages, before, now)] : [])],
-    ...(Object.keys(stored).length ? { values: stored } : {}), rules: marks });
+    ...(Object.keys(stored).length ? { values: stored } : {}), ...placeRules(marks, value) });
   return true;
 }
 

@@ -1,6 +1,6 @@
 // from pokerogue src/data/pokemon-species.ts (getIconAtlasKey/getIconId) @ 7d7da4a8 (AGPL-3.0-only)
+// Modified for PokeTale on 2026-11-16. See view/LICENSE-NOTE.md.
 // from pokerogue src/battle-scene.ts (addPokemonIcon) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-28. See view/LICENSE-NOTE.md.
 
 import spriteMap from '../../data/pokerogue-sprite-map.json' with { type: 'json' };
 

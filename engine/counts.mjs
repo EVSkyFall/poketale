@@ -1,4 +1,3 @@
-// Battle counters used by evolution conditions.
 import { countOf, cloakAfterBattle, BATTLE_COUNTS } from './evolution.mjs';
 import { own } from './friendship.mjs';
 

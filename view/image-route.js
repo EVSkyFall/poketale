@@ -1,4 +1,3 @@
-// Load images through direct and host transports.
 import { LoadError, withRetry, transientError } from './retry.js';
 import { imageKind } from './sprites/showdown.js';
 

@@ -1,5 +1,5 @@
 // from pokerogue src/battle-scene.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-14. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-16. See view/LICENSE-NOTE.md.
 // from pokerogue src/field/arena.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/field/arena-base.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/phases/summon-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
@@ -44,7 +44,7 @@ export class BattleScene extends Phaser.Scene {
   constructor(options, life, ready, fail = error => { throw error; }) {
     super('BattleView'); this.options = options; this.life = life; this.ready = ready; this.fail = fail;
     this.words = viewWords(options.lang);
-    this.pokemon = {}; this.info = {}; this.biomeObjects = []; this.double = false;
+    this.pokemon = {}; this.info = {}; this.biomeObjects = []; this.double = false; this.tag = false;
     this.summonCount = { player: 0, enemy: 0 };
     this.prefetched = prefetchImages(options);
   }
@@ -75,8 +75,10 @@ export class BattleScene extends Phaser.Scene {
     this.encounter = new BattleEncounter(this);
     this.stopTapBack = installTapBack(this);
   }
-  async prepare({ mons, moves = [], biome, biomeProps, enemyTrainer, enemyBlack, playerTrainer, playerBlack, enemyTrainer2, enemyBlack2, double = false }) {
+  async prepare({ mons, moves = [], biome, biomeProps, enemyTrainer, enemyBlack, playerTrainer, playerBlack, enemyTrainer2, enemyBlack2, double = false, tag = false }) {
     this.double = !!double;
+
+    this.tag = this.double && !!tag;
 
     const arena = biomeKey(biome) ?? DEFAULT_BIOME;
     if (biome != null && !biomeKey(biome)) this.assets.diagnostics.push({ unknownBiome: String(biome) });
@@ -110,7 +112,7 @@ export class BattleScene extends Phaser.Scene {
   get positions() { return fieldPositions(this.double); }
 
   makeInfo(side) { return new BattleInfo(this, isPlayerSide(side), infoLayout(this.double, side)); }
-  async summon(side, mon, { fromBall = true, ball } = {}) {
+  async summon(side, mon, { fromBall = true, ball, partner = false } = {}) {
     this.requireReady();
     checkPosition(this.double, side);
     const player = isPlayerSide(side);
@@ -122,7 +124,8 @@ export class BattleScene extends Phaser.Scene {
     const info = this.info[side] = this.makeInfo(side);
     info.init(mon);
     this.audio.startBattleMusic();
-    if (fromBall && player) await this.encounter?.throwFromPlayer();
+
+    if (fromBall && player && !partner) await this.encounter?.throwFromPlayer();
 
     const key = ballFrame(ball);
     if (fromBall) {

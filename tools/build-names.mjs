@@ -5,7 +5,9 @@ import { resolve } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { BAG_ITEMS, FIELD_ITEMS } from '../engine/bag.mjs';
 import { OUTSIDE_ITEMS, tmId } from '../story/items.mjs';
-import { csv, englishID, gen9Tms, toID } from './sources.mjs';
+import { csv, englishID, gen9Tms, speciesWithCosmeticFormes, toID } from './sources.mjs';
+import { aiFormNames } from './ai-forms.mjs';
+import { formRegions } from './form-regions.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const require = createRequire(import.meta.url);
@@ -152,6 +154,7 @@ for (const file of readdirSync(resolve(root, 'vendor/pokerogue/assets/battle-ani
 
 const missing = {}, noAnims = [], unavailable = {};
 const sizes = [];
+const tables = {};
 
 const dexEntries = Object.fromEntries(kinds.map(kind => [kind,
   [...new Set(Dex[kind].all().map(e => e.id))].sort().map(id => Dex[kind].get(id)),
@@ -197,6 +200,7 @@ for (const kind of kinds) {
       table[id] = { ko: `${prefix}${digits}`, en: `TM${digits}`, src: 'pokeapi', sim: false, bag: true, move };
     }
   }
+  tables[kind] = table;
   const bytes = Buffer.from(JSON.stringify(table) + '\n');
   writeFileSync(resolve(out, `${kind}.json`), bytes);
   sizes.push(`| ${kind}.json | ${Object.keys(table).length} | ${bytes.length} | ${gzipSync(bytes, { level: 9 }).length} |`);
@@ -219,7 +223,7 @@ for (const kind of kinds) {
   if (!missing[kind].length) lines.push('없음.');
 }
 lines.push('', `## 애니메이션 없는 기술 ${noAnims.length}개 (실전 ${noAnims.filter(e => e.isNonstandard === null).length}개)`, '',
-  '아래 기술의 `anim: null`은 공통 대체 연출로 처리한다.', '');
+  'T03은 아래 기술의 `anim: null`을 공통 대체 연출로 처리한다.', '');
 for (const entry of noAnims) lines.push(`- \`${entry.id}\` — ${entry.name} (${entry.isNonstandard ?? '실전'})`);
 lines.push('', '## 플러그인 엔진에 없는 ID', '', '`sim: false`는 Showdown 원본 champions 모드에서 같은 ID를 찾지 못했다는 뜻이다. 효과·세대별 사용 가능성까지 비교하지 않는다.', '');
 for (const kind of kinds) {
@@ -230,6 +234,40 @@ for (const kind of kinds) {
 }
 lines.push('## JSON 크기', '', '| 파일 | 항목 수 | UTF-8 바이트 | gzip(level 9) 바이트 |', '|---|---:|---:|---:|', ...sizes, '');
 writeFileSync(resolve(out, 'MISSING.md'), lines.join('\n'));
+
+{
+  const { table, report } = aiFormNames({ species: tables.species, Dex, csv, dexKo: json('data/dex-ko.json').entries, speciesWithCosmeticFormes });
+
+  const text = `{\n${Object.entries(table).map(([id, r]) => `${JSON.stringify(id)}:${JSON.stringify(r.as ?? [r.en, r.ko, ...(r.old ?? [])])}`).join(',\n')}\n}\n`;
+  writeFileSync(resolve(out, 'ai-forms.json'), text);
+  const named = Object.entries(table).filter(([, r]) => !r.as);
+  const doc = ['# AI 글 폼 이름', '', '`node tools/build-names.mjs`로 생성 (`tools/ai-forms.mjs`). AI 에게 가는 글(story/ai-names.mjs)에서 폼을 부르는 이름: 공식 영어 + 한국어 하나.',
+    '화면 이름(`species.json`)과 다르다. 출처 규칙은 `tools/ai-forms.mjs` 머리 주석.', '',
+    `- 폼 ${Object.keys(table).length}개 = 이름 있는 폼 ${named.length}개 + 겉모습만 다른 폼(기본 종 이름) ${report.cosmetic.length}개 + 테라스탈 폼(테라스탈 전 이름) ${report.tera.length}개`, ''];
+  const SRC = { fix: '고친 공식 표기(EN_FIXES)', pokeapi: 'PokeAPI 전체 이름', 'pokeapi-unparen': 'PokeAPI 이름의 괄호를 앞으로', derived: '만듦(Showdown 폼 낱말)',
+    'dex-ko': '포켓몬코리아 공식 도감 전체 이름', pokerogue: 'PokeRogue 전체 이름', 'derived:dex-ko': '만듦(공식 도감 폼 이름 + 종)',
+    'derived:pokeapi': '만듦(PokeAPI 폼 이름 + 종)', 'derived:pokerogue': '만듦(PokeRogue 폼 이름 + 종)', base: '기본 종 이름(폼 한국어 이름 없음)', none: '한국어 없음' };
+  for (const lang of ['en', 'ko']) {
+    doc.push(`## ${lang === 'en' ? '영어' : '한국어'}`, '', '| 출처 | 수 |', '|---|---:|');
+    for (const [src, ids] of Object.entries(report[lang])) doc.push(`| ${SRC[src] ?? src} (\`${src}\`) | ${ids.length} |`);
+    doc.push('');
+  }
+  doc.push('## 이름 전부 (출처가 만듦·기본 이름인 것 포함)', '', '| id | 영어 | 한국어 | 영어 출처 | 한국어 출처 |', '|---|---|---|---|---|');
+  for (const [id, r] of named) doc.push(`| \`${id}\` | ${r.en} | ${r.ko ?? ''} | ${r.enSrc} | ${r.koSrc} |`);
+  const dropped = report.defaultDropped ?? [];
+  doc.push('', `## 기본 폼 낱말을 뺀 영어 이름 ${dropped.length}개 (옛 이름은 블록 읽기만)`, '', '| id | 영어 | 옛 영어 | 한국어 |', '|---|---|---|---|',
+    ...dropped.map(id => `| \`${id}\` | ${table[id].en} | ${table[id].old.join(' · ')} | ${table[id].ko ?? ''} |`));
+  doc.push('', `## 겉모습만 다른 폼 ${report.cosmetic.length}개 (기본 종 이름으로)`, '', report.cosmetic.map(id => `\`${id}\``).join(' '), '');
+  doc.push(`## 테라스탈 폼 ${report.tera.length}개 (테라스탈 전 폼 이름으로)`, '', report.tera.map(id => `\`${id}\` → \`${table[id].as}\``).join(' · '), '');
+  writeFileSync(resolve(out, 'AI-FORMS.md'), doc.join('\n'));
+  console.log(`AI 폼 이름 ${named.length} + 겉모습 ${report.cosmetic.length}`);
+}
+
+{
+  const regions = formRegions({ species: tables.species, aliases: require(resolve(root, 'vendor/pokemon-showdown/dist/data/aliases.js')).Aliases });
+  writeFileSync(resolve(out, 'form-regions.json'), `${JSON.stringify(regions, null, 1)}\n`);
+  console.log(`지방 별명 폼 ${Object.keys(regions).length}`);
+}
 console.log('이름표 생성 완료');
 console.log(sizes.join('\n'));
 for (const kind of kinds) console.log(`${kind}: 한국어 누락 ${missing[kind].length}, 실전 ${missing[kind].filter(e => e.isNonstandard === null).length}`);

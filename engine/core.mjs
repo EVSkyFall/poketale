@@ -26,11 +26,11 @@ export function createStoryBattle(sim, given, options = {}) {
 
 	const rng = new sim.PRNG(given.seed);
 	for (const [key, seat] of Object.entries(shape.seats)) {
-		context.sets[key] = seat.team.map(m => completeSet(sim.Dex, m.set, rng, { levelUp: options.levelUp, label: m.uid }));
+		context.sets[key] = seat.team.map(m => completeSet(sim.Dex, m.set, rng, { levelUp: options.levelUp, label: m.uid, tera: !m.noTera }));
 		battle.setPlayer(key, { name: seat.name, team: sim.Teams.pack(context.sets[key].map(set => heldItemForm(sim.Dex, set))) });
 	}
 
-	if (shape.waiting) context.sets.waiting = shape.waiting.team.map(m => completeSet(sim.Dex, m.set, rng, { levelUp: options.levelUp, label: m.uid }));
+	if (shape.waiting) context.sets.waiting = shape.waiting.team.map(m => completeSet(sim.Dex, m.set, rng, { levelUp: options.levelUp, label: m.uid, tera: !m.noTera }));
 	installExtensions(sim, battle, 'players', context);
 	return battle;
 }
@@ -111,7 +111,8 @@ function resultMon(sim, p) {
 		evs: { ...p.set.evs },
 		gender: p.gender,
 		shiny: !!p.set.shiny,
-		teraType: p.teraType,
+
+		teraType: p.m.noTera && !p.set.teraType ? undefined : p.teraType,
 		terastallized: p.terastallized || '',
 
 		moves: p.baseMoveSlots.map((s, i) => ({ id: s.id, pp: s.pp, maxpp: s.maxpp, ppUps: p.ppUps[i] ?? 0 })),

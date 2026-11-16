@@ -4,6 +4,7 @@ import { DEFAULT_TRAINER, SHOWDOWN_TRAINER_URL, showdownTrainerId, trainerKey, i
 import { createImageRoute, audioType } from '../../view/image-route.js';
 import { LoadError } from '../../view/retry.js';
 import { clearEdges } from './my-picture.js';
+import { parseRecolorKey, recoloredCanvas, wholeFrame } from '../../view/sprites/recolor.js';
 
 function loadImage(src) {
   return new Promise((resolve, reject) => {
@@ -56,6 +57,11 @@ async function foeFrame(name, fetchBytes, route) {
     try { return await showdownFrame(id, fetchBytes); } catch { return pokerogueFrame(DEFAULT_TRAINER, route); }
   }
   const { trainers } = await fieldAtlases();
+  const { sprite, combo } = parseRecolorKey(name);
+  if (combo && isEnemyTrainer(trainers, sprite)) {
+    const { full, box } = await pokerogueFrame(sprite, route);
+    return { full: recoloredCanvas(full, sprite, combo, wholeFrame(full.width, full.height)), box };
+  }
   const key = trainerKey(name);
   return pokerogueFrame(isEnemyTrainer(trainers, key) ? key : DEFAULT_TRAINER, route);
 }
@@ -77,12 +83,14 @@ async function pictureFrame(image) {
   return { full };
 }
 
-export function entryPictures(spec, { fetchBytes, wild = false, named = false, image = null, pictureWays } = {}) {
-  if (wild) return Promise.resolve({ me: null, foe: null, named: null });
+export function entryPictures(spec, { fetchBytes, wild = false, named = false, image = null, pictureWays, second = null } = {}) {
+  if (wild) return Promise.resolve({ me: null, foe: null, foe2: null, named: null });
   const route = entryRoute({ fetchBytes, pictureWays });
   const foe = foeFrame(spec?.p2?.trainerSprite, fetchBytes, route).catch(() => null);
+  const foe2 = second && !named ? foeFrame(second, fetchBytes, route).catch(() => null) : Promise.resolve(null);
   const me = named ? Promise.resolve(null) : (image ? pictureFrame(image) : playerFrame(spec?.p1?.trainerSprite, route)).catch(() => null);
-  return Promise.all([me, foe]).then(([mine, theirs]) => ({ me: mine?.full ?? null, foe: named ? null : theirs?.full ?? null, named: named ? theirs?.box ?? null : null }));
+  return Promise.all([me, foe, foe2]).then(([mine, theirs, beside]) => ({ me: mine?.full ?? null, foe: named ? null : theirs?.full ?? null,
+    foe2: beside?.full ?? null, named: named ? theirs?.box ?? null : null }));
 }
 
 export function entrySound(path, { fetchBytes, pictureWays } = {}) {

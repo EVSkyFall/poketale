@@ -1,8 +1,8 @@
 import { CARD_CSS, CHIP_CSS } from './card.mjs';
 import { DIARY_CSS } from './diary.mjs';
 import { TOAST_CSS } from './toast.mjs';
+import { SHOP_CSS } from './shop-card.mjs';
 
-// Class of the <style> inserted in the main document (found again on reload so only its text is replaced)
 export const SHEET_CLASS = 'x-risu-pkb-sheet';
 
 export function scopeCss(css, scope) {
@@ -27,7 +27,7 @@ export function scopeCss(css, scope) {
 }
 
 export function storyCss({ scope = '.chattext' } = {}) {
-  return scopeCss([CARD_CSS, CHIP_CSS, DIARY_CSS].join(' '), scope);
+  return scopeCss([CARD_CSS, SHOP_CSS, CHIP_CSS, DIARY_CSS].join(' '), scope);
 }
 
 export const SHEET_FONT = 'PkbPixel';

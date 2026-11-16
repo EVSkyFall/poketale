@@ -1,6 +1,5 @@
 export const PICTURE_KEY = 'pkb_my_picture';
 
-// Key in plugin storage holding this persona's picture (data URL)
 export const pictureKey = name => `${PICTURE_KEY}:${name}`;
 
 export const PICTURE_SHORT_SIDE = 512;

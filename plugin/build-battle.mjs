@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { buildBattle } from '../build/plugins.mjs';
 
-const version = '0.0.7.1';
+const version = '0.0.8';
 const result = await buildBattle();
 const code = `//@name poke_battle
 //@display-name PokéTale ${version}

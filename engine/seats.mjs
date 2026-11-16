@@ -1,4 +1,3 @@
-// Trainer ownership and shared trainer state across battle seats.
 export const trainerOf = pokemon => pokemon?.m.trainer ?? null;
 
 export function twinSeat(side) {

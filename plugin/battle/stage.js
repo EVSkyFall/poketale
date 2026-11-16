@@ -18,7 +18,10 @@ let doc = null;
 let aboveOthers = () => true;
 let debugOn = () => false;
 
-export function useMainDocument(root, onTop = () => true, debug = () => false) { doc = root; aboveOthers = onTop; debugOn = debug; }
+export function useMainDocument(root, onTop = () => true, debug = () => false) {
+  doc = root; aboveOthers = onTop; debugOn = debug;
+  if (doc) sheetWork(false);
+}
 
 async function measure() {
   const chat = await doc.querySelector(CHAT_SCREEN);
@@ -46,6 +49,36 @@ const FIGHT_MS = 5000;
 const LOW_MARK = 'x-pkb-lowered';
 
 export const LOWERED = `body > [${LOW_MARK}]:not([${LOW_MARK}=""])`;
+
+const LOW_KIND = 'x-pkb-low';
+const PAGE = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+const kindOf = to => `${PAGE} ${to === BOX_Z ? 'box' : 'win'}`;
+
+export const LOW_SHEET = 'x-risu-pkb-stage-low';
+
+const HELD = `body > [${LOW_KIND}="${kindOf(BOX_Z)}"] { z-index: ${BOX_Z} !important; }\nbody > iframe[${LOW_KIND}="${kindOf(UNDER_Z)}"] { z-index: ${UNDER_Z} !important; }`;
+let holding = false;
+let sheet = null;
+let sheetDone = Promise.resolve();
+
+function sheetWork(on) {
+  sheetDone = sheetDone.then(async () => {
+    holding = false;
+    sheet = await doc.querySelector(`style.${LOW_SHEET}`);
+    if (!sheet && !on) return;
+    if (!sheet) {
+      const made = await doc.createElement('style');
+      await made.addClass(LOW_SHEET);
+      await (await doc.querySelector('head') ?? await doc.querySelector('body')).appendChild(made);
+      sheet = made;
+    }
+    await sheet.setTextContent(on ? HELD : '');
+    holding = on;
+  }).catch(() => { holding = false; });
+  return sheetDone;
+}
+
+globalThis.addEventListener?.('pagehide', () => { holding = false; try { sheet?.setTextContent('').catch(() => {}); } catch {            } });
 let standing = false;
 
 let lowered = new Map();
@@ -129,19 +162,26 @@ async function stepOnTop(frame, { ours, over }) {
     const known = lowered.get(id);
     if (known?.left) continue;
     if (known) {
-      const now = Date.now();
-      known.raises = known.raises.filter(at => now - at < FIGHT_MS).concat(now);
       Object.assign(known, { frame: found.frame, last: theirs });
-      if (known.raises.length >= RAISE_LIMIT) {
-        known.left = true;
-        leftAlone.add(id);
-        await noteLeft(found);
-        continue;
+
+      const held = holding && await found.frame.getAttribute(LOW_KIND) === kindOf(known.to);
+      if (!held) {
+        const now = Date.now();
+        known.raises = known.raises.filter(at => now - at < FIGHT_MS).concat(now);
+        if (known.raises.length >= RAISE_LIMIT) {
+          known.left = true;
+          leftAlone.add(id);
+          if (holding) await found.frame.setAttribute(LOW_KIND, '');
+          await noteLeft(found);
+          continue;
+        }
+        if (holding) await found.frame.setAttribute(LOW_KIND, kindOf(known.to));
       }
     } else {
       const id = nextId++;
       lowered.set(id, { frame: found.frame, was: theirs, to, raises: [] });
       await found.frame.setAttribute(LOW_MARK, `${id} ${to} ${theirs}`);
+      if (holding) await found.frame.setAttribute(LOW_KIND, kindOf(to));
     }
     await found.frame.setStyle('z-index', String(to));
     await noteLowered(found, !!known);
@@ -173,9 +213,11 @@ async function giveBack() {
     try {
 
       if (!left && zOf(inlineStyle(await frame.getStyleAttribute())) === to) await frame.setStyle('z-index', last ?? was);
+      if (await frame.getAttribute(LOW_KIND)) await frame.setAttribute(LOW_KIND, '');
       await frame.setAttribute(LOW_MARK, '');
     } catch {                          }
   }
+  if (doc) await sheetWork(false);
 }
 
 export const TRACK_MS = 500;
@@ -218,7 +260,10 @@ export async function showFrame(show, { full = false } = {}) {
   await place(frame, rect);
   await show();
   await frame.setStyle('z-index', String(standing ? TOP_Z : PLAIN_Z));
-  if (standing) await frame.setAttribute(MARK, '1');
+  if (standing) {
+    await frame.setAttribute(MARK, '1');
+    await sheetWork(true);
+  }
   track(frame, rect, full);
 }
 

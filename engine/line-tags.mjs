@@ -37,7 +37,6 @@ export function attachLineTags(battle) {
 		const effects = [...outer, holderOf(battle.effect, battle.effectState)].filter(Boolean);
 		return refs.length || effects.length ? { refs, ...cause, ...(effects.length ? { effects } : {}) } : null;
 	}
-
 	// Every line written by one outer call gets that call's tag (once, even if add -> addSplit -> add recurses)
 	for (const name of ['add', 'addSplit', 'addMove']) {
 		const original = battle[name];

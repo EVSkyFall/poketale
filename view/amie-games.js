@@ -1,7 +1,7 @@
-// Adapted layouts: PlayNav src/amie/games/*.lua, revision 7f1b4dcb8ca1cc85180272c165842374924f1564.
+// Modified for PokeTale on 2026-11-16. See THIRD-PARTY-NOTICES.md.
+// Adapted layouts: PlayNav, revision 7f1b4dcb8ca1cc85180272c165842374924f1564.
 // Copyright (c) 2026 poooooby, MIT License. See THIRD-PARTY-NOTICES.md.
-// Modified for PokeTale on 2026-11-10.
-import { createBerryPicker, createHeadIt, createTilePuzzle, prizesFor, starsOf, recordScore, beatsRecord, BERRY_RULES, HEAD_RULES, TILE_GRIDS } from '../story/amie-games.mjs';
+import { createBerryPicker, createHeadIt, headSlotAt, createTilePuzzle, prizesFor, starsOf, recordScore, beatsRecord, BERRY_RULES, HEAD_RULES, TILE_GRIDS } from '../story/amie-games.mjs';
 import { CARD_TIMES } from './amie-tray-card.js';
 import { BAND } from './amie-frame.js';
 import { windowText } from './ui/text.js';
@@ -96,6 +96,8 @@ export function playGame(screen, game, level) {
       stop: () => (card ? done(card) : done(null)),
 
       inRound: () => !card,
+
+      many: !!play.many,
     };
     screen.playing = handler;
 
@@ -178,6 +180,7 @@ function berryPicker(s, layer, screen, level, end, life) {
   showHud();
   const rise = (sl, up) => life.tween({ targets: sl.sprite, y: up ? feet : feet + tall + 20, duration: 220, ease: up ? 'Back.easeOut' : 'Sine.easeIn' });
   const near = at => slots.find(sl => Math.abs(at.x - spotX[sl.i]) <= W * 0.15 && at.y >= feet - tall - 28);
+
   return {
     down: at => {
       if (!live || g.over) return;
@@ -265,6 +268,9 @@ function headIt(s, layer, screen, level, end, life) {
   layer.add([ballLayer, effects]);
   const setHud = hud(screen, words.games.head);
   let acc = 0, live = false;
+
+  let taps = [];
+  const clock = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
   countIn(screen, life).then(() => { live = true; });
   const showHud = () => setHud({ score: `${g.fever ? `${words.fever}  ` : ''}${words.score.head({ n: g.points })}`, time: Math.max(0, g.timer) / R.TIME });
   showHud();
@@ -275,14 +281,15 @@ function headIt(s, layer, screen, level, end, life) {
   const alarm = s.add.container(fx(0), fy(-120) - tall - 10, [s.add.image(-4, 0, 'amie-bang'), s.add.image(4, 0, 'amie-bang')]).setVisible(false);
   layer.add(alarm);
   return {
-    down: at => {
-      if (!live) return;
-      if (at.y < fy(120)) return;
-      const slot = R.SLOT_X.findIndex((lx, i) => i < g.mons && Math.abs(at.x - fx(lx)) <= 53 * kx);
-      if (slot < 0) return;
-      play(g.tap(slot));
 
-      life.tween({ targets: mons[slot], y: fy(-120) - 5, duration: 80, yoyo: true });
+    many: true,
+    down: at => {
+      if (!live || g.over) return;
+
+      const slot = headSlotAt((at.x - W / 2) / kx, (baseY - at.y) / ky - 120, g.mons);
+      if (slot < 0) return;
+      const now = clock(), t = Number.isFinite(at.t) && at.t <= now && now - at.t < 1000 ? at.t : now;
+      taps.push({ slot, t });
     },
     move: () => {},
     up: () => {},
@@ -294,6 +301,17 @@ function headIt(s, layer, screen, level, end, life) {
         acc -= 1 / R.FPS;
         play(g.tick());
       }
+
+      const ticked = clock() - acc * 1000;
+      for (const { slot, t } of taps) {
+        if (g.over) break;
+        if (ticked - t > 500) continue;
+        const free = g.heads[slot] === 0;
+        play(g.tap(slot, ticked - t));
+
+        if (free) life.tween({ targets: mons[slot], y: fy(-120) - 5, duration: 80, yoyo: true });
+      }
+      taps = [];
 
       const seen = new Set();
       for (const b of g.balls) {
@@ -434,6 +452,8 @@ function tilePuzzle(s, layer, screen, level, end, life) {
   showHud();
   layer.once('destroy', () => s.textures.remove(key));
   return {
+
+    many: true,
     down: () => {},
     move: () => {},
     up: p => {

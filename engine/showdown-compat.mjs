@@ -55,6 +55,23 @@ export function battleFromJSON(sim, json) {
 	return battle;
 }
 
+export function allowRayquazaMega(battle) {
+	const { actions } = battle;
+	const original = actions.canMegaEvo;
+	if (original.rayquaza) return;
+	const wrapped = function (pokemon) {
+		return rayquazaMega(this.dex, pokemon.baseSpecies, pokemon.baseMoves, pokemon.getItem()) ?? original.call(this, pokemon);
+	};
+	wrapped.rayquaza = true;
+	actions.canMegaEvo = wrapped;
+}
+
+export function rayquazaMega(dex, species, moveIds, item) {
+	if (species.id !== 'rayquaza') return null;
+	const mega = dex.species.get(species.otherFormes?.[0]);
+	return mega?.isMega && mega.requiredMove && moveIds.includes(dex.moves.get(mega.requiredMove).id) && !item?.zMove ? mega.name : null;
+}
+
 export function newMoveSlot(move, pp) {
 	return { move: move.name, id: move.id, pp, maxpp: pp, target: move.target, disabled: false, disabledSource: '', used: false };
 }

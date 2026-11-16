@@ -6,6 +6,8 @@ A RisuAI plugin for Pokémon battles inside chat. The interface and battle text 
 
 Import [`dist/poke-battle.js`](dist/poke-battle.js) in RisuAI's plugin settings. A RisuAI version supporting plugin API 3.0 is required. Grant the requested permissions and open the PokéTale settings to select the bots it runs for.
 
+Version 0.0.8 requests RisuAI's request-replacement permission to refresh party and bag information immediately before sending a regenerated reply. RisuAI asks again every three days and when the version changes. Declining keeps the previous behavior.
+
 After installing this file once, future versions can be installed with RisuAI's plugin update control. Updates are downloaded from this repository's main branch.
 
 Images and sounds are loaded at runtime from PokeRogue assets and PokéAPI Pokémon and badge sprites on `raw.githubusercontent.com`, and from `play.pokemonshowdown.com`. The plugin has no server of its own.

@@ -2,7 +2,7 @@ import { esc, FONT, noteRule, ICON_BALL } from './card.mjs';
 import { say } from './screen-text.mjs';
 import { checkLang } from '../director/lang.js';
 import { STATS } from '../engine/mon.mjs';
-import { BOX_SIZE } from './rules.mjs';
+import { BOX_SIZE, FORGE_KINDS } from './rules.mjs';
 import storyNames from '../data/story-names.json' with { type: 'json' };
 import { customText } from './custom-items.mjs';
 import { sideParts } from './blocks.mjs';
@@ -48,6 +48,8 @@ export const natureName = (nature, lang) => (checkLang(lang) === 'ko' ? NATURE_K
 
 export const moneyText = (amount, lang) => say(lang, 'money', { n: amount });
 const count = (n, lang) => Number(n).toLocaleString(lang);
+
+export const moneyAmount = (n, lang) => moneyText(count(n, lang), lang);
 
 function nameKit(lang, names) {
   const sp = species => names.species(species);
@@ -145,6 +147,13 @@ export function diaryLine(event, lang, names) {
     case 'pp': return t('diary.pp', { who });
     case 'boxname': return event.name ? t('diary.boxName', { box: boxLabel(event.box + 1, lang), name: quoted(lang, event.name, ['으로', '로']) })
       : t('diary.boxNameReset', { box: boxLabel(event.box + 1, lang) });
+
+    case 'shop': {
+      const list = lines => lines.map(l => t('diary.shopItem', { item: item(l.item), n: count(l.count, lang) })).join(', ');
+      return [event.buy?.length && t('diary.shopBuy', { items: list(event.buy), money: `−${moneyAmount(event.spent, lang)}` }),
+        event.bonus?.length && t('diary.shopBonus', { items: list(event.bonus) }),
+        event.sell?.length && t('diary.shopSell', { items: list(event.sell), money: `+${moneyAmount(event.got, lang)}` })].filter(Boolean).join(' · ');
+    }
     case 'money': return event.delta > 0 ? t('diary.moneyGot', { money: p(moneyText(event.delta, lang), '을/를') })
       : t('diary.moneySpent', { money: p(moneyText(-event.delta, lang), '을/를') });
 
@@ -296,7 +305,11 @@ const ICON_SWORD = '<svg viewBox="0 0 18 18" aria-hidden="true"><path d="M15.6 2
 
 const ICON_GRASS = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 21.5C4.8 17 4.6 12 2.6 7.6c4 2.2 5.8 7.4 5.4 13.9zM8 21.5c.7-6.8 2-12.6 4-18 2 5.4 3.3 11.2 4 18zM21.5 21.5c-2.3-4.5-2.1-9.5-.1-13.9-4 2.2-5.8 7.4-5.4 13.9z"'
   + ' fill="#7cc25e" stroke="#23435f" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 9v10" stroke="#3f8a5a" stroke-width="1.4" stroke-linecap="round"/></svg>';
-const FORGE_PICKS = [['wild', 'forge.wild', ICON_GRASS], ['trainer', 'forge.trainer', ICON_BALL]];
+const FORGE_ICONS = { wild: ICON_GRASS, trainer: ICON_BALL };
+
+const forgeAction = kind => `forge${kind}`;
+
+export const forgeKindOf = action => FORGE_KINDS.find(kind => forgeAction(kind) === action);
 
 export function renderForge({ key, on = false, busy = false, ask = false }, lang) {
   if (!on && !busy) return '';
@@ -305,7 +318,7 @@ export function renderForge({ key, on = false, busy = false, ask = false }, lang
   const button = `<button type="button" class="x-risu-pkb-btn x-risu-pkb-fg${busy ? ' x-risu-pkb-busy' : ''} x-risu-pkbk-${key} x-risu-pkba-forge x-risu-pkbi-{{chat_index}}"`
     + ` title="${label}" aria-label="${label}" aria-expanded="${ask && !busy}"${busy ? ' disabled' : ''}>${ICON_SWORD}</button>`;
   const lines = busy ? `<div class="x-risu-pkb-fgnote">${t('forge.busy')}<span class="x-risu-pkb-fgsub">${t('forge.hold')}</span></div>` : '';
-  const picks = FORGE_PICKS.map(([kind, name, icon]) => `<button type="button" class="x-risu-pkb-btn x-risu-pkb-fgok x-risu-pkbk-${key} x-risu-pkba-forge${kind} x-risu-pkbi-{{chat_index}}" title="${t(name)}" aria-label="${t(name)}">${icon}</button>`).join('');
+  const picks = FORGE_KINDS.map(kind => `<button type="button" class="x-risu-pkb-btn x-risu-pkb-fgok x-risu-pkbk-${key} x-risu-pkba-${forgeAction(kind)} x-risu-pkbi-{{chat_index}}" title="${t(`forge.${kind}`)}" aria-label="${t(`forge.${kind}`)}">${FORGE_ICONS[kind]}</button>`).join('');
   const confirm = ask && !busy ? `<span class="x-risu-pkb-fgask" role="group" aria-label="${t('forge.confirm')}"><span>${t('forge.ask')}</span>${picks}</span>` : '';
   return button + confirm + lines;
 }

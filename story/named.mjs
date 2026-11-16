@@ -1,5 +1,6 @@
 import named from '../data/named-trainers.json' with { type: 'json' };
-import { norm } from './blocks.mjs';
+import { norm } from './norm.mjs';
+import { poolBounds } from './trainer-pool.mjs';
 
 const TITLES = new Set(named.titles);
 
@@ -50,14 +51,13 @@ export const SHOWDOWN_TRAINER = 'showdown:';
 
 export const isNamedSprite = key => typeof key === 'string' && Object.hasOwn(named.people, key);
 
-// Picture key -> [Korean, English] name (official spelling) | null
 export const namedPerson = key => (isNamedSprite(key) ? named.people[key] : null);
 
 export const cardFace = key => (isNamedSprite(key) && Object.hasOwn(named.showdown, key) ? named.showdown[key] : null);
 
 export const namedGender = key => (isNamedSprite(key) ? named.gender[key] ?? null : null);
 
-export const cardBounds = face => named.faceBounds?.[face] ?? null;
+export const cardBounds = face => named.faceBounds?.[face] ?? poolBounds(face);
 
 export const cardSheet = key => (isNamedSprite(key) && Object.hasOwn(named.sheet, key) ? { key, rect: named.sheet[key] } : null);
 

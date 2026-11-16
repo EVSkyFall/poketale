@@ -1,4 +1,5 @@
-// Modified for PokeTale on 2026-11-14. See THIRD-PARTY-NOTICES.md.
+// Modified for PokeTale on 2026-11-16. See THIRD-PARTY-NOTICES.md.
+// Adapted layouts: PlayNav, revision 7f1b4dcb8ca1cc85180272c165842374924f1564.
 // Ported from PlayNav (https://github.com/poooooby/PlayNav): src/amie/games/common.lua (THRESHOLDS, REWARDS, rewardList), src/amie/games/berry_picker.lua
 // (rotation, patience, kinds, slots), src/amie/games/head_it.lua with data/head_it_rules.lua (stages, flights, crush / purple / giant balls, hit windows, points, combos),
 // src/amie/games/tile_puzzle.lua (grids, the swap shuffle). PlayNav is MIT License, Copyright (c) 2026 poooooby - THIRD-PARTY-NOTICES.md.
@@ -151,11 +152,18 @@ export function createBerryPicker(level, random = Math.random) {
   return g;
 }
 
+const WINDOW_PLAYNAV = Object.freeze({ goodHigh: [105, 130], just: [130, 180], goodLow: [180, 205], miss: [240, 280] });
+const WIDEN = 1.5;
+const widen = (w, mid) => Object.freeze(Object.fromEntries(Object.entries(w).map(([k, [a, b]]) => [k, k === 'miss' ? [a, b] : [mid + (a - mid) * WIDEN, mid + (b - mid) * WIDEN]])));
+
 export const HEAD_RULES = Object.freeze({
-  FPS: 30, TIME: 1800, SPAWN_Y: 480, GIANT_Y: 580, OUT_TOP: 480, OUT_BOTTOM: -200, RISE_FLOOR: 5, DRIFT: 2 * 0.7447, MIN_GAP_F: 12, HEAD_FRAMES: 8,
+  FPS: 30, TIME: 1800, SPAWN_Y: 480, GIANT_Y: 580, OUT_TOP: 480, OUT_BOTTOM: -400, RISE_FLOOR: 5, DRIFT: 2 * 0.7447, MIN_GAP_F: 12, HEAD_FRAMES: 8,
   SLOT_X: Object.freeze([0, -100, 100]),
 
-  WINDOW: Object.freeze({ goodHigh: [105, 130], just: [130, 180], goodLow: [180, 205], miss: [240, 280] }), BALL_H: 90, TEST_DROP: 0.25, GIANT_H: 350, GIANT_DROP: 0.4,
+  WINDOW_PLAYNAV, WIDEN, WINDOW: widen(WINDOW_PLAYNAV, (WINDOW_PLAYNAV.just[0] + WINDOW_PLAYNAV.just[1]) / 2),
+  BALL_H: 90, TEST_DROP: 0.25, GIANT_H: 350, GIANT_DROP: 0.4,
+
+  REWIND_MS: 120, HISTORY: 6, MISS_FRAMES: 3, TAP_TOP: 360,
   POINTS: Object.freeze({ good: 1, just: 3, fever: 2 }), CAP: 999,
   MILESTONE: Object.freeze([{ every: 100, points: 100 }, { every: 50, points: 50 }, { every: 10, points: 10 }]),
 
@@ -184,6 +192,13 @@ export const HEAD_RULES = Object.freeze({
 const JUST_MID = (HEAD_RULES.WINDOW.just[0] + HEAD_RULES.WINDOW.just[1]) / 2;
 
 export const headTestY = (y, giant = false) => 120 - y + (giant ? HEAD_RULES.GIANT_H * HEAD_RULES.GIANT_DROP : HEAD_RULES.BALL_H * HEAD_RULES.TEST_DROP);
+
+export function headSlotAt(lx, ly, mons) {
+  if (ly > HEAD_RULES.TAP_TOP) return -1;
+  let best = 0;
+  for (let i = 1; i < mons; i++) if (Math.abs(lx - HEAD_RULES.SLOT_X[i]) < Math.abs(lx - HEAD_RULES.SLOT_X[best])) best = i;
+  return best;
+}
 
 export function headGrade(y, giant = false) {
   const s = headTestY(y, giant), W = HEAD_RULES.WINDOW;
@@ -214,6 +229,12 @@ export function createHeadIt(level, random = Math.random) {
     for (let i = 0; i < n; i++) { v += f[1]; y += v; }
     return y;
   };
+
+  const yAgo = (b, k) => {
+    const h = b.hist, i = Math.min(Math.floor(k), h.length - 1), j = Math.min(i + 1, h.length - 1);
+    return h[i] + (h[j] - h[i]) * (k - Math.floor(k));
+  };
+  const REWIND_F = (H.REWIND_MS / 1000) * H.FPS;
   const clearOn = (slot, f) => {
     const due = arriveIn(H.SPAWN_Y, f[0], f[1]);
     return g.balls.every(b => b.slot !== slot || b.state !== 'fall' || b.missed || Math.abs(arriveIn(b.y, b.v, b.g) - due) >= H.MIN_GAP_F);
@@ -235,7 +256,7 @@ export function createHeadIt(level, random = Math.random) {
     if (slot === undefined) return false;
     lastCrush = kind === 'crush';
     const f = flightOf(kind);
-    g.balls.push({ slot, x: H.SLOT_X[slot], y: H.SPAWN_Y, v: f[0], g: f[1], f, kind, state: 'fall', missed: false });
+    g.balls.push({ slot, x: H.SLOT_X[slot], y: H.SPAWN_Y, v: f[0], g: f[1], f, kind, state: 'fall', missed: false, hist: [H.SPAWN_Y] });
     return true;
   };
   const missBall = b => {
@@ -255,7 +276,7 @@ export function createHeadIt(level, random = Math.random) {
       if (++wait < H.LEAVE_FRAMES) return [];
       g.phase = 'giant'; wait = 0;
       const f = flightOf('giant');
-      g.balls.push({ slot: 0, x: 0, y: H.GIANT_Y, v: f[0], g: f[1], f, kind: 'giant', state: 'fall', missed: false });
+      g.balls.push({ slot: 0, x: 0, y: H.GIANT_Y, v: f[0], g: f[1], f, kind: 'giant', state: 'fall', missed: false, hist: [H.GIANT_Y] });
       return [{ type: 'giant' }];
     }
     if (g.balls.some(b => b.kind === 'giant' && b.state === 'fall' && !b.missed) || ++wait < H.GIANT_END_FRAMES) return [];
@@ -281,7 +302,9 @@ export function createHeadIt(level, random = Math.random) {
       const giant = b.kind === 'giant';
       if (b.state === 'fall') {
         b.v += b.g; b.y -= b.v;
-        if (!b.missed && headTestY(b.y, giant) >= H.WINDOW.miss[0]) events.push(missBall(b));
+        b.hist.unshift(b.y); b.hist.length = Math.min(b.hist.length, H.HISTORY);
+
+        if (!b.missed && (headTestY(yAgo(b, REWIND_F), giant) >= H.WINDOW.miss[0] || b.y < H.OUT_BOTTOM)) events.push(missBall(b));
         if (b.y < H.OUT_BOTTOM) b.gone = true;
       } else {
         b.y += b.v; b.v = Math.max(H.RISE_FLOOR, b.v - b.decel);
@@ -295,11 +318,12 @@ export function createHeadIt(level, random = Math.random) {
     return events;
   };
 
-  g.tap = slot => {
+  g.tap = (slot, late = 0) => {
     if (g.over || slot >= g.mons || g.heads[slot] > 0) return [];
-    g.heads[slot] = H.HEAD_FRAMES;
-    const ball = g.balls.filter(b => b.slot === slot && b.state === 'fall' && !b.missed).sort((a, b) => a.y - b.y)[0];
-    const how = ball ? headGrade(ball.y, ball.kind === 'giant') : null;
+    const k = (Math.max(0, Math.min(H.REWIND_MS, late || 0)) / 1000) * H.FPS;
+    const ball = g.balls.filter(b => b.slot === slot && b.state === 'fall' && !b.missed).sort((a, b) => yAgo(a, k) - yAgo(b, k))[0];
+    const how = ball ? headGrade(yAgo(ball, k), ball.kind === 'giant') : null;
+    g.heads[slot] = how ? H.HEAD_FRAMES : H.MISS_FRAMES;
     if (!how) return [];
     const f = ball.f;
     Object.assign(ball, how === 'just' ? { state: 'rise', v: f[4], decel: f[5] } : { state: 'rise', v: f[2], decel: f[3], dir: roll(2) ? 1 : -1 });

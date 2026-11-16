@@ -253,7 +253,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   mkdirSync(resolve(root, 'cache/sprite-placement'), { recursive: true });
   writeFileSync(resolve(root, 'cache/sprite-placement/mapping.json'), JSON.stringify(diagnostics, null, 2) + '\n');
   for (const [label, filter] of [
-    ['exact match missing', d => !d.exact], ['base-form fallback', d => !d.exact && !d.base],
+    ['exact match missing', d => !d.exact], ['T07 fallback', d => !d.exact && !d.base],
   ]) {
     const missing = diagnostics.filter(d => d.practical && filter(d));
     console.log(`${label} (isNonstandard === null): ${missing.length}: ${missing.map(d => d.id).join(', ') || '(none)'}`);

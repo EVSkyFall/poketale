@@ -1,6 +1,6 @@
 import speciesTable from '../data/names/species.json' with { type: 'json' };
 import { koSpellings } from '../names/index.js';
-import { stripForPrompt, messageId } from './blocks.mjs';
+import { stripBlocksRead, messageId } from './blocks.mjs';
 import { rulesAt } from './setting-changes.mjs';
 
 const LAST = 1025;
@@ -59,7 +59,7 @@ function trieOf(official) {
   return root;
 }
 
-export const mentionText = text => stripForPrompt(text)
+export const mentionText = (text, reading) => stripBlocksRead(text, reading)
   .replace(/<!--[\s\S]*?-->/g, ' ').replace(/<(style|script)\b[\s\S]*?<\/\1\s*>/gi, ' ').replace(/<\/?[a-zA-Z][^<>]*>/g, ' ');
 
 const lower = c => (c >= 0x41 && c <= 0x5a ? c + 32 : c === 0x2019 ? 0x27 : c >= 0xc0 && c <= 0xde ? String.fromCharCode(c).toLowerCase().charCodeAt(0) : c);
@@ -96,10 +96,10 @@ const cache = new Map();
 export const scanStats = { scanned: 0 };
 export const resetMentionCache = () => { cache.clear(); scanStats.scanned = 0; };
 
-function officialFrom(chat, count) {
+function ruleFrom(chat, count, name) {
   const at = rulesAt(chat);
   let lo = 0, hi = count;
-  while (lo < hi) { const mid = (lo + hi) >> 1; if (at(mid).officialKo !== false) hi = mid; else lo = mid + 1; }
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (at(mid)[name] !== false) hi = mid; else lo = mid + 1; }
   return lo;
 }
 
@@ -108,7 +108,7 @@ export function storyMentions(chat) {
   const out = new Set();
   const chatKey = String(chat?.id ?? '');
   if (!messages.length) { cache.delete(chatKey); return out; }
-  const from = officialFrom(chat, messages.length);
+  const from = ruleFrom(chat, messages.length, 'officialKo'), edgesFrom = ruleFrom(chat, messages.length, 'blockEdges');
   let kept = cache.get(chatKey);
   if (!kept) {
     if (cache.size >= CACHE_CHATS) cache.clear();
@@ -118,18 +118,18 @@ export function storyMentions(chat) {
   for (let i = 0; i < messages.length; i++) {
     const message = messages[i];
     if (message?.role !== 'char' || typeof message.data !== 'string' || !message.data) continue;
-    const official = i >= from;
+    const official = i >= from, blockEdges = i >= edgesFrom;
     const key = messageId(message, i);
     live.add(key);
     let hit = kept.get(key);
-    if (!hit || hit.official !== official || hit.text !== message.data) {
+    if (!hit || hit.official !== official || hit.blockEdges !== blockEdges || hit.text !== message.data) {
       scanStats.scanned++;
-      hit = { text: message.data, official, nums: mentionsIn(mentionText(message.data), official) };
+      hit = { text: message.data, official, blockEdges, nums: mentionsIn(mentionText(message.data, { blockEdges }), official) };
       kept.set(key, hit);
     }
     for (const n of hit.nums) out.add(n);
   }
-  // Removed or no longer searchable messages must not keep their old text alive.
+
   for (const key of kept.keys()) if (!live.has(key)) kept.delete(key);
   return out;
 }

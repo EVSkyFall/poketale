@@ -2,7 +2,9 @@ import { BALLS, ballModifier, captureValues, rollCapture } from './capture.mjs';
 import { awardCaptureExperience } from './exp.mjs';
 import { PARTY_MAX, toID } from './mon.mjs';
 import { itemId, customText } from '../story/custom-items.mjs';
+import { TOOL_TURNS, CHEER_STATS, CHEER_COUNT, ownsPokemon, ownsTrainer, cheerOwns } from '../story/tools.mjs';
 import { chooseEventAction, chooseParts, revive, sideLead } from './showdown-compat.mjs';
+import { trainerOf } from './seats.mjs';
 
 export const BAG_ITEMS = {
 
@@ -60,8 +62,10 @@ export const foodHeal = maxhp => Math.max(1, Math.floor(maxhp / 4));
 
 export function bagItem(battle, id) {
 	if (Object.hasOwn(BAG_ITEMS, id)) return BAG_ITEMS[id];
-	const foods = battle.storyBag?.foods;
-	return foods && Object.hasOwn(foods, id) ? { name: customText({ customItems: foods }, id), heal: 'food' } : undefined;
+	const { foods, tools } = battle.storyBag ?? {};
+	if (foods && Object.hasOwn(foods, id)) return { name: customText({ customItems: foods }, id), heal: 'food' };
+
+	return tools && Object.hasOwn(tools, id) ? { name: customText({ customItems: tools }, id), tool: tools[id].tag } : undefined;
 }
 
 export const FIELD_ITEMS = {
@@ -81,6 +85,9 @@ export function installBag(sim, battle, options = {}) {
 		catchRates: options.catchRates?.byNum ?? options.catchRates ?? null,
 		caught: new Set(options.caughtSpecies || []),
 		foods: options.foods ?? {},
+		tools: options.tools ?? {},
+		toolsUsed: new Set(),
+		effects: [],
 		pending: new Map(),
 		itemsUsed: [],
 		captured: null,
@@ -91,8 +98,15 @@ export function installBag(sim, battle, options = {}) {
 		state.pending.delete(user);
 		if (!choice) throw new Error('가방 행동인데 선택이 없습니다');
 		if (isBall(choice.item)) throwBall(sim, this, state, choice, user);
+		else if (bagItem(this, choice.item).tool) useTool(this, state, choice);
 		else useItem(sim, this, state, choice);
 	});
+
+	const endTurn = battle.endTurn;
+	battle.endTurn = function (...args) {
+		endTools(this, state);
+		return endTurn.apply(this, args);
+	};
 	return state;
 }
 
@@ -123,6 +137,7 @@ export function checkBagItem(battle, choice) {
 	if (isBall(id)) return checkBall(battle, state, id);
 	const item = bagItem(battle, id);
 	if (!item) return fail('unknownitem', choice?.item);
+	if (item.tool) return checkTool(battle, state, id, item, choice);
 
 	const target = side.pokemon.find(p => p.m.uid === choice.target);
 	if (!target) return fail('notarget', choice.target);
@@ -178,6 +193,82 @@ function catchRateOf(state, species) {
 	return state.catchRates?.[species.num] || 0;
 }
 
+const trainerName = pokemon => trainerOf(pokemon) ?? pokemon.side.name;
+const isFoe = pokemon => pokemon.side.n % 2 === 1;
+
+const cheerStats = pokemon => CHEER_STATS.filter(stat => (pokemon.hasAbility('contrary') ? pokemon.boosts[stat] > -6 : pokemon.boosts[stat] < 6));
+
+const toolOwner = (state, id) => state.tools[id].owner ?? '';
+
+function toolTarget(battle, owner) {
+	const foes = foesOut(battle);
+	const pokemon = foes.find(foe => ownsPokemon(owner, foe));
+	if (pokemon) return { pokemon };
+	const trainer = [...new Set(foes.map(trainerName))].find(t => ownsTrainer(owner, t));
+	return trainer ? { trainer, pokemon: foes.find(foe => trainerName(foe) === trainer) } : null;
+}
+const sameTarget = (effect, bound) => (bound.trainer ? effect.trainer === bound.trainer : effect.uid === bound.pokemon.m.uid);
+
+function checkTool(battle, state, id, item, choice) {
+	if (state.toolsUsed.has(id)) return fail('toolused');
+	if (item.tool === 'cheer') {
+		const target = battle.sides[0].pokemon.find(p => p.m.uid === choice.target);
+		if (!target) return fail('notarget', choice.target);
+		if (!cheerOwns(state.tools[id], target)) return fail('notbound');
+		if (target.fainted) return fail('fainted');
+		if (!target.isActive) return fail('notactive');
+		if (target.volatiles['embargo']) return fail('embargo');
+		return cheerStats(target).length ? { ok: true } : fail('noeffect');
+	}
+	if (state.options.wild) return fail('wild');
+	const bound = toolTarget(battle, toolOwner(state, id));
+	if (!bound) return fail('notbound');
+	return state.effects.some(e => e.tag === item.tool && sameTarget(e, bound) && e.until >= battle.turn) ? fail('noeffect') : { ok: true };
+}
+
+function toolEffect(item, id) {
+	return { ...itemEffect(item, id), fullname: item.name, effectType: 'Condition', kind: 'Condition' };
+}
+
+function useTool(battle, state, choice) {
+	const item = bagItem(battle, choice.item), tag = item.tool;
+	state.toolsUsed.add(choice.item);
+	const line = (pokemon, ...more) => battle.add('-story-tool', pokemon, pokemon.m.uid, choice.item, item.name, tag, ...more);
+	if (tag === 'cheer') {
+		const target = battle.sides[0].pokemon.find(p => p.m.uid === choice.target);
+
+		if (!target?.isActive || target.fainted) { if (target) line(target, '[fail]'); return; }
+		line(target);
+		const stats = cheerStats(target), picked = [];
+		while (picked.length < CHEER_COUNT && stats.length) picked.push(stats.splice(battle.random(stats.length), 1)[0]);
+		battle.boost(Object.fromEntries(CHEER_STATS.filter(stat => picked.includes(stat)).map(stat => [stat, 1])), target, target, toolEffect(item, choice.item));
+		return;
+	}
+	const bound = toolTarget(battle, toolOwner(state, choice.item));
+
+	if (!bound) { const user = battle.sides[0].active.find(p => p && !p.fainted); if (user) line(user, '[fail]'); return; }
+	state.effects = state.effects.filter(e => !(e.tag === tag && sameTarget(e, bound)));
+	state.effects.push({ tag, item: choice.item, until: battle.turn + TOOL_TURNS, ...(bound.trainer ? { trainer: bound.trainer } : { uid: bound.pokemon.m.uid }) });
+	line(bound.pokemon, ...(bound.trainer ? [`[trainer] ${bound.trainer}`] : []));
+}
+
+function endTools(battle, state) {
+	const over = state.effects.filter(e => e.until <= battle.turn);
+	if (!over.length) return;
+	state.effects = state.effects.filter(e => e.until > battle.turn);
+	for (const e of over) {
+		const pokemon = foesOut(battle).find(foe => (e.trainer ? trainerName(foe) === e.trainer : foe.m.uid === e.uid));
+		if (pokemon) battle.add('-story-toolend', pokemon, pokemon.m.uid, e.tag, ...(e.trainer ? [`[trainer] ${e.trainer}`] : []));
+	}
+}
+
+export function toolsOn(battle, pokemon) {
+	const state = battle.storyBag;
+	if (!state?.effects?.length || !pokemon || !isFoe(pokemon)) return [];
+	return [...new Set(state.effects.filter(e => battle.turn <= e.until && (e.trainer ? e.trainer === trainerName(pokemon) : e.uid === pokemon.m.uid))
+		.map(e => e.tag))];
+}
+
 export function chooseBagItem(battle, choice) {
 	const check = checkBagItem(battle, choice);
 	if (!check.ok) return check;
@@ -193,11 +284,15 @@ const pendingOf = choice => ({ item: itemId(choice.item), target: choice.target 
 
 export function chooseBagParts(battle, parts) {
 	const state = battle.storyBag;
+	const tools = new Set();
 	for (const [position, part] of parts.entries()) {
 		if (typeof part === 'string') continue;
 		if (isBall(toID(part?.item))) return { ...fail('ball'), position };
 		const check = checkBagItem(battle, { ...part, position });
 		if (!check.ok) return { ...check, position };
+
+		const id = itemId(part.item);
+		if (bagItem(battle, id).tool) { if (tools.has(id)) return { ...fail('toolused'), position }; tools.add(id); }
 	}
 	const side = battle.sides[0];
 	if (!chooseParts(battle, side, parts.map(part => (typeof part === 'string' ? part : { event: 'StoryBag' })))) return fail('rejected');

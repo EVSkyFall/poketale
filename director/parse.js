@@ -1,4 +1,3 @@
-// Parse protocol arguments and [keyword] annotations without interpreting game rules.
 export function parseLine(line) {
   if (!line.startsWith('|')) return { kind: 'text', args: [line], kwArgs: {} };
   const [kind, ...parts] = line.slice(1).split('|');

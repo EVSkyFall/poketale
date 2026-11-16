@@ -1,6 +1,6 @@
 // from pokerogue src/battle.ts (getBgmOverride) @ 7d7da4a8 (AGPL-3.0-only)
+// Modified for PokeTale on 2026-11-16. See view/LICENSE-NOTE.md.
 // from pokerogue src/data/trainers/trainer-config.ts (battleBgm / victoryBgm defaults) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-28. See view/LICENSE-NOTE.md.
 
 import BGM from '../data/bgm.json' with { type: 'json' };
 import { biomeKey } from './arena.js';

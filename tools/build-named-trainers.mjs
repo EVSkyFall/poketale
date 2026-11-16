@@ -112,7 +112,6 @@ for (const { sprite, key, music: song, gender: known } of [...byKey.values()].so
 	}
 	for (const name of people[sprite]) {
 		put(name, sprite);
-
 		// If the name includes a title (e.g. Professor Kukui), also the name without it
 		const k = norm(name);
 		for (const title of titles) {

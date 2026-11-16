@@ -1,12 +1,11 @@
 // from pokerogue src/ui/text.ts (getTextColor isLegacyTheme branch) @ 7d7da4a8 (AGPL-3.0-only)
+// Modified for PokeTale on 2026-11-16. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/ui-theme.ts (addWindow borders, legacy images) @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/scene-base.ts (loadImage: images/ui -> images/ui/legacy) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 
 export const THEMES = Object.freeze(['plugin', 'legacy', 'default']);
 export const DEFAULT_THEME = 'plugin';
 
-// Validates the theme creation option. Missing -> default, unknown value -> TypeError
 export function checkTheme(theme) {
   if (theme === undefined || theme === null) return DEFAULT_THEME;
   if (!THEMES.includes(theme)) throw new TypeError(`Unknown theme: ${theme} (${THEMES.join(' | ')})`);
@@ -58,7 +57,6 @@ const PLUGIN_ART = [
   [['bg.png'], {
     '#68a0a0': WHITE, '#808888': SKY2, '#d04838': BORDER, '#a86860': LINE2, '#984860': BORDER, '#684058': NAVY, '#484050': NAVY,
   }],
-
   // HP windows (HP bar pixels #ffffff, #4a425a stay)
   [['pbinfo_player.png', 'pbinfo_player_stats.png', 'pbinfo_enemy_mini.png', 'pbinfo_enemy_mini_stats.png', 'pbinfo_player_mini.png', 'pbinfo_player_mini_stats.png'], {
     '#ffffde': WHITE, '#ded6b5': SKY2, '#d6cebd': SHADE, '#c6bd73': LINE, '#7b9484': LINE2, '#526b63': BORDER, '#526b5a': BORDER,

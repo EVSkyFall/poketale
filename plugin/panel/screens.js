@@ -2,6 +2,7 @@ import * as sim from '../../engine/browser-engine.mjs';
 import { createOutsideScreens } from '../battle/outside.js';
 import { loadLevelUp, EXP_TABLE } from '../battle/level-tables.js';
 import { PHONE_CSS, isPhone, layoutOf, mountPhoneLayout } from '../battle/phone.js';
+import { pushBack } from '../battle/contextmenu.js';
 import { mountScreenButtons } from '../battle/screen-buttons.js';
 import { mountLoading } from '../battle/loading.js';
 import { UI_VARS, BAND_CSS, stripX, crossIcon, ringCss, ringOnKeys } from '../battle/ui-css.js';
@@ -93,6 +94,7 @@ export function createPanelScreens({ fetchBytes, settings = () => ({}), lang, sh
       + '<div class="screen"><div class="stage"></div></div></div>';
     document.body.append(root);
     const press = key => { try { host.view?.pressKey?.(key); } catch {                     } };
+    const popBack = pushBack(root, () => press('b'));
     const layout = layoutOf({ phone });
     const takeDown = mountPhoneLayout(root, layout, { press, lang: shown });
     const leave = root.querySelector('.leave'), ball = mountLoading(root.querySelector('.screen'), { lang: shown });
@@ -115,7 +117,7 @@ export function createPanelScreens({ fetchBytes, settings = () => ({}), lang, sh
         root.classList.toggle('pkb-fill', (layout === 'portrait' ? FILL_PAD : FILL_WINDOW).has(name));
         root.classList.toggle('pkb-own-exits', OWN_EXITS.has(name));
       },
-      watch(view) { view.watchButtons?.(buttons.set); }, remove() { takeDown(); root.remove(); } };
+      watch(view) { view.watchButtons?.(buttons.set); }, remove() { popBack(); takeDown(); root.remove(); } };
 
     leave.addEventListener('click', () => {
       if (host.left) return;
@@ -189,6 +191,9 @@ export function createPanelScreens({ fetchBytes, settings = () => ({}), lang, sh
     const root = document.createElement('section');
     root.className = 'poke-battle pkb-outside pkb-dialog';
     const owner = {};
+    let answer;
+    const answered = new Promise(resolve => { answer = resolve; });
+    const popBack = pushBack(root, () => answer(null));
     try {
       const shown = await lang(), say = sayer(shown);
       const t = key => esc(say(key));
@@ -213,16 +218,16 @@ export function createPanelScreens({ fetchBytes, settings = () => ({}), lang, sh
       input.value = current ?? '';
       await show(owner);
       input.focus(); input.select();
-      return await new Promise(resolve => {
-        root.querySelector('.ok').addEventListener('click', () => resolve(input.value.trim()));
-        root.querySelector('.no').addEventListener('click', () => resolve(null));
-        input.addEventListener('keydown', event => {
-          if (event.isComposing) return;
-          if (event.key === 'Enter') resolve(input.value.trim());
-          if (event.key === 'Escape') resolve(null);
-        });
+      root.querySelector('.ok').addEventListener('click', () => answer(input.value.trim()));
+      root.querySelector('.no').addEventListener('click', () => answer(null));
+      input.addEventListener('keydown', event => {
+        if (event.isComposing) return;
+        if (event.key === 'Enter') answer(input.value.trim());
+        if (event.key === 'Escape') answer(null);
       });
+      return await answered;
     } finally {
+      popBack();
       root.remove();
       busy = false;
       await hide(owner);

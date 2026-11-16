@@ -4,7 +4,6 @@ import { text as baseText, ownText, nameWithAffix } from './text.js';
 import { sideOf } from './read.js';
 import { DEFAULT_LANG } from './lang.js';
 
-// Lines this module's steps handle (director/steps.js dispatch table)
 export const RUN_KINDS = ['-story-run', '-story-forfeit'];
 
 export function createRun({ sim, battle, names, wild, lang = DEFAULT_LANG }) {
@@ -48,7 +47,6 @@ export function createRun({ sim, battle, names, wild, lang = DEFAULT_LANG }) {
     },
     owns: choice => typeof choice === 'object' && (choice?.run === true || choice?.forfeit === true),
 
-    // A forfeit ends immediately - the director does not ask the foe (director/index.js)
     ends: choice => typeof choice === 'object' && choice?.forfeit === true,
     commit: choice => (choice?.forfeit ? forfeit(battle) : chooseRun(battle)).ok,
 

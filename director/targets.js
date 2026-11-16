@@ -1,7 +1,6 @@
 import { positionOfMon } from './read.js';
 
 const CHOSEN = new Set(['normal', 'any', 'adjacentAlly', 'adjacentAllyOrSelf', 'adjacentFoe']);
-
 // Target types that hit several Pokemon at once (the target screen shows them all to confirm)
 const SPREAD = new Set(['allAdjacentFoes', 'allAdjacent', 'all', 'allySide', 'foeSide', 'allies', 'allyTeam']);
 

@@ -1,5 +1,5 @@
 // from pokerogue src/data/battle-anims.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-14. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-16. See view/LICENSE-NOTE.md.
 
 import Phaser from 'phaser';
 import { animation, moveFile } from './data.js';
@@ -112,6 +112,7 @@ export class AnimationPlayer {
     if (!anim) throw new Error(`Missing variant ${index}: ${file}`);
     if (this.running) throw new Error('Animation already playing');
     this.running = true;
+
     const cache = [[], [], []], spareEffects = [], sounds = [], tweens = [];
     let bg, tail = 0;
     if (opposite) { [user, target] = [target, user]; shown.reverse(); }
@@ -172,11 +173,12 @@ export class AnimationPlayer {
             sprite = kind === 2 ? spareEffects.pop() : null;
             if (sprite) {
               sprite.setActive(true);
-              // A fresh sprite would be appended here, including when priority is 1.
+
               scene.field.bringToTop(sprite);
             } else {
               sprite = kind === 2 ? scene.add.sprite(0, 0, `anim:${anim.graphic}`, frame.graphicFrame)
                 : scene.add.sprite(0, 0, sourceSprite.texture.key, sourceSprite.frame.name);
+
               sprite.setOrigin(0.5); scene.field.add(sprite);
             }
             cache[kind][i] = sprite;
@@ -210,6 +212,7 @@ export class AnimationPlayer {
           if (sprite.getData('locked') !== !!frame.locked) sprite.setData('locked', !!frame.locked);
           if (kind === 2 && priorities[i] !== frame.priority) { priorities[i] = frame.priority; setPriority(sprite, frame); }
         }
+
         for (let k = 0; k < 3; k++) for (let i = cache[k].length - 1; i >= counts[k]; i--) {
           const sprite = cache[k][i];
           if (!sprite.getData('locked')) {

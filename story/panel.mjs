@@ -16,7 +16,8 @@ import { withParticle, statName, natureName, listOf, boxLabel } from './diary.mj
 import { say } from './screen-text.mjs';
 import { battleNamesIn } from '../plugin/battle/names.js';
 import bagIcons from '../data/bag-icons.json' with { type: 'json' };
-import { CUSTOM_PREFIX, isCustomItem, customInfo, itemId, isDexItem } from './custom-items.mjs';
+import { CUSTOM_PREFIX, isCustomItem, customInfo, itemId, isDexItem, ownerName } from './custom-items.mjs';
+import { ITEM_EFFECTS_READY } from './item-effects.mjs';
 import { hungBagOf, effortOn } from './training.mjs';
 import { badgeCaseModel, badgePress } from './badge-case.mjs';
 import { dexView, dexPress } from './dex.mjs';
@@ -30,9 +31,11 @@ export const DEFAULT_SCREEN_PLACE = 'panel';
 export const BOX_COUNT = 32;
 export const TABS = Object.freeze(['party', 'box', 'bag', 'amie', 'travel']);
 
-export const TRAVEL_SUBS = Object.freeze(['trip', 'dex', 'badge']);
+export const MAP_READY = false;
 
-const travelSubs = ({ trip, badges }) => TRAVEL_SUBS.filter(sub => (sub === 'trip' ? trip : sub === 'badge' ? badges : true));
+export const TRAVEL_SUBS = Object.freeze(['trip', 'map', 'dex', 'badge']);
+
+const travelSubs = ({ trip, badges }) => TRAVEL_SUBS.filter(sub => (sub === 'trip' ? trip : sub === 'map' ? MAP_READY : sub === 'badge' ? badges : true));
 
 const travelSub = (ui, subs) => (subs.includes(ui.sub) ? ui.sub : subs.includes('trip') ? 'trip' : 'dex');
 
@@ -271,8 +274,10 @@ export function useOps(mon, itemId, { sim }, { move, stat } = {}) {
   return ops;
 }
 
+export const canHold = (id, sim, holder = null) => !NOT_HOLDABLE.has(itemKind(id, sim)) && !isDexItem(holder, id);
+
 export function holdableItems(state, sim) {
-  return Object.entries(state.bag ?? {}).filter(([id, n]) => n > 0 && !NOT_HOLDABLE.has(itemKind(id, sim)) && !isDexItem(state, id)).map(([id]) => id);
+  return Object.entries(state.bag ?? {}).filter(([id, n]) => n > 0 && canHold(id, sim, state)).map(([id]) => id);
 }
 
 const bagText = (state, id, sim, lang) => (isCustomItem(id) ? itemLabel(state, id, namesFor(lang, sim))
@@ -499,8 +504,12 @@ export function itemIcon(id, sim) {
   return item?.exists && Number.isInteger(item.spritenum) ? { sheet: 'showdown', num: item.spritenum } : null;
 }
 
-const GROUPS = ['medicine', 'ball', 'battle', 'train', 'tm', 'evolve', 'other', 'treasure', 'field', 'key'];
-const GROUP_OF = { candy: 'train', stone: 'evolve', held: 'other', custom: 'other' };
+export const BAG_GROUPS = Object.freeze(['medicine', 'ball', 'battle', 'tm', 'other', 'treasure', 'key']);
+const GROUP_OF = { candy: 'other', train: 'other', stone: 'other', evolve: 'other', held: 'other', field: 'other', custom: 'other' };
+
+const OTHER_RANK = { train: 0, candy: 0, stone: 1, evolve: 1, held: 2, field: 3, custom: 4 };
+
+export const bagGroup = (id, sim, trade) => { const kind = itemKind(id, sim, trade); return GROUP_OF[kind] ?? kind; };
 const ORDER = [...Object.keys(BAG_ITEMS), ...Object.keys(BALLS), 'rarecandy', ...Object.keys(OUTSIDE_ITEMS)];
 export function bagView(state, sim, lang, trade) {
   const names = namesFor(lang, sim);
@@ -508,10 +517,13 @@ export function bagView(state, sim, lang, trade) {
   const rows = Object.entries(state.bag ?? {}).filter(([, n]) => n > 0).map(([id, count]) => {
     const kind = itemKind(id, sim, trade);
 
-    return { id, count, name: itemLabel(state, id, names, { bag: true }), kind, icon: kind === 'custom' ? { emoji: customInfo(state, id)?.emoji ?? '' } : itemIcon(id, sim),
-      group: GROUP_OF[kind] ?? kind };
-  }).sort((a, b) => rank(a.id) - rank(b.id) || (a.kind === 'tm' && b.kind === 'tm' ? a.id.localeCompare(b.id) : a.name.localeCompare(b.name, lang)));
-  return GROUPS.map(group => ({ group, label: say(lang, `panel.group.${group}`), items: rows.filter(r => r.group === group) })).filter(g => g.items.length);
+    const info = kind === 'custom' ? customInfo(state, id) : null;
+    const owner = ITEM_EFFECTS_READY && info?.owner ? ownerName(state, id, species => displayName(sim.Dex, names, species, '')) : '';
+    const tag = ITEM_EFFECTS_READY ? [info?.effect && say(lang, `panel.tag.${info.effect}`), owner].filter(Boolean).join(' · ') : '';
+    return { id, count, name: itemLabel(state, id, names, { bag: true }), kind, icon: kind === 'custom' ? { emoji: info?.emoji ?? '' } : itemIcon(id, sim),
+      group: bagGroup(id, sim, trade), ...(tag ? { tag } : {}) };
+  }).sort((a, b) => (a.group === 'other' && b.group === 'other' ? (OTHER_RANK[a.kind] ?? 9) - (OTHER_RANK[b.kind] ?? 9) : 0) || rank(a.id) - rank(b.id) || (a.kind === 'tm' && b.kind === 'tm' ? a.id.localeCompare(b.id) : a.name.localeCompare(b.name, lang)));
+  return BAG_GROUPS.map(group => ({ group, label: say(lang, `panel.group.${group}`), items: rows.filter(r => r.group === group) })).filter(g => g.items.length);
 }
 
 export function puffFood(id, lang) {
@@ -544,10 +556,11 @@ export function panelModel({ state, ctx, lang, locked = false, resume = false, d
   const tabs = TABS;
   const tab = tabs.includes(ui.tab) ? ui.tab : 'party';
   const subs = travelSubs({ trip: !!(compat && travel), badges: !!(compat || debug) }), sub = travelSub(ui, subs);
+  const alerts = { party: state.party.some(m => pendingCount(m) > 0), box: false, bag: false };
   return {
     lang, open: !!ui.open, tab, tabs, travel: compat ? travel : null, compat: !!compat, subs, sub, locked, resume: !!resume, screen,
     dex: tab === 'travel' && sub === 'dex' && !screen ? dexView({ state, sim, lang, names: namesFor(lang, sim), ui, home: dexHome, regions: dexRegions, mentions: dexMentions }) : null,
-    alerts: { party: state.party.some(m => pendingCount(m) > 0), box: false, bag: false },
+    alerts,
     party, box: { index, count, name: boxName(state, index, lang), cells },
     bag: { money, groups: bagView(state, sim, lang, ctx.tradeEvolution) },
     add: debug ? addable(state, locked) : null, debug: !!debug,
@@ -564,6 +577,7 @@ export function panelModel({ state, ctx, lang, locked = false, resume = false, d
     picked: ui.ask?.uid ?? ui.menu?.uid ?? ui.select?.uid ?? ui.menu?.item ?? ui.select?.item ?? ui.count?.item ?? null,
 
     window: (screen && !ui.message ? screen.window : null) ?? windowOf(ui, lang, sim),
+    bar: { on: !!ui.gathered && !ui.open, alert: !!resume || Object.values(alerts).some(Boolean) },
   };
 }
 
@@ -574,7 +588,8 @@ function healChanges(state, ctx) {
   const look = mon => JSON.stringify([mon.hp ?? maxHp(sim, mon.set, format), mon.status || '', mon.set.moves.map(m => movePp(sim, mon, m, format).pp)]);
   const healed = clone(state);
   healParty(healed, ctx);
-  return state.party.some((mon, i) => look(mon) !== look(healed.party[i]));
+
+  return (state.restsUsed ?? 0) > 0 || state.party.some((mon, i) => look(mon) !== look(healed.party[i]));
 }
 
 function windowOf(ui, lang, sim) {
@@ -602,13 +617,15 @@ function windowOf(ui, lang, sim) {
   return null;
 }
 
-export const initialUi = () => ({ open: false, tab: 'party', box: 0, menu: null, select: null, ask: null, moves: null, stats: null, count: null, message: null, gym: null, screen: null, pairHidden: false,
+export const initialUi = () => ({ open: false, gathered: true, tab: 'party', box: 0, menu: null, select: null, ask: null, moves: null, stats: null, count: null, message: null, gym: null, screen: null, pairHidden: false,
   sub: null, dex: null, dexOpen: null });
 
 const calm = ui => ({ ...ui, menu: null, select: null, ask: null, moves: null, stats: null, count: null, message: null, gym: null, dexOpen: null });
 const findIn = (list, uid) => list.find(m => m.uid === uid) ?? null;
 
 const fold = ui => ({ ui: { ...ui, open: false }, effect: null });
+
+const outside = ui => (ui.open ? fold(ui) : { ui: { ...ui, gathered: true }, effect: null });
 
 export function backStep(ui) {
   if (!ui.open) return null;
@@ -673,6 +690,8 @@ function reduceRaw(ui, hit, env) {
       if (ui.tab === hit.tab) return { ui: { ...ui, open: true }, effect: null };
       return { ui: { ...calm(ui), open: true, tab: hit.tab, screen: null }, effect: null };
     case 'fold': return fold(ui);
+    case 'bar': return { ui: { ...ui, gathered: false }, effect: null };
+    case 'outside': return outside(ui);
     case 'sub': return { ui: { ...calm(ui), sub: hit.sub }, effect: null };
     case 'lvnext': {
       const mon = findIn(party, hit.uid);
@@ -945,7 +964,7 @@ export const rememberScreen = mon => ({ kind: 'remember', uid: mon.uid, move: 0 
 
 export const screenTab = screen => (screen?.kind === 'summary' && screen.where === 'box' ? 'box' : 'party');
 
-export const ASKING = new Set(['ask', 'pick', 'giveup']);
+export const ASKING = new Set(['ask', 'pick', 'forget', 'giveup']);
 
 export function liveScreen(screen, { state, ctx, locked = false }) {
   if (!screen) return null;
@@ -1033,7 +1052,9 @@ function screenPress(ui, hit, { state, ctx }) {
     case 'ask scNo': case 'pick scNo': return set({ step: 'giveup' });
     case 'giveup scNo': return set({ step: 'ask' });
     case 'giveup scYes': return decide(ui, mon, { ...screen, step: 'skipped' }, { learned: false });
-    case 'pick scForget': {
+    case 'pick scForget': return mon.set.moves[screen.show - 1] ? set({ step: 'forget' }) : same;
+    case 'forget scNo': return set({ step: 'pick' });
+    case 'forget scYes': {
       const forgot = mon.set.moves[screen.show - 1];
       return forgot ? decide(ui, mon, { ...screen, step: 'done', forgot }, { learned: true, forgot }) : same;
     }
@@ -1048,7 +1069,11 @@ function screenPress(ui, hit, { state, ctx }) {
     }
     default:
 
-      if (hit.t === 'scMove' && Number.isInteger(hit.i) && hit.i >= 0 && hit.i <= mon.set.moves.length) return set({ show: hit.i });
+      if (hit.t === 'scMove' && Number.isInteger(hit.i) && hit.i >= 0 && hit.i <= mon.set.moves.length) {
+        if (screen.step === 'pick' && hit.i > 0 && hit.i === screen.show) return set({ step: 'forget' });
+        if (screen.step === 'forget') return hit.i === screen.show ? same : set({ step: 'pick', show: hit.i });
+        return set({ show: hit.i });
+      }
       return same;
   }
 }

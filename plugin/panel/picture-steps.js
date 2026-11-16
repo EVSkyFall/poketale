@@ -1,4 +1,3 @@
-// Ordered image sources for panel pictures.
 import { POKEROGUE_BOXES } from 'embedded:pokerogue-boxes';
 import { DEFAULT_ASSET_BASE } from '../../view/assets.js';
 import { pokerogueReference } from '../../view/sprites/pokerogue-reference.js';

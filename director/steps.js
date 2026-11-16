@@ -77,7 +77,9 @@ export function createSteps({ battle, view, names, warn, bag, options, run, mode
     const trainerName = partner ?? trainer ?? battle.sides[sideIndexOf(a[0])].name;
 
     const enemyTrainerTurn = !player && !!previous && kind === 'switch' && !wild;
-    const showing = enemyTrainerTurn ? view.showTrainer?.() : null;
+
+    const slot = trainer || (sideIndexOf(a[0]) === 3 && !battle.sides[3]?.pokemon?.some(p => p.m.split)) ? 'partner' : 'trainer';
+    const showing = enemyTrainerTurn ? view.showTrainer?.({ slot }) : null;
     const recalling = previous && !previous.fainted && kind === 'switch';
     if (recalling) {
 
@@ -96,7 +98,8 @@ export function createSteps({ battle, view, names, warn, bag, options, run, mode
     const encounter = !player && !previous && kind === 'switch' && !event.joins && !!view.encounter;
 
     const { ball } = ledger.get(a[0]);
-    const summon = () => view.summon(side, { ...mon }, { fromBall: !wildAppears, ...(ball ? { ball } : {}) });
+
+    const summon = () => view.summon(side, { ...mon }, { fromBall: !wildAppears, ...(ball ? { ball } : {}), ...(partner ? { partner: true } : {}) });
 
     if (kind === 'drag') { await Promise.all([sayAlong('battle.pokemonDraggedOut', { pokemonName: mon.name }), summon()]); return; }
     if (previous || player) {

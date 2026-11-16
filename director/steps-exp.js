@@ -67,7 +67,9 @@ export function createLearnSteps(view, lang = DEFAULT_LANG) {
       await say('battle.learnMoveReplaceQuestion', { moveName }, false);
       if (await view.confirm()) {
         await say('battle.learnMoveForgetQuestion');
-        const slot = await view.chooseForgetMove({ mon, moves, newMove });
+
+        const forgetQuestions = moves.map(move => expText('own.learnMoveForgetConfirm', { moveName: move.name }, { lang }));
+        const slot = await view.chooseForgetMove({ mon, moves, newMove, forgetQuestions });
         if (Number.isInteger(slot) && slot >= 0 && slot < moves.length) {
           await commit(slot);
           // The pauses and the 'poof' sound of "1, 2, ... ... poof!" (@d/@s kept for the message window to handle)

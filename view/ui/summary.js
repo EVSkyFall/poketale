@@ -1,5 +1,5 @@
 // from pokerogue src/ui/handlers/summary-ui-handler.ts (SummaryUiMode.DEFAULT, Page.PROFILE/STATS/MOVES) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-12. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-16. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/handlers/party-ui-handler.ts (processSummaryOption) @ 7d7da4a8 (AGPL-3.0-only)
 
 import { placeSprite } from '../sprites/placement.js';

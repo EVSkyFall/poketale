@@ -1,3 +1,5 @@
+import { pushBack } from './contextmenu.js';
+
 const KEYS = ['7', '8', '9', '4', '5', '6', '1', '2', '3', '.', '0', 'delete'];
 
 export function padText(text, key, { ints, decimals, sign = false }) {
@@ -75,10 +77,11 @@ export function openNumberPad({ parent, title, range = '', format = text => text
 
   const covered = [...parent.children];
   const before = covered.map(el => el.inert);
-  let done = false;
+  let done = false, popBack = () => {};
   function finish(then) {
     if (done) return;
     done = true;
+    popBack();
     pad.remove();
     covered.forEach((el, i) => { el.inert = before[i]; });
     then();
@@ -94,6 +97,7 @@ export function openNumberPad({ parent, title, range = '', format = text => text
   pad.addEventListener('pointerdown', e => { if (e.target === pad) finish(onCancel); });
   for (const el of covered) el.inert = true;
   parent.append(pad);
+  popBack = pushBack(pad, () => finish(onCancel));
   draw();
   pad.focus();
   return { close: () => finish(onCancel) };

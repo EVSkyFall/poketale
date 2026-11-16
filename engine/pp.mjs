@@ -2,7 +2,6 @@ import { toID } from './mon.mjs';
 
 export const MAX_PP_UPS = 3;
 
-// PP Up count usable on this move (clamped to an integer 0-3; 0 for noPPBoosts)
 export function ppUpCount(move, ups) {
 	if (!move || move.noPPBoosts) return 0;
 	const n = Math.trunc(Number(ups) || 0);

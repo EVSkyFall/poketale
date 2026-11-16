@@ -3,8 +3,28 @@ import { hpPercentOf, trainersOf, isEgg, stateFormat } from './state.mjs';
 import { createNamer, STATUS_EN, nicknamed, battleKind, ownLabel } from './ai-names.mjs';
 import { outcomeText, opponentText, partnerField, BACK_TO_BACK } from './prompts.mjs';
 import { COMPAT_VAR } from './compat.mjs';
-import { customText } from './custom-items.mjs';
+import { customText, customInfo, ownerName } from './custom-items.mjs';
+import { TOOL_EFFECTS } from './tools.mjs';
+import { ITEM_EFFECTS_READY } from './item-effects.mjs';
 import { battleStatusLines, actRules } from './act-prompts.mjs';
+
+const FOE_LOOK_FORMAT = 'foe partner gender: male|female\nfoe partner look: preschooler|boy|girl|young man|young woman|middle-aged man|middle-aged woman|old man|old woman';
+const LOOK_FORMAT = 'look: preschooler|boy|girl|young man|young woman|middle-aged man|middle-aged woman|old man|old woman';
+
+const FOE_LOOK_LINE = '- foe partner gender, foe partner look: The second Trainer\'s gender and apparent age, written the same way as gender and look. For twins drawn alike, give foe partner the same name as the opponent.';
+
+const COLOR_FORMAT = 'hair: color\noutfit: color';
+const FOE_COLOR_FORMAT = 'foe partner hair: color\nfoe partner outfit: color';
+
+const COLOR_LINE = "- hair, outfit, foe partner hair, foe partner outfit: Optional, Trainers only. Hair and clothes colors as the story describes them (e.g., hair: blonde; outfit: red jacket, blue jeans). For a Trainer in a hat, give the hat's color as hair.";
+
+const STYLE_FORMAT = 'style: outfit';
+const FOE_STYLE_FORMAT = 'foe partner style: outfit';
+
+const STYLE_LINES = '- style, foe partner style: Optional, Trainers only. The kind of outfit: casual, formal, uniform, work, medical, sporty, outdoor, swimwear, winter, stage, punk, mystic.\n'
+  + '- class: When one fits, use one of these: clown, nurse, police officer, maid, fisherman, cyclist, biker, or a grunt of Team Rocket, Team Aqua, Team Magma, Team Galactic, Team Plasma, Team Flare, Team Skull, Team Star, Aether Foundation, or Macro Cosmos.';
+
+const REGION_LINE = "- Trainers and wild Pokémon use Pokémon native to the current region, keeping the world immersive; only a reason in the story brings in others. Pick each Trainer's team the way they would in their own world and era. Named characters from the games use their original team for the story's time. Strong Trainers stay in character too: no Pokémon picked from competitive play just to win, and a stronger team still comes from the region.";
 
 export const BATTLE_ENTRY = `@@depth 0
 
@@ -17,7 +37,9 @@ Battles are played out separately from the story. Whenever a battle is about to 
 opponent: wild|trainer
 name: name
 gender: male|female
-look: boy|girl|young man|young woman|middle-aged man|middle-aged woman|old man|old woman
+${LOOK_FORMAT}
+${COLOR_FORMAT}
+${STYLE_FORMAT}
 class: class
 rank: normal|boss
 place: place
@@ -25,6 +47,9 @@ format: single|double
 partner: name
 partner pokemon: Species Lv{n} | field value | …
 foe partner: name
+${FOE_LOOK_FORMAT}
+${FOE_COLOR_FORMAT}
+${FOE_STYLE_FORMAT}
 foe partner pokemon: Species Lv{n} | field value | …
 pokemon: Species Lv{n} | field value | …
 </pkb-battle>
@@ -38,12 +63,18 @@ pokemon: Species Lv{n} | field value | …
 - format: double when two Pokémon on each side battle at once, such as a Double Battle or two wild Pokémon appearing together. Leave it out otherwise.
 - partner: The name of a Trainer fighting on {{user}}'s side (a Tag Battle), written like name. One partner pokemon line per Pokémon, up to 6.
 - foe partner: The name of a second Trainer fighting beside the opponent, such as the other of a pair of twins, written like name. One foe partner pokemon line per Pokémon, up to 3.
+${FOE_LOOK_LINE}
+${COLOR_LINE}
+${STYLE_LINES}
 - pokemon: One line per Pokémon in sending-out order; 1 for a wild Pokémon (2 in a double battle), up to 6 for a Trainer (3 when there is a foe partner). Species and level are required. Optional fields: ability, moves, item, nature, gender, shiny, tera, ivs (e.g., 6V or 31/31/31/31/31/0 in HP/Atk/Def/SpA/SpD/Spe order), nickname (in the story's language), hp (e.g., 60%), status (par, brn, slp, frz, psn, tox). Anything left out is filled in automatically.
 - Use official English names for species, moves, items, abilities, and natures.
+${REGION_LINE}
 
 ### Battle Results
 - A [Battle Result | …] line is the outcome of the battle. Continue the story from it.
-- If the story ends a battle before it finishes, output <pkb-end>result: win|loss|stopped</pkb-end> at the end of the response.
+- A [Battle Pending] or [Battle In Progress] line means that battle's Battle Block is already out, so no new Battle Block is needed for it.
+- When the same response also has a Change Block, put it before the Battle Block. During a battle already in progress (a [Battle In Progress] line is shown), no Change Block is needed.
+- If the story decides or drops a pending or in-progress battle instead of playing it out, output <pkb-end>result: win|loss|stopped</pkb-end> at the end of the response.
 
 ### Example
 \`\`\`
@@ -60,10 +91,33 @@ pokemon: Onix Lv14 | moves Tackle, Rock Tomb | item Hard Stone
 </pkb-battle>
 \`\`\``;
 
+export const SHOP_ENTRY = `@@depth 0
+
+## Shop Block
+When {{user}} goes into a shop, output exactly one Shop Block at the end of that response. The response can end at that moment.
+
+### Format
+<pkb-shop>
+shop: mart|department
+name: name
+</pkb-shop>
+
+### Field Descriptions
+- shop: mart for a Poké Mart or a small shop, department for a department store.
+- name: Optional. The shop's name, in the story's language.
+- {{user}} can buy through the Shop Block, and those purchases come back afterwards. Narrate only the purchases {{user}}'s message states, with a Change Block as usual.`;
+
+const ITEM_LINE = 'item: Emoji Item +{n} | Emoji Item -{n}';
+
+const ITEM_FORMAT_LINE = ITEM_EFFECTS_READY ? `${ITEM_LINE}\nitem: Emoji Item +{n} | effect type for name` : ITEM_LINE;
+
+const ITEM_TAG_LINE = "- effect: A story-only item may have one effect: food (a Pokémon can eat it), cheer (a keepsake of one of {{user}}'s Pokémon), taunt or distract (something that provokes or distracts one opponent). For cheer, taunt, and distract, write for and the name of that Pokémon or trainer after the effect. hold lines and an add line's item take the same field. Write no effect for anything else.";
+const ITEM_TAG_LINES = ITEM_EFFECTS_READY ? `\n${ITEM_TAG_LINE}` : '';
+
 export const CHANGE_ENTRY = `@@depth 0
 
 ## Pokémon Changes
-{{user}}'s Pokémon, storage, and bag are tracked automatically and shown below. When the story changes them outside battle, output one Change Block at the end of the response.
+{{user}}'s Pokémon, storage, and bag are tracked automatically and shown below. When the story changes them, output one Change Block at the end of the response.
 
 ### Current Party
 {{getvar::pkb_party}}
@@ -81,7 +135,7 @@ add: Species Lv{n} | nickname name | box | ot name
 egg: Species | Species box
 level: #N +{levels}
 heal: all | #N | #N 50% | #N status | #N revive
-item: Emoji Item +{n} | Emoji Item -{n}
+${ITEM_FORMAT_LINE}
 release: #N
 deposit: #N
 withdraw: box N
@@ -96,16 +150,15 @@ teach: #N Move | #N Move forget Move
 - Output only the lines that apply, one change per line.
 - #N is the number in Current Party; box N is the number in Current Storage.
 - HP is a percentage of max HP; 0% means fainted. Status is Normal, Paralyzed, Burned, Asleep, Frozen, Poisoned, Badly Poisoned, or Fainted.
-- add: A new Pokémon joins {{user}}; it goes to storage when the party is full or with box. It takes the same optional fields as a Battle Block pokemon line; anything left out is filled in automatically.
+- add: A new Pokémon joins {{user}}; it goes to storage when the party is full or with box. It takes optional fields (e.g., moves, item, nature, ivs); anything left out is filled in automatically.
   ot is the original trainer's name, only when {{user}} receives a Pokémon someone else raised (e.g., a trade).
 - egg: An Egg {{user}} receives. Write only the species that will hatch from it; everything else is filled in automatically. It goes to storage when the party is full or with box.
 - level: When time passes in the story (e.g., days of travel, a time skip), raise levels as that time warrants, even if no one mentions it. Pokémon in storage stay as they are.
 - heal: Restores HP fully or by a percentage, cures status only, or revives a fainted Pokémon (e.g., a Pokémon Center visit or a full night's sleep anywhere → heal: all).
 - teach: Adds a move; with forget, it replaces that move. Without forget, {{user}} chooses later which move to forget.
-- item, hold: Start every item name with one emoji that fits the item (e.g., 🧪 Potion, 🗺️ Old Map). An item that exists only in the story keeps the name you give it, written in the story's language.
+- item, hold: Start every item name with one emoji that fits the item (e.g., 🧪 Potion, 🗺️ Old Map). An item that exists only in the story keeps the name you give it, written in the story's language.${ITEM_TAG_LINES}
 - Use official English names for species, moves, and official items. Write nicknames and story-only items in the story's language.
 - Changes listed in <pkb-log> are already applied, including any that {{user}}'s message also describes.
-- Do not output a Change Block while a battle is in progress.
 
 ### Example
 After a time skip with level gains, a capture, and a gift:
@@ -119,8 +172,8 @@ item: 🗺️ Old Map +1
 
 const section = (text, name) => {
   const start = text.indexOf(`### ${name}\n`);
-  const next = text.indexOf('\n### ', start + 1);
-  return text.slice(start, next < 0 ? undefined : next).trim();
+  const ends = ['\n### ', '\n## '].map(h => text.indexOf(h, start + 1)).filter(i => i >= 0);
+  return text.slice(start, ends.length ? Math.min(...ends) : undefined).trim();
 };
 
 export const BATTLE_BLOCK_PART = ['Format', 'Field Descriptions', 'Example'].map(name => section(BATTLE_ENTRY, name)).join('\n\n');
@@ -136,8 +189,12 @@ const TRAINER_PREFIX = `${PREFIX}지난 배틀 · `;
 const comment = (name, content) => `${PREFIX}${name} (판 ${hashKey(content).slice(0, 6)})`;
 
 const LORE_INSERT_ORDER = 935;
+
+const withOrder = entries => entries.map((e, i) => ({ ...e, insertorder: LORE_INSERT_ORDER - i }));
+
 const entriesOf = battle => [
-  { name: '배틀 블록', content: battle },
+  { name: '배틀 블록', content: battle, battle: true },
+  { name: '상점', content: SHOP_ENTRY },
   { name: '포켓몬 변경', content: CHANGE_ENTRY },
 ].map(e => ({ ...e, comment: comment(e.name, e.content) }));
 
@@ -147,16 +204,20 @@ export const LORE_ENTRIES_OTHER = entriesOf(BATTLE_ENTRY_OTHER);
 
 const entriesFor = (chat, other) => ((other ?? kindIn(chat) ?? false) ? LORE_ENTRIES_OTHER : LORE_ENTRIES);
 
+const fixedFor = (chat, other, battles) => withOrder(entriesFor(chat, other)).filter(e => battles || !e.battle);
+
 const isOurs = entry => typeof entry?.comment === 'string' && entry.comment.startsWith(PREFIX);
 const isTrainer = entry => isOurs(entry) && entry.comment.startsWith(TRAINER_PREFIX);
 const isFixed = entry => isOurs(entry) && !isTrainer(entry);
 
+export const trainerEntries = chat => (chat?.localLore ?? []).filter(isTrainer);
+
 const newUuid = () => globalThis.crypto.randomUUID();
 
-export function setLore(chat, on, { newId = newUuid, other = null } = {}) {
-  if (loreInLine(chat, on, other)) return false;
+export function setLore(chat, on, { newId = newUuid, other = null, battles = true } = {}) {
+  if (loreInLine(chat, on, other, battles)) return false;
   const before = chat.localLore ?? [];
-  chat.localLore = on ? [...before.filter(entry => !isFixed(entry)), ...entriesFor(chat, other).map((e, i) => ({ key: '', secondkey: '', insertorder: LORE_INSERT_ORDER - i, comment: e.comment, mode: 'normal',
+  chat.localLore = on ? [...before.filter(entry => !isFixed(entry)), ...fixedFor(chat, other, battles).map(e => ({ key: '', secondkey: '', insertorder: e.insertorder, comment: e.comment, mode: 'normal',
     alwaysActive: true, selective: false, useRegex: false, id: newId(), content: e.content }))] : before.filter(entry => !isOurs(entry));
   // Compatibility-mode marker: entries wrapped in the bot card (story/compat.mjs) are dropped in this chat
   chat.scriptstate ??= {};
@@ -168,20 +229,20 @@ const COMPAT_KEY = `$${COMPAT_VAR}`;
 const compatOn = chat => chat?.scriptstate?.[COMPAT_KEY] === '1';
 export const hasLore = chat => (chat?.localLore ?? []).some(isOurs);
 
-export const loreInLine = (chat, on, other = null) => (on ? loreUpToDate(chat, other)
+export const loreInLine = (chat, on, other = null, battles = true) => (on ? loreUpToDate(chat, other, battles)
   : !hasLore(chat) && !(COMPAT_KEY in (chat?.scriptstate ?? {})) && !Object.values(VARS).some(name => name in (chat?.scriptstate ?? {})));
 
-export function loreUpToDate(chat, other = null) {
-  return compatOn(chat) && entriesAre(chat, entriesFor(chat, other));
+export function loreUpToDate(chat, other = null, battles = true) {
+  return compatOn(chat) && entriesAre(chat, fixedFor(chat, other, battles));
 }
 function entriesAre(chat, entries) {
   const ours = (chat?.localLore ?? []).filter(isFixed);
-  return ours.length === entries.length && entries.every((e, i) => ours[i]?.comment === e.comment && ours[i]?.content === e.content && ours[i]?.insertorder === LORE_INSERT_ORDER - i);
+  return ours.length === entries.length && entries.every((e, i) => ours[i]?.comment === e.comment && ours[i]?.content === e.content && ours[i]?.insertorder === e.insertorder);
 }
 
 function kindIn(chat) {
-  if (entriesAre(chat, LORE_ENTRIES_OTHER)) return true;
-  return entriesAre(chat, LORE_ENTRIES) ? false : null;
+  if (entriesAre(chat, withOrder(LORE_ENTRIES_OTHER))) return true;
+  return entriesAre(chat, withOrder(LORE_ENTRIES)) ? false : null;
 }
 
 export function pastBattleLine(trainer, { lang = 'ko', en = null } = {}) {
@@ -220,7 +281,7 @@ export function breedingLabels(state) {
 
 const KIND_LABEL = { double: ['Double Battle'], tag: ['Tag Battle'] };
 
-export function varTexts(state, { sim, battle = null, lang = 'ko', en = null } = {}) {
+export function varTexts(state, { sim, battle = null, lang = 'ko', en = null, effectItems = true } = {}) {
   const namer = createNamer({ lang, en });
   const item = id => customText(state, id) ?? namer.items(id);
   const party = [];
@@ -235,7 +296,7 @@ export function varTexts(state, { sim, battle = null, lang = 'ko', en = null } =
 
       if (battle.stage > 1) party.push(BACK_TO_BACK.defeatedLine(spec, battle.stage));
 
-      if (battle.commands && battle.now) party.push(...battleStatusLines(battle.now, namer, spec), actRules(battle.now));
+      if (battle.commands && battle.now) party.push(...battleStatusLines(battle.now, namer, spec), actRules(battle.now, { tools: battle.tools !== false }));
     }
   }
   (state?.party ?? []).forEach((mon, i) => {
@@ -256,13 +317,22 @@ export function varTexts(state, { sim, battle = null, lang = 'ko', en = null } =
   const pair = breedingLabels(state);
   if (pair) party.push(`[Breeding | ${pair.join(' & ')} are being raised together]`);
   const storage = (state?.box ?? []).map((mon, i) => `${i + 1}: ${isEgg(mon) ? 'Egg' : nicknamed(mon.set.name, namer.species(mon.set.species))}`);
-  const items = Object.entries(state?.bag ?? {}).filter(([, n]) => n > 0).map(([id, n]) => `${item(id)} ×${n}`);
+  const items = Object.entries(state?.bag ?? {}).filter(([, n]) => n > 0).map(([id, n]) => `${item(id)} ×${n}${bagTags(state, id, effectItems)}`);
   return {
     party: party.join('\n'),
     storage: `[Storage | ${storage.length ? storage.join(' | ') : 'Empty'}]`,
     bag: `[Bag | ${items.length ? items.join(' | ') : 'Empty'}]`,
   };
 }
+
+const bagTags = (state, id, tools = true) => {
+  if (!ITEM_EFFECTS_READY) return '';
+  const info = customInfo(state, id);
+  if (!tools && TOOL_EFFECTS.includes(info?.effect)) return '';
+  const owner = info?.owner ? ownerName(state, id) : '';
+  const parts = [info?.effect, owner && `for ${owner}`].filter(Boolean);
+  return parts.length ? ` (${parts.join(' ')})` : '';
+};
 
 export function writeVars(chat, texts) {
   chat.scriptstate ??= {};

@@ -1,6 +1,8 @@
-import { hashKey, norm } from './blocks.mjs';
+import { seededIndex, norm, LOOK_GENDER } from './blocks.mjs';
 import { namedTrainer, namedGender, personalName, cardFace, cardSheet, plainTrainerSprite } from './named.mjs';
+import { classKeyword, styleCell, defaultCell, poolCard, POOL } from './trainer-pool.mjs';
 import { compatTrainerGender } from './compat.mjs';
+import { coloredSprite, showsHair } from './trainer-colors.mjs';
 
 export function opponentGender(battle, chat = null) {
   if (!battle || battle.wild) return null;
@@ -45,24 +47,41 @@ export const SILHOUETTE_PICTURES = LOOK_PICTURES;
 
 export const nameless = battle => !personalName(battle);
 
-export function lookPicture({ look, name, trainerClass } = {}, { key = null, table = LOOK_PICTURES } = {}) {
-  const list = table[look];
+export function lookPicture({ look, name, trainerClass, colors } = {}, { key = null, table = LOOK_PICTURES } = {}) {
+  const list = hairRows(table[look], colors);
   if (!list) return null;
   const seed = norm(personalName({ name, trainerClass })) || key || '';
-  const [sprite, face] = list[parseInt(hashKey(seed), 36) % list.length];
+  const [sprite, face] = list[seededIndex(seed, list.length)];
   return { sprite, face };
 }
 
+function hairRows(rows, colors) {
+  if (!rows || !colors?.hair) return rows;
+  const shown = rows.filter(([sprite]) => showsHair(sprite));
+  return shown.length ? shown : rows;
+}
+
+const painted = (picture, colors, battle) => (colors && picture.sprite && !picture.silhouette && !picture.named
+  ? { ...picture, sprite: coloredSprite(picture.sprite, colors, styled(battle)) } : picture);
+
 const faceOf = sprite => Object.values(LOOK_PICTURES).flat().find(row => row[0] === sprite)?.[1] ?? null;
 
-export function opponentPicture(battle, { key = null, silhouette = false, chat = null } = {}) {
+export function opponentPicture(battle, options = {}) {
+  const picture = basePicture(battle, options);
+  return picture.named ? withoutMark(picture) : painted(picture, battle?.colors, battle);
+}
+
+function basePicture(battle, { key = null, silhouette = false, chat = null, player = null } = {}) {
   if (!battle || battle.wild) return { sprite: null, face: null };
   const named = namedTrainer(battle);
-  if (named) return namedPicture(named);
+  if (named) return { ...namedPicture(named), named: true };
+  if (styled(battle)) return styledPicture(battle, { key, silhouette, chat, player });
   const picture = lookPicture(battle, { key, table: silhouette ? SILHOUETTE_PICTURES : LOOK_PICTURES });
   const sprite = picture?.sprite ?? plainTrainerSprite(opponentGender(battle, chat));
   return silhouette ? { sprite, face: picture?.face ?? faceOf(sprite), silhouette: true } : { sprite, face: picture?.face ?? null };
 }
+
+const withoutMark = ({ named, ...picture }) => picture;
 
 function namedPicture(named) {
   const face = cardFace(named);
@@ -72,11 +91,87 @@ function namedPicture(named) {
 export const opponentPictureWithGender = (battle, options = {}) => ({ ...opponentPicture(battle, options), gender: opponentGender(battle, options.chat) });
 
 export function foePartnerPicture(battle, options = {}) {
-  const named = namedTrainer({ name: battle.foePartner.name });
-  return named ? { ...namedPicture(named), gender: namedGender(named) } : opponentPictureWithGender(battle, options);
+  const second = battle.foePartner;
+  if (battle.wild) return { sprite: null, face: null, gender: null };
+  const named = namedTrainer({ name: second.name });
+  if (named) return { ...namedPicture(named), gender: namedGender(named) };
+
+  const first = { ...withoutMark(basePicture(battle, options)), gender: opponentGender(battle, options.chat) };
+  const firstNamed = !!namedTrainer(battle);
+
+  const secondName = norm(personalName({ name: second.name })), firstName = norm(personalName(battle));
+
+  const sameName = !!secondName && secondName === firstName && (!second.look || second.look === battle.look);
+  const sameLook = !secondName && !!second.look && second.look === battle.look;
+  if (!firstNamed && (sameName || sameLook)) return painted(first, second.colors ?? battle.colors, battle);
+  const { key = null, silhouette = false } = options;
+  const table = silhouette ? SILHOUETTE_PICTURES : LOOK_PICTURES;
+  const firstLook = firstNamed ? null : battle.look;
+  const look = second.look
+    ?? (second.gender ? (firstLook && LOOK_GENDER[firstLook] === second.gender ? firstLook : YOUNG[second.gender]) : firstLook);
+  if (styled(battle)) {
+    const list = poolList({ look, style: second.style, colors: second.colors, gender: second.gender }, options.player);
+    if (list.length) {
+      const sprite = secondPick(second, key, list, s => s === first.sprite);
+      if (sprite) return painted({ sprite, ...poolCard(sprite), ...(silhouette ? { silhouette: true } : {}), gender: second.gender ?? LOOK_GENDER[look] }, second.colors, battle);
+    }
+  }
+  const rows = styled(battle) ? [] : hairRows((look && table[look]) || [], second.colors);
+  if (rows.length) {
+    const [sprite, face] = secondPick(second, key, rows, row => row[0] === first.sprite) ?? [];
+    if (sprite) return painted({ sprite, face, ...(silhouette ? { silhouette: true } : {}), gender: second.gender ?? LOOK_GENDER[look] }, second.colors, battle);
+  }
+  const own = second.gender && plainTrainerSprite(second.gender) !== first.sprite ? second.gender : (first.gender === 'F' ? 'M' : 'F');
+  const sprite = plainTrainerSprite(own);
+  return silhouette ? { sprite, face: faceOf(sprite), silhouette: true, gender: own } : painted({ sprite, face: null, gender: own }, second.colors, battle);
 }
+
+const secondPick = (second, key, list, first) => {
+  const at = seededIndex(norm(personalName({ name: second.name })) || `${key ?? ''}:2`, list.length);
+  return [list[at], list[(at + 1) % list.length]].find(item => !first(item));
+};
+
+const YOUNG = Object.freeze({ M: 'young_man', F: 'young_woman' });
 
 export function partnerPicture(battle) {
   const named = namedTrainer({ name: battle.partner.name });
   return named ? { ...namedPicture(named), gender: namedGender(named) } : { sprite: null, face: null, gender: null };
+}
+
+const styled = battle => Array.isArray(battle?.style);
+
+const PLAYER_PICTURES = Object.freeze({ m: Object.freeze(['player_m', 'player_m_alternate']), f: Object.freeze(['player_f', 'player_f_alternate']) });
+const playerPictures = player => PLAYER_PICTURES[player === 'f' ? 'f' : 'm'];
+
+export function poolList({ look, style = [], colors, gender = null } = {}, player = null) {
+  if (!look) return [];
+  const own = playerPictures(player);
+  const ofGender = list => {
+    const some = gender ? list.filter(sprite => !POOL[sprite].gender || POOL[sprite].gender === gender) : list;
+    return some.length ? some : list;
+  };
+  const usable = list => {
+    const free = ofGender(list).filter(sprite => !own.includes(sprite));
+    const shown = colors?.hair ? free.filter(sprite => showsHair(sprite, true)) : free;
+    return shown.length ? shown : free;
+  };
+  for (const one of style ?? []) {
+    const list = usable(styleCell(look, one));
+    if (list.length) return list;
+  }
+  return usable(defaultCell(look));
+}
+
+function styledPicture(battle, { key, silhouette, chat, player }) {
+  const gender = opponentGender(battle, chat);
+  const keyword = classKeyword(battle.trainerClass);
+  let sprite = keyword ? (gender ? keyword[gender] : keyword.M ?? keyword.F) : null;
+  if (!sprite) {
+    const list = poolList({ ...battle, gender }, player);
+    if (list.length) sprite = list[seededIndex(norm(personalName(battle)) || key || '', list.length)];
+  }
+  const mark = silhouette ? { silhouette: true } : {};
+  if (sprite) return { sprite, ...poolCard(sprite), ...mark };
+  const plain = plainTrainerSprite(gender);
+  return { sprite: plain, face: silhouette ? poolCard(plain).face : null, ...mark };
 }

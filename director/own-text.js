@@ -48,6 +48,8 @@ const KO = {
 
   'own.moveDisabledTaunt': '{{pokemonNameWithAffix}}[[는]] 도발당해서\n{{moveName}}[[를]] 쓸 수 없다!',
 
+  'own.spikyShield': '{{pokemonNameWithAffix}}[[는]]\n{{moveName}}의 데미지를 입었다!',
+
   'own.zPower': '{{pokemonNameWithAffix}}[[는]]\nZ파워를 몸에 둘렀다!',
   'own.zBroken': '{{pokemonNameWithAffix}}[[는]]\n공격을 완전히 막아 내지 못했다!',
   'own.ultraBurst': '{{pokemonNameWithAffix}}[[는]]\n울트라버스트로 원래의 힘을 되찾았다!',
@@ -58,11 +60,19 @@ const KO = {
   'own.revived': '{{pokemonName}}[[는]]\n기운을 되찾았다!',
   'own.ppRestoredAll': '{{pokemonNameWithAffix}}[[는]] {{itemName}}[[로]]\n기술의 PP를 회복했다!',
   'own.ballNoTarget': '포켓몬의 모습이 보이지 않아\n볼을 던질 수 없다!',
+
+  'own.toolCheer': '{{pokemonNameWithAffix}}[[는]]\n힘이 솟아났다!',
+  'own.toolTaunt': '{{pokemonNameWithAffix}}[[는]]\n도발에 넘어가 버렸다!',
+  'own.toolTauntEnd': '{{pokemonNameWithAffix}}[[는]]\n도발의 효과가 풀렸다!',
+  'own.toolDistract': '{{pokemonNameWithAffix}}[[는]]\n정신이 팔렸다!',
+  'own.toolDistractEnd': '{{pokemonNameWithAffix}}[[는]]\n정신을 차렸다!',
   'own.bagLocked': '지금은 가방을\n사용할 수 없다!',
 
   'own.sentToBox': '{{pokemonName}}[[는]]\n박스로 전송되었다!',
 
   'own.expShare': '나머지 포켓몬들도\n경험치를 얻었다!',
+
+  'own.learnMoveForgetConfirm': '정말로 {{moveName}}[[를]] 잊게 하겠습니까?',
 
   'own.mintNote': '{{itemName}}의 효과를 받고 있다.',
 
@@ -72,7 +82,6 @@ const KO = {
   'own.forfeitNote': '패배로 기록됩니다',
 
   'own.alreadyChosen': '{{pokemonName}}[[는]]\n이미 교체하기로 했다!',
-  'own.partnerPokemon': '동료의 포켓몬은 고를 수 없다!',
   'own.swap': '{{pokemonNameWithAffix}}[[와]] {{targetName}}[[는]]\n자리를 바꿨다!',
 
   'own.partnerGo': '{{trainerName}}[[는]] {{pokemonName}}[[를]] 꺼냈다!',
@@ -128,6 +137,7 @@ const EN = {
   'own.micleBerry': '{{pokemonNameWithAffix}} boosted the accuracy of\nits next move using its {{itemName}}!',
   'own.switchedItems': '{{pokemonName}} switched items\nwith its target!',
   'own.moveDisabledTaunt': '{{pokemonNameWithAffix}} can\u2019t use {{moveName}} after the taunt!',
+  'own.spikyShield': '{{pokemonNameWithAffix}} was hurt\nby {{moveName}}!',
   'own.zPower': '{{pokemonNameWithAffix}} surrounded itself\nwith its Z-Power!',
   'own.zBroken': '{{pokemonNameWithAffix}} couldn\'t fully protect\nitself and got hurt!',
   'own.ultraBurst': '{{pokemonNameWithAffix}} regained its true power\nthrough Ultra Burst!',
@@ -136,16 +146,21 @@ const EN = {
   'own.revived': '{{pokemonName}} was revived!',
   'own.ppRestoredAll': '{{pokemonNameWithAffix}}\'s PP was restored\nby the {{itemName}}!',
   'own.ballNoTarget': 'The Pok\u00e9mon can\'t be seen,\nso you can\'t throw a Ball!',
+  'own.toolCheer': '{{pokemonNameWithAffix}} is fired up!',
+  'own.toolTaunt': '{{pokemonNameWithAffix}} fell for the taunt!',
+  'own.toolTauntEnd': '{{pokemonNameWithAffix}} shook off the taunt!',
+  'own.toolDistract': '{{pokemonNameWithAffix}} got distracted!',
+  'own.toolDistractEnd': '{{pokemonNameWithAffix}} regained its focus!',
   'own.bagLocked': 'You can\'t use\nthe Bag right now!',
   'own.sentToBox': '{{pokemonName}} was sent\nto the Box!',
   'own.expShare': 'The rest of your team\ngained Exp. Points!',
+  'own.learnMoveForgetConfirm': 'Forget {{moveName}}?',
   'own.mintNote': 'Under the effect of the {{itemName}}.',
 
   'own.pocket.heal': 'HP/PP', 'own.pocket.status': 'Status', 'own.pocket.battle': 'Battle', 'own.pocket.ball': 'Pok\u00e9 Balls', 'own.pocket.food': 'Food',
   'own.forfeitQuestion': 'Do you really want to run away?',
   'own.forfeitNote': 'It will count as a loss.',
   'own.alreadyChosen': '{{pokemonName}} is already\ngoing in!',
-  'own.partnerPokemon': 'You can\'t choose your partner\'s Pok\u00e9mon!',
   'own.swap': '{{pokemonNameWithAffix}} and {{targetName}}\nswitched places!',
   'own.partnerGo': '{{trainerName}} sent out {{pokemonName}}!',
   'own.partnerPokemonWithAffix': '{{trainerName}}\'s {{pokemonName}}',

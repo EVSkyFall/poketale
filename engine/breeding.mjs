@@ -1,4 +1,3 @@
-// Egg compatibility, inheritance and hatching.
 import breeding from '../data/breeding.json' with { type: 'json' };
 import { completeSet, MAX_IV, MAX_MOVES, SHINY_ODDS, STATS, toID } from './mon.mjs';
 import { REGIONAL_FORMES } from './evolution.mjs';

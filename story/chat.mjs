@@ -4,6 +4,7 @@ import { readSave, writeSave } from './save.mjs';
 import { escapeRe } from './norm.mjs';
 import { RESULT_LINE_RE as RESULT_LINE } from './prompts.mjs';
 import { rulesAt } from './setting-changes.mjs';
+import { battlesOff, quietAt } from './battles-off.mjs';
 
 export { MARK };
 
@@ -71,6 +72,7 @@ export function surveyBattles(chat, table = readTable(chat)) {
   });
   const openings = openingsOf(messages, { open, openedAt, lastResult, attempt: readSave(chat)?.attempt ?? null, spot });
   const held = new Set();
+  const quiet = quietAt(chat);
   const spans = new Map();
   const begin = (info, at, attempt) => {
     if (attempt) info.attempt = { at };
@@ -81,13 +83,15 @@ export function surveyBattles(chat, table = readTable(chat)) {
     if (!battles.get(key)?.discarded) for (const change of spans.get(key) ?? []) held.add(change);
     spans.delete(key);
   };
+  const readAt = rulesAt(chat);
   messages.forEach((message, index) => {
     const text = message?.data ?? '';
     const opened = start => openings.get(spot(index, start));
-    const blocks = findBlocks(text);
+    const reading = readAt(index);
+    const blocks = findBlocks(text, reading);
     const anchored = opened(text.length);
     const events = [
-      ...battlesIn(message, index).map(b => ({ ...b, type: 'battle' })),
+      ...battlesIn(message, index, reading).map(b => ({ ...b, type: 'battle' })),
       ...blocks.filter(b => b.kind === 'end').map((b, n) => ({ ...b, type: 'end', n })),
       ...blocks.filter(b => b.kind === 'change').map((b, n) => ({ ...b, type: 'change', n })),
       ...findTags(text).map(t => ({ ...t, type: 'tag' })),
@@ -99,7 +103,7 @@ export function surveyBattles(chat, table = readTable(chat)) {
       const at = index * 1e6 + seq++;
       if (event.type === 'battle') {
         const info = { key: event.key, index, chatId: message.chatId ?? null, result: null, ended: null, discarded: discarded.has(event.key),
-          attempt: null, phase: 'ready', committed: 'ready', at };
+          attempt: null, phase: 'ready', committed: 'ready', at, quiet: quiet(index) };
         if (battles.has(event.key)) order.splice(order.indexOf(event.key), 1);
         battles.set(event.key, info); order.push(event.key);
         lastBattleKey = event.key;
@@ -135,7 +139,7 @@ export function surveyBattles(chat, table = readTable(chat)) {
     if (info.discarded) info.committed = info.phase = 'discarded';
     if (info.phase === 'ready') info.phase = info.committed;
   }
-  return { battles, lastBattleKey, held };
+  return { battles, lastBattleKey, held, off: battlesOff(chat) };
 }
 
 function openingsOf(messages, { open, openedAt, lastResult, attempt, spot }) {
@@ -172,6 +176,7 @@ export function battlePhase(survey, attempt = null, shown = null) {
     const info = infoOf(k);
     const at = !info ? 'ready' : info.phase === 'open' ? info.committed : info.phase;
     if (at === 'story') return 'done';
+    if (at === 'ready' && (info ? info.quiet : survey?.off)) return 'off';
     return at === 'ready' && key ? 'locked' : at;
   };
   return { key, phase, card };
@@ -217,7 +222,8 @@ export function setFollow(chat, key = null) {
 export const hasFollowMarks = chat => (chat?.message ?? []).some(m => findMarks(m?.data ?? '').some(mark => mark.kind === MARK.here || mark.kind === MARK.moved));
 
 export function findBlockMessage(chat, key) {
-  return (chat?.message ?? []).findIndex((m, i) => battlesIn(m, i).some(b => b.key === key));
+  const readAt = rulesAt(chat);
+  return (chat?.message ?? []).findIndex((m, i) => battlesIn(m, i, readAt(i)).some(b => b.key === key));
 }
 
 export function setMark(chat, key, kind) {
@@ -255,15 +261,17 @@ export function renamedKeys(chat, table = readTable(chat)) {
   const now = new Set(), renamed = [], seen = new Map();
   const same = sameBlockMessage(chat, table);
   const count = text => { seen.set(text, (seen.get(text) ?? 0) + 1); return text; };
+  const readAt = rulesAt(chat);
   (chat?.message ?? []).forEach((message, index) => {
     const text = String(message?.data ?? '');
     if (!/<\s*pkb-/i.test(text)) return;
-    const battles = battlesIn(message, index), acts = actsIn(message, index);
+    const reading = readAt(index);
+    const battles = battlesIn(message, index, reading), acts = actsIn(message, index, reading);
     for (const block of [...battles, ...acts]) now.add(block.key);
     const texts = [...battles.map(b => count(`b:${b.hash}`)), ...acts.filter(a => !a.own).map(a => count(`a:${hashKey(a.body.trim())}`))];
     if (!message.chatId) return;
-    battlesInText(text, `#${index}`).forEach((block, n) => { if (same(block.key, index)) renamed.push([block.key, battles[n].key, texts[n]]); });
-    actsIn({ data: text }, index).filter(block => !block.own).forEach((block, n) => renamed.push([block.key, acts.filter(a => !a.own)[n].key, texts[battles.length + n]]));
+    battlesInText(text, `#${index}`, reading).forEach((block, n) => { if (same(block.key, index)) renamed.push([block.key, battles[n].key, texts[n]]); });
+    actsIn({ data: text }, index, reading).filter(block => !block.own).forEach((block, n) => renamed.push([block.key, acts.filter(a => !a.own)[n].key, texts[battles.length + n]]));
   });
   return new Map(renamed.filter(([key, to, text]) => !now.has(key) && key !== to && seen.get(text) === 1).map(([key, to]) => [key, to]));
 }
@@ -281,10 +289,11 @@ export function relinkedKeys(chat, { table = readTable(chat), renamed = renamedK
   if (!save?.attempt?.block && !last?.block && !Object.values(table.meta ?? {}).some(m => m?.block)) return new Map();
   const messages = chat?.message ?? [];
   const blocks = [], texts = new Map(), marks = [];
+  const readAt = rulesAt(chat);
   messages.forEach((message, index) => {
     const text = String(message?.data ?? '');
     if (!/<\s*pkb/i.test(text)) return;
-    for (const b of battlesIn(message, index)) { blocks.push({ key: b.key, hash: b.hash, index }); texts.set(b.hash, (texts.get(b.hash) ?? 0) + 1); }
+    for (const b of battlesIn(message, index, readAt(index))) { blocks.push({ key: b.key, hash: b.hash, index }); texts.set(b.hash, (texts.get(b.hash) ?? 0) + 1); }
     for (const m of findMarks(text)) marks.push({ ...m, index });
   });
   const present = new Set(blocks.map(b => b.key));
@@ -329,10 +338,11 @@ export function rekeyBattles(chat, { table: read = null, moves = battleMoves(cha
   const messages = chat?.message ?? [];
   const to = key => moves.get(key) ?? key;
   const placeName = id => { const at = /^#(\d+)$/.exec(id ?? '')?.[1]; return (at !== undefined && messages[Number(at)]?.chatId) || id; };
+  const readAt = rulesAt(chat);
 
   const moved = rec => {
     const { blockTime: _, ...rest } = rec;
-    const time = typeof rec.block === 'string' ? blockAnchorIn(chat, to(rec.blockKey)).blockTime : undefined;
+    const time = typeof rec.block === 'string' ? blockAnchorIn(chat, to(rec.blockKey), readAt).blockTime : undefined;
     return { ...rest, blockKey: to(rec.blockKey), ...(time !== undefined ? { blockTime: time } : {}) };
   };
   let changed = false;
@@ -517,7 +527,7 @@ export function storyEndFixes(chat, table = readTable(chat), survey = surveyBatt
   const ends = [];
   for (const info of survey.battles.values()) {
     if (info.committed !== 'story') continue;
-    const block = battlesIn(messages[info.index], info.index).find(b => b.key === info.key);
+    const block = battlesIn(messages[info.index], info.index, rulesAt(chat)(info.index)).find(b => b.key === info.key);
     const battle = block ? readBattleAt(chat, info.index, block.body).spec : null;
     const autosave = info.ended.attempt && attempt?.blockKey === info.key ? attempt.auto ?? null : null;
     if (battle) ends.push({ key: info.key, index: info.ended.index, source: info.ended.source, outcome: info.ended.outcome, battle, autosave });

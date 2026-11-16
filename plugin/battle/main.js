@@ -14,7 +14,7 @@ import { POKE_BALL_ICON } from './settings.js';
 import { guardContextMenu } from './contextmenu.js';
 
 mark('pb:script');
-guardContextMenu(document);
+guardContextMenu(globalThis.document);
 
 (async () => {
   const fetchBytes = createFetchBytes(risuai);

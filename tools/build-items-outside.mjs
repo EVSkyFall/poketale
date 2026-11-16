@@ -23,7 +23,6 @@ for (const r of csv('item_flavor_text.ko.csv')) {
   const old = flavor.get(r.item_id);
   if (!old || Number(r.version_group_id) > Number(old.version_group_id)) flavor.set(r.item_id, r);
 }
-
 // Line breaks stand for spaces between words (wrapped to the game window width)
 const clean = text => text.replace(/\s*\n\s*/g, ' ').replace(/\s{2,}/g, ' ').trim();
 const text = {};
@@ -60,7 +59,6 @@ for (const species of [...Dex.species.all()].sort((a, b) => (a.id < b.id ? -1 : 
   if (species.isNonstandard === 'CAP' || species.isNonstandard === 'Custom') continue;
   let moves = machineMovesOf(species, 9);
   if (!moves.length) {
-
     // No gen 9 learnset: use the latest generation's TM entries
     moves = machineMovesOf(species, null);
     if (moves.length) fallback++;

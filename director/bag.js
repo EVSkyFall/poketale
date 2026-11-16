@@ -6,7 +6,7 @@ import en from './text-bag-en.json' with { type: 'json' };
 import { phrase } from './text.js';
 import { displayName } from '../engine/mon.mjs';
 import { DEFAULT_LANG } from './lang.js';
-import { requestIndex } from './party-slot.js';
+import { cheerOwns } from '../story/tools.mjs';
 
 const PHRASES = { ko, en };
 export const bagText = (key, values = {}, lang = DEFAULT_LANG) => phrase(PHRASES, key, values, lang, 'bag text');
@@ -27,20 +27,23 @@ export const pokemonName = (names, pokemon) => displayName(pokemon.battle.dex, n
 export function createBag({ sim, battle, names, spec, wild, lang = DEFAULT_LANG }) {
   if (!spec) return null;
   const { items = {}, ...options } = spec;
-  const foods = options.foods ?? {};
+  const foods = options.foods ?? {}, tools = options.tools ?? {};
+  const story = { ...foods, ...tools };
+  const isTool = id => Object.hasOwn(tools, id);
   const counts = new Map();
   for (const [id, count] of Object.entries(items)) {
-    if (!BAG_ITEMS[id] && !isBall(id) && !Object.hasOwn(foods, id)) throw new Error(`가방에 넣을 수 없는 도구: ${id}`);
+    if (!BAG_ITEMS[id] && !isBall(id) && !Object.hasOwn(story, id)) throw new Error(`가방에 넣을 수 없는 도구: ${id}`);
     if (!Number.isInteger(count) || count < 0) throw new Error(`도구 개수는 0 이상 정수: ${id}=${count}`);
     counts.set(id, count);
   }
   installBag(sim, battle, { catchRates, ...options, wild });
   const side = battle.sides[0];
   const foodIds = [...counts.keys()].filter(id => Object.hasOwn(foods, id));
-  const pocketItems = pocket => (pocket.id === 'food' ? foodIds : pocket.items);
+  const toolIds = [...counts.keys()].filter(isTool);
+  const pocketItems = pocket => (pocket.id === 'food' ? foodIds : pocket.id === 'battle' ? [...pocket.items, ...toolIds] : pocket.items);
 
   const foodBySource = new Map(foodIds.map(id => [`item: ${bagItem(battle, id).name}`, id]));
-  const itemName = id => (Object.hasOwn(foods, id) ? foods[id].name : names.item(id));
+  const itemName = id => (Object.hasOwn(story, id) ? story[id].name : names.item(id));
   const reason = (check, pokemon) => {
     if (check.ok) return {};
     switch (check.reason) {
@@ -54,18 +57,23 @@ export function createBag({ sim, battle, names, spec, wild, lang = DEFAULT_LANG 
     }
   };
 
-  const targetKind = id => isBall(id) ? 'enemy' : bagItem(battle, id).boost || bagItem(battle, id).crit ? 'active' : 'party';
+  const targetKind = id => {
+    if (isBall(id)) return 'enemy';
+    const item = bagItem(battle, id);
+    if (item.tool) return item.tool === 'cheer' ? 'party' : 'enemy';
+    return item.boost || item.crit ? 'active' : 'party';
+  };
 
-  const left = (id, taken) => counts.get(id) - (taken?.get(id) ?? 0);
+  const left = (id, taken) => (isTool(id) ? Math.min(counts.get(id), 1) : counts.get(id)) - (taken?.get(id) ?? 0);
   function itemView(id, party, position, taken) {
-    const base = { id, name: itemName(id), count: left(id, taken), target: targetKind(id), ...(Object.hasOwn(foods, id) ? { emoji: foods[id].emoji } : {}) };
+    const base = { id, name: itemName(id), count: isTool(id) ? counts.get(id) : left(id, taken), target: targetKind(id),
+      ...(Object.hasOwn(story, id) ? { emoji: story[id].emoji } : {}) };
     if (base.target === 'enemy') return { ...base, ...reason(checkBagItem(battle, { item: id, position })) };
     const active = side.active[position];
     if (base.target === 'active') return { ...base, ...reason(checkBagItem(battle, { item: id, target: active.m.uid, position }), active) };
 
     const slots = party.map((slot, i) => {
-      if (slot.partner) return { blocked: slot.blocked };
-      const pokemon = side.pokemon[requestIndex(party, i)];
+      const pokemon = side.pokemon[i];
       const target = pokemon.m.uid;
       if (!bagItem(battle, id).oneMove) return reason(checkBagItem(battle, { item: id, target, position }), pokemon);
 
@@ -96,9 +104,8 @@ export function createBag({ sim, battle, names, spec, wild, lang = DEFAULT_LANG 
       const kind = targetKind(id);
       if (kind === 'active') pick.target = side.active[position]?.m.uid;
       else if (kind === 'party') {
-
-        if (!Number.isInteger(choice.slot) || !party[choice.slot] || party[choice.slot].partner) throw new Error('Invalid player choice');
-        const pokemon = side.pokemon[requestIndex(party, choice.slot)];
+        if (!Number.isInteger(choice.slot) || !party[choice.slot] || !side.pokemon[choice.slot]) throw new Error('Invalid player choice');
+        const pokemon = side.pokemon[choice.slot];
         pick.target = pokemon.m.uid;
         if (bagItem(battle, id).oneMove) {
           const slot = pokemon.moveSlots[choice.move];
@@ -119,6 +126,13 @@ export function createBag({ sim, battle, names, spec, wild, lang = DEFAULT_LANG 
     itemName,
 
     foodOf: from => foodBySource.get(String(from)),
+
+    cheerSlot(id) {
+      if (bagItem(battle, id)?.tool !== 'cheer') return -1;
+      const named = side.pokemon.filter(p => cheerOwns(story[id], p));
+      const pick = named.find(p => p.isActive) ?? named[0];
+      return pick ? side.pokemon.indexOf(pick) : -1;
+    },
     left: () => Object.fromEntries(counts),
   };
 }

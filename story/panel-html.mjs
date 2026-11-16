@@ -1,7 +1,7 @@
 import { esc, FONT, ICON_BALL } from './card.mjs';
 import { statusShort, PARTY_MAX, BOX_SIZE } from './panel.mjs';
 import { say } from './screen-text.mjs';
-import { moneyText } from './diary.mjs';
+import { moneyAmount } from './diary.mjs';
 import { COMPAT_TABS } from './compat.mjs';
 import { EGG_SPRITE } from '../engine/breeding.mjs';
 import { POKEAPI_BASE } from '../view/sprites/sources.js';
@@ -21,8 +21,8 @@ const directPicture = slot => slot.url ?? panelSpriteUrl(slot.spriteId, slot.shi
 const monImg = src => `<img${src === null ? '' : ` src="${esc(src)}"`} alt="" loading="lazy">`;
 
 const PR_BASE = 'https://raw.githubusercontent.com/pagefaultgames/pokerogue-assets/37789817134f881da0a038af21991ccc93a66372/';
-const PR_ITEMS = `${PR_BASE}images/items.png`;
-const SD_ITEMS = 'https://play.pokemonshowdown.com/sprites/itemicons-sheet.png';
+export const PR_ITEMS = `${PR_BASE}images/items.png`;
+export const SD_ITEMS = 'https://play.pokemonshowdown.com/sprites/itemicons-sheet.png';
 
 export const ICON = {
   // Poke Ball for the party tab; box and bag icons
@@ -98,6 +98,7 @@ export const SIZE = Object.freeze({
   phone: Object.freeze({ max: 640, top: 100, text: 13, sheetMax: 380 }),
   tab: Object.freeze({ w: 40, h: 44, wPhone: 38, hPhone: 38, cur: 46, border: 2.5, gap: 7, pad: 10, foldGap: 4, icon: 24, iconPhone: 22, shadow: 2 }),
   fold: Object.freeze({ min: 24, minTouch: 32, beside: 4 }),
+  bar: Object.freeze({ peek: 2, rise: 4, drop: 480 }),
   touch: Object.freeze({ min: 40, row: 38 }),
   hostBar: 60,
   window: Object.freeze({ room: 120 }),
@@ -108,7 +109,7 @@ export const panelShift = value => (typeof value === 'number' && Number.isFinite
   ? Math.min(SIZE.shift.max, Math.max(SIZE.shift.min, Math.round(value))) : SIZE.shift.default);
 
 const TAP_TARGETS = ['back', 'fold', 'smon', 'quill', 'badge', 'brd', 'rst', 'pairx', 'add', 'nav', 'boxname', 'seg button', 'mini button', 'gclr', 'gnav', 'dxarr', 'dxback', 'dxlk', 'dxpg'];
-const { wide: W, phone: PH, tab: TB, fold: FD } = SIZE;
+const { wide: W, phone: PH, tab: TB, fold: FD, bar: MB } = SIZE;
 
 const SHIFT = 'var(--pkbp-shift,0px)';
 const BELOW = `var(--pkbp-below,calc(${SIZE.hostBar + W.bottomGap}px + env(safe-area-inset-bottom,0px)))`;
@@ -136,7 +137,7 @@ const CSS = [
 
   `${DVH}{${C}{--pkbp-max:${maxBelow('100dvh', W.top)};}}`,
   `${C}${C}-open{--pkbp-tw:${TB.w}px;transform:none;z-index:1100;pointer-events:auto;}`,
-  `${C}-tab,${C}-offer{pointer-events:auto;}`,
+  `${C}-tab,${C}-mbar,${C}-offer{pointer-events:auto;}`,
   `${C}${C}-gone{display:none;}`,
   `${C} *{box-sizing:border-box;}`,
   `:where(${C}) button{font:inherit;margin:0;color:#1d3347;}`,
@@ -162,6 +163,23 @@ const CSS = [
   `${C}-open ${C}-tabs{align-items:flex-end;}`,
     // Task alert mark: a yellow "!"
   `${C}-bang{position:absolute;top:-7px;left:-6px;padding:0 4px;border:1.5px solid #c09a2c;border-radius:8px;background:#ffd84a;color:#6b4a00;font:10px/1.4 sans-serif;}`,
+
+  `${C}-mbar{display:none;order:-1;position:relative;flex:none;width:var(--pkbp-tw);height:${TB.h}px;padding:0 0 0 ${MB.peek * 2}px;border:0;background:none;color:#23435f;cursor:pointer;}`,
+  `${C}-gathered ${C}-mbar{display:block;}`,
+  `${C}-mbf{position:relative;z-index:2;display:flex;align-items:center;justify-content:center;height:100%;border:${TB.border}px solid #23435f;border-right:0;`
+    + `border-radius:9px 0 0 9px;background:linear-gradient(160deg,#ffffff,#e6f0f7);box-shadow:-2px 3px 0 #1a3247;}`,
+  `${C}-mbf::before{content:"";width:min(16px, 100% - 4px);height:4px;border-radius:2px;background:#9fb6c8;}`,
+  `${C}-mbc{position:absolute;right:0;border:${TB.border}px solid #23435f;border-right:0;border-radius:9px 0 0 9px;}`,
+  `${C}-mbc1{z-index:1;left:${MB.peek}px;top:-${MB.rise}px;bottom:${MB.rise + 2}px;background:${TAB_COLOR.box};}`,
+  `${C}-mbc2{z-index:0;left:0;top:-${MB.rise * 2}px;bottom:${MB.rise * 2 + 4}px;background:${TAB_COLOR.party};box-shadow:-2px 3px 0 #1a3247;}`,
+  `${C}-mbar ${C}-bang{z-index:3;top:-${MB.rise * 2 + 3}px;left:-2px;}`,
+  `${C}-mbar:active ${C}-mbf{transform:translateY(2px);box-shadow:-2px 1px 0 #1a3247;}`,
+
+  `${C}-mbar::after{content:"";position:absolute;z-index:3;left:0;right:calc(0px - var(--pkbp-fg));top:-${MB.rise * 2}px;bottom:-${TB.gap / 2}px;}`,
+
+  `${C}-drop{display:flex;flex-direction:column;gap:${TB.gap}px;align-items:inherit;max-height:${MB.drop}px;clip-path:inset(-40px -40px -40px -40px);`
+    + `transition:max-height .32s ease-out,clip-path .32s ease-out;}`,
+  `${C}-gathered ${C}-drop{max-height:0;clip-path:inset(0 -40px 100% -40px);visibility:hidden;transition:max-height .2s ease-in,clip-path .2s ease-in,visibility 0s .2s;}`,
 
   `${C}-sheet{position:relative;z-index:1;display:flex;flex-direction:column;align-self:stretch;visibility:hidden;pointer-events:none;transition:visibility 0s .2s;}`,
   `${C}-open ${C}-sheet{visibility:visible;pointer-events:auto;transition:none;}`,
@@ -300,8 +318,10 @@ const CSS = [
   `${C}-icsd{display:block;width:24px;height:24px;background-image:url("${SD_ITEMS}");background-repeat:no-repeat;image-rendering:pixelated;}`,
   `${C}-icdot{display:block;width:14px;height:14px;margin:5px;border-radius:50%;background:#e9b24c;box-shadow:inset 0 0 0 2px #a5741c;}`,
   `${C}-icem{display:flex;align-items:center;justify-content:center;font-size:${z(19)};}`,
-  `${C}-itn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}`,
-  `${C}-itc{flex:none;font-size:${z(12)};color:#3d5a70;}`,
+  `${C}-itn{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}`,
+  `${C}-itc{flex:none;margin-left:auto;font-size:${z(12)};color:#3d5a70;}`,
+
+  `${C}-itg{flex:0 1 auto;min-width:0;max-width:50%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 5px;border:1px solid #d3e0ea;border-radius:6px;background:#f2f6f9;color:#6a8193;font-size:${z(10)};line-height:1.55;}`,
   `${C}-none{padding:16px 6px;text-align:center;color:#8193a1;font-size:${z(12.5)};}`,
 
   `${C}-hint{margin:0 2px 8px;font-size:${z(12)};color:#5d7486;}`,
@@ -375,7 +395,7 @@ const CSS = [
   `@media (max-width:${PH.max}px){`
     + `${C}{top:${topAt(PH.top)};--pkbp-max:${maxBelow('100vh', PH.top)};--pkbp-z:${PH.text / BASE_TEXT};${foldFit(FD.minTouch, TB.wPhone)}}`
     + `${C}${C}-open{--pkbp-tw:${TB.wPhone}px;}`
-    + `${C}-tab{height:${TB.hPhone}px;} ${C}-tab svg{${iconFit(TB.iconPhone)}}`
+    + `${C}-tab{height:${TB.hPhone}px;} ${C}-mbar{height:${TB.hPhone}px;} ${C}-tab svg{${iconFit(TB.iconPhone)}}`
     + `${C}-board,${C}-board${C}-scr{width:min(${PH.sheetMax}px, calc(100vw - ${TB.wPhone + STRIP}px));}`
     + `}`,
   `${DVH}{@media (max-width:${PH.max}px){${C}{--pkbp-max:${maxBelow('100dvh', PH.top)};}}}`,
@@ -389,7 +409,7 @@ const CSS = [
     + `${C}-opt{display:flex;align-items:center;min-height:${SIZE.touch.row}px;}`
     + `}`,
 
-  `@media (prefers-reduced-motion:reduce){${C},${C}-sheet,${C}-swk::after{transition:none !important;}}`,
+  `@media (prefers-reduced-motion:reduce){${C},${C}-sheet,${C}-drop,${C}-swk::after{transition:none !important;}}`,
   BADGE_CSS,
   DEX_CSS,
   screenCss(PR_BASE),
@@ -403,7 +423,7 @@ export const FLOOR_CLASS = 'x-risu-pkbp-floor';
 
 export const OWN_CLASS = 'x-risu-pkbp-own';
 
-export const PANEL_STATES = Object.freeze({ open: 'x-risu-pkbp-open', locked: 'x-risu-pkbp-locked', gone: 'x-risu-pkbp-gone' });
+export const PANEL_STATES = Object.freeze({ open: 'x-risu-pkbp-open', locked: 'x-risu-pkbp-locked', gone: 'x-risu-pkbp-gone', gathered: 'x-risu-pkbp-gathered' });
 const shell = (tabs, sheet, states = []) => `<div><style>${CSS}</style><div class="${ART_CLASS}"></div><div class="${FLOOR_CLASS}"></div><div class="${['x-risu-pkbp', ...states].join(' ')}">`
   + `<div class="${TABS_CLASS}">${tabs}</div><div class="${SHEET_CLASS}">${sheet}</div></div></div>`;
 
@@ -432,6 +452,11 @@ export function renderPanel(model, { aux = null, picture = directPicture, shift 
     ? `<button type="button" class="${cls('x-risu-pkbp-tab', 'x-risu-pkbp-taux', aux.on && 'x-risu-pkbp-on', hit({ t: 'aux' }))}" aria-pressed="${aux.on}" aria-label="${auxLabel}" title="${auxLabel}">`
       + `${ICON.aux}${aux.on ? '<span class="x-risu-pkbp-lit"></span>' : ''}</button>` : '';
 
+  const barLabel = t('panel.bar');
+  const bar = `<button type="button" class="${cls('x-risu-pkbp-mbar', hit({ t: 'bar' }))}" aria-label="${barLabel}" title="${barLabel}">`
+    + '<span class="x-risu-pkbp-mbc x-risu-pkbp-mbc2"></span><span class="x-risu-pkbp-mbc x-risu-pkbp-mbc1"></span><span class="x-risu-pkbp-mbf"></span>'
+    + `${model.bar.alert ? '<span class="x-risu-pkbp-bang">!</span>' : ''}</button>`;
+
   const note = model.offer?.note
     ? `<div class="x-risu-pkbp-offer" role="dialog" aria-label="${t('panel.offer.ask')}"><div>${t('panel.offer.ask')}</div><div class="x-risu-pkbp-offb">`
       + `<button type="button" class="${cls('x-risu-pkbp-offn', hit({ t: 'later' }))}">${t('panel.offer.later')}</button>`
@@ -439,7 +464,7 @@ export function renderPanel(model, { aux = null, picture = directPicture, shift 
   const lift = panelShift(shift);
   const place = [lift === SIZE.shift.default ? '' : `--pkbp-shift:${lift}px;`, Number.isFinite(below) ? `--pkbp-below:${Math.round(below)}px;` : '',
     Number.isFinite(room) ? `--pkbp-room:${Math.max(0, Math.floor(room))}px;` : ''].join('');
-  const tabs = sideTabs + resume + auxTab + note + (model.travel ? `<style>${COMPAT_TABS_CSS}</style>` : '') + (place ? `<style>${C}{${place}}</style>` : '');
+  const tabs = `<div class="x-risu-pkbp-drop">${sideTabs + resume + auxTab}</div>` + bar + note + (model.travel ? `<style>${COMPAT_TABS_CSS}</style>` : '') + (place ? `<style>${C}{${place}}</style>` : '');
   const out = [];
 
   let base = null, slots = null;
@@ -489,8 +514,8 @@ export function renderPanel(model, { aux = null, picture = directPicture, shift 
     }
   }
   const sheet = base === null ? out.join('') : base.replace(SLOT.over, () => slots['x-risu-pkbp-dxov']).replace(SLOT.win, () => slots['x-risu-pkbp-wslot']);
-  const states = [model.open && PANEL_STATES.open, model.locked && PANEL_STATES.locked].filter(Boolean);
-  return { tabs, sheet, base, slots, dexIcons: !!(model.open && model.dex), open: !!model.open, locked: !!model.locked, html: shell(tabs, sheet, states), hits };
+  const states = [model.open && PANEL_STATES.open, model.locked && PANEL_STATES.locked, model.bar.on && PANEL_STATES.gathered].filter(Boolean);
+  return { tabs, sheet, base, slots, dexIcons: !!(model.open && model.dex), open: !!model.open, locked: !!model.locked, gathered: model.bar.on, html: shell(tabs, sheet, states), hits };
 }
 
 const SLOT = Object.freeze({ over: '\u0000over\u0000', win: '\u0000win\u0000' });
@@ -669,13 +694,15 @@ function bagHtml(model, hit) {
   const { bag, lang } = model;
   const out = [];
 
-  if (bag.money !== null) out.push(`<div class="x-risu-pkbp-money"><span>${esc(say(lang, 'panel.money'))}</span><b>${esc(moneyText(Number(bag.money).toLocaleString(lang), lang))}</b></div>`);
+  if (bag.money !== null) out.push(`<div class="x-risu-pkbp-money"><span>${esc(say(lang, 'panel.money'))}</span><b>${esc(moneyAmount(bag.money, lang))}</b></div>`);
   if (!bag.groups.length) out.push(`<div class="x-risu-pkbp-none">${esc(say(lang, 'panel.bagEmpty'))}</div>`);
   for (const group of bag.groups) {
     out.push(`<div class="x-risu-pkbp-grp">${esc(group.label)}</div>`);
     for (const item of group.items) {
       out.push(`<button type="button" class="x-risu-pkbp-it${model.picked === item.id ? ' x-risu-pkbp-picked' : ''} ${hit({ t: 'item', item: item.id })}">`
-        + `${iconHtml(item.icon)}<span class="x-risu-pkbp-itn">${esc(item.name)}</span><span class="x-risu-pkbp-itc">×${item.count}</span></button>`);
+        + `${iconHtml(item.icon)}<span class="x-risu-pkbp-itn">${esc(item.name)}</span>`
+        + (item.tag ? `<span class="x-risu-pkbp-itg">${esc(item.tag)}</span>` : '')
+        + `<span class="x-risu-pkbp-itc">×${item.count}</span></button>`);
     }
   }
   return out.join('');

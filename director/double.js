@@ -27,7 +27,9 @@ async function forcedSwitches(ctx, request) {
   const party = ctx.partySlots(request, { reviving });
   return forcedPicks(request, party, async (i, chosen) => {
     const slots = withChosen(ctx, party, chosen);
-    const choice = await ctx.view.chooseSwitch({ party: slots, forced: true, position: positionAt(0, i), ...(reviving ? { revive: true } : {}) });
+    const partner = ctx.partner?.();
+    const choice = await ctx.view.chooseSwitch({ party: slots, forced: true, position: positionAt(0, i), ...(reviving ? { revive: true } : {}),
+      ...(partner ? { partner } : {}) });
     return { text: ctx.switchChoice(choice, slots, { reviving }), slot: choice.slot };
   });
 }
@@ -35,7 +37,7 @@ async function forcedSwitches(ctx, request) {
 export async function forcedPicks(request, party, pickOwn) {
   const reviving = isReviving(request);
   const chosen = new Set();
-  const open = () => party.map((slot, j) => j).filter(j => !chosen.has(j) && !party[j].partner
+  const open = () => party.map((slot, j) => j).filter(j => !chosen.has(j)
     && (reviving ? party[j].fainted : !party[j].fainted && !party[j].active));
   const picks = [];
   for (const asked of request.forceSwitch) {
@@ -97,8 +99,9 @@ function commandOptions(ctx, request, i, chosen, taken, { back, gimmickUsed }) {
     };
   });
   const party = withChosen(ctx, ctx.partySlots(request, { trapped: !!active.trapped }), chosen);
+  const partner = ctx.partner?.();
   return {
-    position: positionAt(0, i), ...(back ? { back: true } : {}), moves, canSwitch: true, party,
+    position: positionAt(0, i), ...(back ? { back: true } : {}), moves, canSwitch: true, party, ...(partner ? { partner } : {}),
 
     ...(gimmickUsed ? {} : gimmickOptions(request, gimmicks, i)),
     ...(bag ? { bag: bag.menu(party, i, taken) } : {}),

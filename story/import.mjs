@@ -1,6 +1,6 @@
 import storyNames from '../data/story-names.json' with { type: 'json' };
 import compatWords from '../data/compat-words.json' with { type: 'json' };
-import { lookupId, speciesName, stripForPrompt, hashKey, norm, findBlocks, findTags, findMarks } from './blocks.mjs';
+import { lookupId, speciesName, stripForPrompt, hashKey, norm, hasBlocks, findTags, findMarks } from './blocks.mjs';
 import { namesIn } from '../names/index.js';
 import { dropOocs } from './chat.mjs';
 import { COMPAT_LINES, COMPAT_LINE_RE, COMPAT_FIELD_SEP, compatHead, compatFold, dropTaken } from './compat.mjs';
@@ -11,8 +11,9 @@ import { FRIENDSHIP_MAX, friendshipLocked } from '../engine/friendship.mjs';
 import { STATS, STATUS_IDS } from '../engine/mon.mjs';
 import { evTotal } from './training.mjs';
 import { PARTY_MAX, MAX_LEVEL, MAX_MOVES, MAX_IV, EV_STAT_MAX, EV_TOTAL_MAX, DEBUG_STAT_MAX } from './rules.mjs';
-import { isCustomItem, customItemId, customInfo, splitEmoji, itemId, addCustomItem, tidyCustomItems, DEFAULT_EMOJI, CUSTOM_TAGS } from './custom-items.mjs';
+import { isCustomItem, customItemId, customInfo, splitEmoji, itemId, addCustomItem, tidyCustomItems, itemsWithTags, withItemTags, DEFAULT_EMOJI, CUSTOM_EFFECTS } from './custom-items.mjs';
 import { learnableReader } from './learnable.mjs';
+import { ownerMonOf } from './tools.mjs';
 import learnableTable from '../data/learnable.json' with { type: 'json' };
 
 export const IMPORT_VAR = '$pkb_import';
@@ -445,7 +446,7 @@ export function compatRecords(state, ctx, { lang = 'ko' } = {}) {
   return { lines, storage };
 }
 
-const hasOurs = text => findBlocks(text).length + findTags(text).length + findMarks(text).length > 0;
+const hasOurs = text => hasBlocks(text) || findTags(text).length + findMarks(text).length > 0;
 
 export function handBack(chat, state, ctx, { lang = 'ko', now = Date.now() } = {}) {
   const turn = importTurn(chat);
@@ -456,7 +457,7 @@ export function handBack(chat, state, ctx, { lang = 'ko', now = Date.now() } = {
   const last = messages.findLastIndex(m => m?.role === 'char');
   if (last >= 0 && lines.length) messages[last].data = `${dropTaken(messages[last].data).replace(/\s+$/, '')}\n\n${lines.join('\n')}`;
   chat.scriptstate[`$${COMPAT_FORMAT.storageVar}`] = storage;
-  appendImport(chat, now, HANDBACK_KIND, () => ({ mons: [], bag: {}, kind: HANDBACK_KIND, state: clone(state) }));
+  appendImport(chat, now, HANDBACK_KIND, [], () => ({ mons: [], bag: {}, kind: HANDBACK_KIND, state: withItemTags(clone(state)) }));
   return true;
 }
 
@@ -483,11 +484,17 @@ export function currentMonDraft(ctx, state, uid) {
 
 export const friendshipLockDraft = (ctx, state, uid, locked) => editMon(currentMonDraft(ctx, state, uid), 'e1', 'friendshipLocked', !!locked, ctx);
 
-export function bagDraft(state, { item = null, name = '', emoji = '', add = 1, tags } = {}) {
+export function bagDraft(state, { item = null, name = '', emoji = '', add = 1, effect, owner } = {}) {
   const written = String(name ?? '').trim();
   const id = written ? lookupId('items', written) ?? customItemId(written) : item;
   const known = isCustomItem(id) ? customInfo(state, id) ?? { name: written || id, emoji: splitEmoji(emoji).emoji || DEFAULT_EMOJI } : null;
-  const custom = known && tags !== undefined ? { ...known, tags: CUSTOM_TAGS.filter(tag => tags.includes(tag)) } : known;
+
+  const { ownerMon, ...kept } = known ?? {};
+  const custom = known && {
+    ...(owner !== undefined ? kept : known),
+    ...(effect !== undefined ? { effect: CUSTOM_EFFECTS.includes(effect) ? effect : null } : {}),
+    ...(owner !== undefined ? { owner: String(owner ?? '').trim() } : {}),
+  };
   const now = id ? state?.bag?.[id] ?? 0 : 0;
   return {
     v: 1, kind: DEBUG_KIND, mons: [], warnings: [], pool: [],
@@ -609,10 +616,10 @@ function writeImports(chat, imports) {
 
 const locks = m => m.from.friendshipLocked === 'user' && m.friendshipLocked === true;
 
-export function commitImport(chat, draft, ctx, { now = Date.now() } = {}) {
+export function commitImport(chat, draft, ctx, { now = Date.now(), held = [] } = {}) {
   const problems = draftProblems(draft, ctx);
   if (problems.length) throw refusal(problems);
-  return appendImport(chat, now, JSON.stringify([draft.mons, draft.bag]), id => {
+  return appendImport(chat, now, JSON.stringify([draft.mons, draft.bag]), held, id => {
     const mons = draft.mons.filter(m => m.action !== 'skip').map((m, n) => ({
       action: m.action, uid: m.action === 'update' ? m.match.uid : `i${hashKey(`${id}:${n}`)}`, place: m.place,
       set: { ...Object.fromEntries(SET_FIELDS.map(f => [f, clone(m.set[f])])), item: m.set.item ? itemId(m.set.item) : '', moves: m.set.moves.map(toID) },
@@ -623,22 +630,23 @@ export function commitImport(chat, draft, ctx, { now = Date.now() } = {}) {
     const counts = Object.fromEntries(Object.entries(draft.bag).map(([itemId, e]) => [itemId, e.count]));
     const bag = Object.fromEntries([...new Set([...Object.keys(draft.base.bag), ...Object.keys(counts)])]
       .filter(itemId => (counts[itemId] ?? 0) !== (draft.base.bag[itemId] ?? 0)).map(itemId => [itemId, counts[itemId] ?? 0]));
-    return { mons, bag, ...(draft.kind ? { kind: draft.kind } : {}), ...(Object.keys(draft.customItems ?? {}).length ? { customItems: clone(draft.customItems) } : {}) };
+
+    return { mons, bag, ...(draft.kind ? { kind: draft.kind } : {}), ...(Object.keys(draft.customItems ?? {}).length ? { customItems: itemsWithTags(clone(draft.customItems)) } : {}) };
   });
 }
 
-export const commitDebugHeal = (chat, { now = Date.now() } = {}) => appendImport(chat, now, 'heal', () => ({ mons: [], bag: {}, kind: DEBUG_KIND, heal: 'party' }));
+export const commitDebugHeal = (chat, { now = Date.now() } = {}) => appendImport(chat, now, 'heal', [], () => ({ mons: [], bag: {}, kind: DEBUG_KIND, heal: 'party' }));
 
-export const commitDebugBadges = (chat, badges, { now = Date.now() } = {}) => appendImport(chat, now, `badges:${badges.join(',')}`,
+export const commitDebugBadges = (chat, badges, { now = Date.now() } = {}) => appendImport(chat, now, `badges:${badges.join(',')}`, [],
   () => ({ mons: [], bag: {}, kind: DEBUG_KIND, badges: [...badges] }));
 
-function appendImport(chat, now, key, body) {
+function appendImport(chat, now, key, held, body) {
   const { status, imports } = readImports(chat);
   if (isUnreadable(status)) throw failed('unreadable');
   const messages = chat?.message ?? [];
   let id = `imp${hashKey(`${now}:${imports.length}:${key}`)}`;
   for (let n = 2; imports.some(imp => imp.id === id); n++) id = `imp${hashKey(`${now}:${imports.length}:${n}`)}`;
-  const imp = { id, time: now, at: anchorAtEnd(messages), ...body(id) };
+  const imp = { id, time: now, at: anchorAtEnd(messages), ...body(id), ...(held?.length ? { held: clone(held) } : {}) };
   writeImports(chat, [...imports, imp]);
   return imp;
 }
@@ -728,7 +736,10 @@ export function applyImport(state, imp, ctx) {
     if (count > 0) next.bag[id] = count; else delete next.bag[id];
   }
 
-  for (const [id, info] of Object.entries(isRecord(imp.customItems) ? imp.customItems : {})) addCustomItem(next, id, info);
+  for (const [id, info] of Object.entries(isRecord(imp.customItems) ? imp.customItems : {})) {
+    const ownerMon = isRecord(info) && typeof info.owner === 'string' && info.owner.trim() && !info.ownerMon ? ownerMonOf(next, sim.Dex, info.owner) : null;
+    addCustomItem(next, id, ownerMon ? { ...info, ownerMon } : info);
+  }
   tidyCustomItems(next);
   tidyBreeding(next);
   if (imp.heal === 'party') healParty(next, ctx);

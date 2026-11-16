@@ -1,4 +1,3 @@
-// Time, weather and region parsed from story state.
 export function installField(sim, battle, { weather, terrain }) {
 	if (!weather && !terrain) return;
 	const baseFormat = battle.format;

@@ -38,6 +38,7 @@ function applyInitialState(sim, side, team, sets) {
 		if (member.natureOrig) pokemon.m.natureOrig = member.natureOrig;
 		if (member.ot) pokemon.m.ot = member.ot;
 		if (member.heldCustom) pokemon.m.heldCustom = member.heldCustom;
+		if (member.noTera) pokemon.m.noTera = true;
 
 		applyPpUps(side.battle, pokemon, member.ppUps);
 

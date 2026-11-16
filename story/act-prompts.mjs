@@ -1,5 +1,6 @@
 import { createNamer, STATUS_EN, nicknamed, sceneLines, trainerName, secondName, partnerName, battleKind } from './ai-names.mjs';
 import { collidingPositions } from './blocks.mjs';
+import { ITEM_EFFECTS_READY } from './item-effects.mjs';
 
 // Why the battle could not take a command (director/plan.js reasons) - after "But it failed!"
 const WHY = {
@@ -77,6 +78,15 @@ export const answeredLine = played => (played
   ? 'The command in this message has already been handled above, so no <pkb-act> block is needed. Narrate the battle up to its result and no further.'
   : 'The command in this message is played out separately, so no <pkb-act> block is needed. Narrate the battle up to the command being given and no further.');
 
+export const STORY_ITEM_RULE = 'Story items in the bag can be used in battle with "item <its emoji and name as in the bag> on <Pokémon>": food on any of {{user}}\'s Pokémon; cheer on the Pokémon it is for; taunt or distract on the opponent it is for, in trainer battles only, once per battle.';
+
+export const STORY_FOOD_RULE = 'Story items in the bag can be used in battle with "item <its emoji and name as in the bag> on <Pokémon>": food on any of {{user}}\'s Pokémon.';
+
+const storyItemRule = tools => (tools ? STORY_ITEM_RULE : STORY_FOOD_RULE);
+
+const ITEM_RULE_LINE = ITEM_EFFECTS_READY ? `\n  ${STORY_ITEM_RULE}` : '';
+const auxItemLine = tools => (ITEM_EFFECTS_READY ? `${storyItemRule(tools)}\n` : '');
+
 const SINGLE_ACTIONS = 'a move by its official English name from the [{{user}}\'s Pokémon] line, "switch <Pokémon>", "item <item>" or "run"';
 
 export const ACT_RULES = `- While a battle is in progress, what {{user}} orders in battle is a command, not an outcome. When {{user}} gives a command, end the response with:
@@ -84,7 +94,7 @@ export const ACT_RULES = `- While a battle is in progress, what {{user}} orders 
 turn: player <action> | opponent <action>
 </pkb-act>
   One line per turn: two moves in a row are two lines. "player" is required. Leave out "opponent" to let the opponent decide.
-  Actions: ${SINGLE_ACTIONS}. The opponent uses only the moves on the [Opponent's Pokémon] line.
+  Actions: ${SINGLE_ACTIONS}. The opponent uses only the moves on the [Opponent's Pokémon] line.${ITEM_RULE_LINE}
   In the story, show the command being given (e.g. Pikachu is told to use Thunderbolt), not its result. The result comes in a later message.`;
 
 const DOUBLE_ACTIONS = 'a move by its official English name from that Pokémon\'s line, "switch <Pokémon>", "item <item> on <Pokémon>" or "run"';
@@ -97,20 +107,23 @@ ${DOUBLE_TURN}
 </pkb-act>
   One line per turn: one action for each of {{user}}'s Pokémon on the field, named as on its line. Add the opponent's the same way, or leave them out to let the opponent decide.
   ${DOUBLE_TARGET}
-  Actions: ${DOUBLE_ACTIONS}. The opponent uses only the moves on its lines.
+  Actions: ${DOUBLE_ACTIONS}. The opponent uses only the moves on its lines.${ITEM_RULE_LINE}
   In the story, show the command being given (e.g. Pikachu is told to use Thunderbolt), not its result. The result comes in a later message.`;
 
 export const PARTNER_RULE = "  A partner's Pokémon act on their own.";
 
-export const actRules = status => ({ single: ACT_RULES, double: DOUBLE_ACT_RULES, tag: `${DOUBLE_ACT_RULES}\n${PARTNER_RULE}` }[battleKind(status)]);
+export const actRules = (status, { tools = true } = {}) => {
+  const rules = { single: ACT_RULES, double: DOUBLE_ACT_RULES, tag: `${DOUBLE_ACT_RULES}\n${PARTNER_RULE}` }[battleKind(status)];
+  return ITEM_EFFECTS_READY ? rules.replace(STORY_ITEM_RULE, storyItemRule(tools)) : rules;
+};
 
-export function auxRequest({ status, recent, input, double = false }) {
+export function auxRequest({ status, recent, input, double = false, tools = true }) {
   return [
     { role: 'system', content: "You turn {{user}}'s words in a Pokémon battle story into battle commands. Write no story text." },
     { role: 'user', content: `## Battle Now\n${status.join('\n')}\n\n## Recent Story\n${sceneLines(recent) || '(none)'}\n\n## {{user}}'s New Message\n${input}\n\n`
       + "If {{user}} gives their Pokémon a command, answer with only this block, one line per turn:\n"
       + `<pkb-act>\n${double ? DOUBLE_TURN : 'turn: player <action>'}\n</pkb-act>\n${double ? `${DOUBLE_TARGET}\n` : ''}`
-      + `An action is ${double ? DOUBLE_ACTIONS : SINGLE_ACTIONS}.\n`
+      + `An action is ${double ? DOUBLE_ACTIONS : SINGLE_ACTIONS}.\n${auxItemLine(tools)}`
       + 'If {{user}} gives no command, or it is unclear which move they mean, answer with only: none' },
   ];
 }

@@ -1,5 +1,6 @@
 import { findOocs } from './chat.mjs';
 import { messageId, blockAnchorIn } from './blocks.mjs';
+import { rulesAt } from './setting-changes.mjs';
 import { readStored } from './stored.mjs';
 
 export const SAVE_VAR = '$pkb_save';
@@ -74,14 +75,14 @@ export const latestCheckpoint = (chat, of) => (of ? furthest(liveSends(chat, of.
 
 export function freshAttempt(chat, blockKey) {
   const save = readSave(chat) ?? empty;
-  writeSave(chat, { start: null, record: save.record, attempt: attemptOf({ blockKey, ...blockAnchorIn(chat, blockKey), opened: openedHere(chat) }) });
+  writeSave(chat, { start: null, record: save.record, attempt: attemptOf({ blockKey, ...blockAnchorIn(chat, blockKey, rulesAt(chat)), opened: openedHere(chat) }) });
 }
 
 export function retryAttempt(chat, blockKey, of = 'record', { restart = false } = {}) {
   const save = readSave(chat) ?? empty;
   const source = partFor(save, blockKey, of);
   const checkpoint = restart ? null : latestCheckpoint(chat, source);
-  const base = { blockKey, ...blockAnchorIn(chat, blockKey), balls: source?.balls ?? null, opened: openedHere(chat) };
+  const base = { blockKey, ...blockAnchorIn(chat, blockKey, rulesAt(chat)), balls: source?.balls ?? null, opened: openedHere(chat) };
   if (!checkpoint) {
     writeSave(chat, { ...save, attempt: attemptOf(base) });
     return null;

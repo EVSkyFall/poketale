@@ -10,7 +10,6 @@ export function guideLines(info) {
   return [...base, ...(info.result ? GUIDE_ENDED : GUIDE_ONGOING)];
 }
 
-// The OOC text (tag stripped) with its guide placed (GUIDE_AT). Unchanged when there is no guide
 export function withGuide(ooc, info) {
   const lines = guideLines(info);
   if (!lines) return ooc;

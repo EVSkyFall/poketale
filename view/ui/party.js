@@ -1,5 +1,5 @@
 // from pokerogue src/ui/handlers/party-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-12. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-16. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/utils/pokemon-icon-anim-helper.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/handlers/message-ui-handler.ts (showPrompt) @ 7d7da4a8 (AGPL-3.0-only)
 
@@ -14,6 +14,7 @@ import { tween, delay } from '../lifetime.js';
 import { fixed } from '../game-speed.js';
 import { fadeSwap } from './learn-move.js';
 import { MoveInfoOverlay } from './move-info.js';
+import { setColorMatrix, hueMatrix } from '../color-matrix.js';
 
 export async function partyFade(scene, swap) {
   const overlay = scene.add.rectangle(0, 0, 1920, 1080, 0).setOrigin(0).setDepth(10).setAlpha(0);
@@ -30,28 +31,42 @@ const TEXT = Object.freeze(Object.fromEntries(Object.entries({ choose: 'choosePo
   apply: 'apply', selectAMove: 'selectAMove', revive: 'revive', summary: 'summary' }).map(([name, key]) => [name, `party-ui-handler.${key}`])));
 const CANCEL = 6;
 
+const PARTNER = 7;
+
+const PARTNER_AT = [62, -165];
+
+const PARTNER_TOUCH = Object.freeze({ css: 44, most: 36, up: 7, side: 6 });
+
+export function partnerHit(cssPerUnit) {
+  const t = PARTNER_TOUCH;
+  const height = cssPerUnit > 0 ? Math.min(t.most, Math.max(16, Math.ceil(t.css / cssPerUnit))) : 16;
+  if (height === 16) return { x: -26, y: -8, width: 52, height };
+  return { x: -26 - t.side, y: -8 - Math.min(t.up, height - 16), width: 52 + 2 * t.side, height };
+}
+
+const PARTNER_TINT = Object.freeze(hueMatrix(-80));
+
 const MAIN = { key: 'party_slot_main', pb: [4, 4], name: [24, 10], maxName: 76, lv: [32, 22], gender: [68, -9], status: [55, 0], hp: [8, 31] };
 const BENCH = { key: 'party_slot', pb: [2, 12], name: [21, 2], maxName: 52, lv: [29, 14], gender: [36, 0], status: [43, 0], hp: [72, 6] };
 
 const partyText = (scene, x, y, str, extra) => styledText(scene, x, y, str, 'PARTY', extra);
 const CANCEL_STYLE = { fontSize: 44, padding: { top: 6, bottom: 12, left: 4 } };
 
-const battlerCount = scene => (scene.double ? 2 : 1);
+const battlerCount = scene => (scene.double && !scene.tag ? 2 : 1);
+
+const doubleLayout = scene => battlerCount(scene) === 2;
 
 export function slotPosition(double, index) {
   if (index < (double ? 2 : 1)) return [9, -148.5 + (double ? -8 : 0) + 64 * index];
   return [143, -196 + (double ? -40 : 0) + (28 + (double ? 8 : 0)) * index];
 }
 
-export const PARTNER_ALPHA = 0.8;
-
-const PARTNER_TEXT = { party_slot_main: [56, 22], party_slot: [96, 14] };
-
 class PartySlot {
-  constructor(menu, index, mon, icon) {
+
+  constructor(menu, index, mon, icon, { viewOnly = false } = {}) {
     const s = menu.scene, benched = index >= battlerCount(s), p = benched ? BENCH : MAIN;
     this.mon = mon; this.p = p; this.selected = false;
-    const c = this.container = s.add.container(...slotPosition(!!s.double, index));
+    const c = this.container = s.add.container(...slotPosition(doubleLayout(s), index));
     this.bg = s.add.sprite(0, 0, p.key, this.frame()).setOrigin(0);
     this.pb = s.add.sprite(p.pb[0], p.pb[1], 'party_pb', 'party_pb');
 
@@ -86,13 +101,7 @@ class PartySlot {
 
       partyText(s, hx + 100 - 3, hy + 7 - 2, `${mon.hp}/${mon.maxhp}`).setOrigin(1, 0),
     );
-    if (mon.partner) {
-
-      objects.forEach(o => o.setAlpha(PARTNER_ALPHA));
-      const [tx, ty] = PARTNER_TEXT[p.key];
-      objects.push(partyText(s, tx, ty, s.words('own.partnerMon', { trainerName: mon.partner }), { color: '#f8d030' }).setShadow(4, 5, '#806000').setOrigin(0, 0.25));
-    }
-    this.hit = s.add.rectangle(0, 0, benched ? 175 : 110, benched ? 24 : 49, 0, 0).setOrigin(0).setInteractive({ useHandCursor: true });
+    this.hit = s.add.rectangle(0, 0, benched ? 175 : 110, benched ? 24 : 49, 0, 0).setOrigin(0).setInteractive({ useHandCursor: !viewOnly });
     this.hit.on('pointerover', () => menu.hover(index));
     this.hit.on('pointerdown', () => menu.tap(index));
     c.add([...objects, this.hit]);
@@ -110,20 +119,23 @@ class PartySlot {
 export class PartyMenu {
   constructor(scene) { this.scene = scene; }
 
-  async choose({ party, forced = false, use = null, revive = false, remember = null, onOpen } = {}) {
+  async choose({ party, forced = false, use = null, revive = false, remember = null, partner = null, onOpen } = {}) {
     this.use = use; this.revive = !!revive && !use; this.remember = remember; this.scrollCursor = 0;
     if (this.finish) throw new Error('Party menu already open');
     if (!Array.isArray(party) || !party.length || party.length > 6) throw new Error('Expected 1–6 party slots');
     const scene = this.scene;
-    const icons = await Promise.all(party.map(mon => scene.assets.icon(mon)));
+    const theirs = scene.tag && !remember && Array.isArray(partner?.party) && partner.party.length && partner.party.length <= 6 ? partner : null;
+    const [icons, partnerIcons] = await Promise.all([party, theirs?.party ?? []].map(list => Promise.all(list.map(mon => scene.assets.icon(mon)))));
     scene.life.check();
     if (this.finish) throw new Error('Party menu already open');
     this.party = party.map(m => ({ ...m })); this.forced = !!forced || this.revive;
-    this.cursor = 0; this.lastRight = 0; this.lastLeft = 0; this.mode = 'party'; this.toggled = false;
+    this.partner = theirs && { name: theirs.name ?? '', party: theirs.party.map(m => ({ ...m })) };
+    this.cursor = 0; this.lastRight = 0; this.lastLeft = 0; this.mode = 'party'; this.toggled = false; this.page = 'mine';
     const menu = openMenu(scene, { input: action => this.input(action), close: () => this.clear(),
       paused: () => this.busy(),
 
-      tapWindows: () => (this.busy() || !['party', 'options'].includes(this.mode) || (this.forced && this.mode === 'party') ? null : this.windows()) });
+      tapWindows: () => (this.busy() || !['party', 'options'].includes(this.mode) || (this.forced && this.mode === 'party' && this.page === 'mine')
+        ? null : this.windows()) });
 
     this.finish = choice => {
       if (this.fading) return;
@@ -135,19 +147,21 @@ export class PartyMenu {
     Object.assign(this, { shown: menu.shown, tapped: menu.tapped, tapReady: menu.tapReady });
     this.fading = true;
     partyFade(scene, () => {
-      this.fading = false; onOpen?.(); this.draw(icons);
+      this.fading = false; onOpen?.(); this.draw(icons, partnerIcons);
       if (remember) { this.setCursor(remember.cursor ?? 0); this.showOptions(); }
       scene.options.parent.focus({ preventScroll: true });
     })
       .catch(menu.fail);
     return menu.promise;
   }
-  draw(icons) {
+  draw(icons, partnerIcons = []) {
     const s = this.scene;
     const c = this.container = s.add.container(0, 0); s.ui.add(c);
-    c.add(s.add.image(0, 0, s.double ? 'party_bg_double' : 'party_bg').setOrigin(0, 1));
+    c.add(s.add.image(0, 0, doubleLayout(s) ? 'party_bg_double' : 'party_bg').setOrigin(0, 1));
     this.slots = this.party.map((mon, i) => new PartySlot(this, i, mon, icons[i]));
     c.add(this.slots.map(slot => slot.container));
+    this.partnerSlots = [];
+    if (this.partner) this.drawPartnerPage(partnerIcons);
 
     const cancel = this.cancelButton = s.add.container(291, -16);
     this.cancelBg = s.add.sprite(0, 0, 'party_cancel', 'party_cancel');
@@ -159,6 +173,7 @@ export class PartyMenu {
       partyText(s, -10, -7, s.words(TEXT.cancel), CANCEL_STYLE), cancelHit]);
     if (s.double && this.forced) cancel.setAlpha(0.5);
     c.add(cancel);
+    if (this.partner) this.drawPartnerButton();
 
     this.messageBox = addWindow(s, 1, -31, 262, 30);
     this.messageText = windowText(s, 10, -22, '', { maxLines: 2 }).setOrigin(0);
@@ -170,10 +185,45 @@ export class PartyMenu {
     c.add([this.messageBox, this.messageText, this.prompt, this.optionBox, this.promptHit]);
     if (this.remember) { this.moveInfo = new MoveInfoOverlay(s); c.add(this.moveInfo.container); }
     this.timer = s.time.addEvent({ delay: fixed(200), loop: true, callback: () => {
-      this.toggled = !this.toggled; this.slots.forEach(slot => slot.bob(this.toggled));
+      this.toggled = !this.toggled; [...this.slots, ...this.partnerSlots].forEach(slot => slot.bob(this.toggled));
     } });
     this.setCursor(0, true);
     this.shown();
+  }
+
+  drawPartnerPage(icons) {
+    const s = this.scene, page = { scene: s, hover() {}, tap() {} };
+    const layer = this.partnerLayer = s.add.container(0, 0).setVisible(false);
+    layer.add(setColorMatrix(s.add.image(0, 0, 'party_bg').setOrigin(0, 1), PARTNER_TINT));
+    this.partnerSlots = this.partner.party.map((mon, i) => new PartySlot(page, i, mon, icons[i], { viewOnly: true }));
+    for (const slot of this.partnerSlots) if (slot.mon.hp) setColorMatrix(slot.bg, PARTNER_TINT);
+    layer.add(this.partnerSlots.map(slot => slot.container));
+    this.container.add(layer);
+  }
+
+  drawPartnerButton() {
+    const s = this.scene;
+    const button = this.partnerButton = s.add.container(...PARTNER_AT);
+    this.partnerBg = s.add.sprite(0, 0, 'party_cancel', 'party_cancel');
+    this.partnerPb = s.add.sprite(-17, 0, 'party_pb', 'party_pb');
+    const area = partnerHit((s.scale?.displaySize?.width ?? 0) / 320);
+    const hit = s.add.rectangle(area.x, area.y, area.width, area.height, 0, 0).setOrigin(0).setInteractive({ useHandCursor: true });
+    hit.on('pointerover', () => this.hover(PARTNER));
+    hit.on('pointerdown', () => this.tap(PARTNER));
+    button.add([this.partnerBg, this.partnerPb, partyText(s, 8, -7, s.words('own.partner'), CANCEL_STYLE).setOrigin(0.5, 0), hit]);
+    this.container.add(button);
+  }
+
+  showPage(page) {
+    playSelect(this.scene);
+    this.page = page;
+    const theirs = page === 'partner';
+    this.partnerLayer.setVisible(theirs);
+    this.slots.forEach(slot => slot.container.setVisible(!theirs));
+    this.cancelButton.setVisible(!theirs);
+    this.shown();
+    const name = this.partner.name;
+    this.showText(this.scene.words(!theirs ? TEXT.choose : name ? 'own.partnerMon' : 'own.partner', { trainerName: name }));
   }
   showText(text) {
 
@@ -201,10 +251,12 @@ export class PartyMenu {
     const onCancel = cursor === CANCEL;
     this.cancelBg.setFrame(onCancel ? 'party_cancel_sel' : 'party_cancel');
     this.cancelPb.setFrame(onCancel ? 'party_pb_sel' : 'party_pb');
+    this.partnerBg?.setFrame(cursor === PARTNER ? 'party_cancel_sel' : 'party_cancel');
+    this.partnerPb?.setFrame(cursor === PARTNER ? 'party_pb_sel' : 'party_pb');
     if (onCancel) this.hideText(); else this.showText(this.scene.words(TEXT.choose));
   }
   hover(index) {
-    if (this.fading || this.mode !== 'party' || index === this.cursor) return;
+    if (this.fading || this.mode !== 'party' || this.page !== 'mine' || index === this.cursor) return;
     if (index >= battlerCount(this.scene) && index < CANCEL) this.lastRight = index;
     this.setCursor(index);
   }
@@ -224,23 +276,35 @@ export class PartyMenu {
       return;
     }
     if (this.mode === 'options') return this.optionInput(action);
+
+    if (this.page === 'partner') { if (action === 'ok' || action === 'back') this.showPage('mine'); return; }
     const n = this.party.length, c = this.cursor, field = battlerCount(this.scene);
+    if (c === PARTNER) return this.partnerButtonInput(action, n, field);
     if (c < field) this.lastLeft = c;
     if (c >= field && c < CANCEL) this.lastRight = c;
     switch (action) {
     case 'ok':
-      if (c !== CANCEL && this.party[c].partner) { playError(this.scene); return this.showPrompt(this.party[c].blocked ?? ''); }
       if (c !== CANCEL) { playSelect(this.scene); return this.showOptions(); }
       if (this.forced) return playError(this.scene);
       return this.cancel();
     case 'back': return this.cancel();
     }
 
-    if (action === 'up') this.setCursor(c ? (c < CANCEL ? c - 1 : n - 1) : CANCEL);
-    if (action === 'down') this.setCursor(c < CANCEL ? (c < n - 1 ? c + 1 : CANCEL) : 0);
+    const top = this.partner ? PARTNER : CANCEL;
+    if (action === 'up') this.setCursor(c ? (c < CANCEL ? c - 1 : n - 1) : top);
+    if (action === 'down') this.setCursor(c < CANCEL ? (c < n - 1 ? c + 1 : CANCEL) : this.partner ? PARTNER : 0);
     if (action === 'left' && (c === CANCEL || c >= field)) this.setCursor(this.lastLeft);
     if (action === 'right') { if (n <= field) this.setCursor(CANCEL); else if (c < field) this.setCursor(this.lastRight || field); }
     if (this.cursor !== c) playSelect(this.scene);
+  }
+
+  partnerButtonInput(action, n, field) {
+    if (action === 'ok') return this.showPage('partner');
+    if (action === 'back') return this.cancel();
+    if (action === 'up') this.setCursor(CANCEL);
+    if (action === 'down') this.setCursor(0);
+    if (action === 'right') this.setCursor(n > field ? this.lastRight || field : CANCEL);
+    if (this.cursor !== PARTNER) playSelect(this.scene);
   }
 
   cancel() { if (!this.forced) { playSelect(this.scene); this.finish(null); } }
@@ -409,6 +473,7 @@ export class PartyMenu {
     this.moveInfo?.destroy(); this.moveInfo = null;
     this.timer?.remove(); this.timer = null;
     this.container?.destroy(); this.container = null; this.finish = null; this.slots = []; this.fading = false;
+    this.partnerSlots = []; this.partnerLayer = this.partnerButton = this.partnerBg = this.partnerPb = null;
   }
   destroy() { if (this.finish) this.abort(); }
 }

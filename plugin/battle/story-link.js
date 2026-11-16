@@ -1,10 +1,11 @@
 import * as sim from '../../engine/browser-engine.mjs';
-import { findBlocks, findTags, findMarks, markText, parseBattle, parseAct, actBlock, actsIn, hashKey, messageId, battlesIn, battlesInText, blockAnchorIn, stripForPrompt } from '../../story/blocks.mjs';
-import { readTable, writeTable, tableStatus, createFolds, applyBattles, toEngineSpec, pruneTable, stateVars, computeState, nextStageSpec, battlesBefore, stageOf, backToBack, battleRecord, hatchedParty } from '../../story/state.mjs';
+import { findBlocks, findTags, findMarks, markText, parseBattle, parseAct, actBlock, actsIn, hashKey, messageId, battlesIn, battlesInText, blockAnchorIn, stripForPrompt, blockCuts, hasBlocks } from '../../story/blocks.mjs';
+import { readTable, writeTable, tableStatus, createFolds, applyBattles, toEngineSpec, pruneTable, stateVars, computeState, nextStageSpec, battlesBefore, stageOf, backToBack, battleRecord, hatchedParty, toolsIn } from '../../story/state.mjs';
 import { unreadableLine, isUnreadable } from '../../story/stored.mjs';
+import { withItemTags } from '../../story/custom-items.mjs';
 import { WHAT, failed, refused, failureNote, failureText, ruleText } from '../../story/failure.mjs';
-import { LOCK_FREE } from '../../story/panel.mjs';
-import { spriteIdOf } from '../../engine/mon.mjs';
+import { LOCK_FREE, namesFor } from '../../story/panel.mjs';
+import { spriteIdOf, displayName } from '../../engine/mon.mjs';
 import { personaName, userName } from './persona.js';
 import { renderBattleCard, renderCardTail, renderCollapsed, renderDiscarded, wrapRecent, renderStoryChip, battleTitle, blockBalls, SEND_MS } from '../../story/card.mjs';
 import { MARK, surveyBattles, battlePhase, cardResult, setMark, setFollow, setOpenedAt, hasFollowMarks, findBlockMessage, removeResult, placeResult, resultPlace,
@@ -14,16 +15,17 @@ import { chainFrom, nextUnplanned, rewindOf, addPlan, rewindPlans, tellPlans, un
 import { failedLines, failedOoc, auxRequest, battleStatusLines } from '../../story/act-prompts.mjs';
 import { createNamer, battleKind } from '../../story/ai-names.mjs';
 import * as acts from '../../story/acts.mjs';
-import { renderDiary, resultEvents, renderForge, commandLines } from '../../story/diary.mjs';
+import { renderDiary, resultEvents, renderForge, forgeKindOf, commandLines } from '../../story/diary.mjs';
 import { forgeKey, forgeAt, mayForge, forgeRequest, runForge, appendBattle, FORGE_MODE, withUserName } from '../../story/forge.mjs';
 import { showToast } from './toast.js';
 import { turnSpan } from '../../story/narrate.mjs';
 import { resultLine, RESULT_LINE_RE } from '../../story/prompts.mjs';
 import { outcomeOf } from '../../story/outcome.mjs';
 import { readSave, saveStatus, freshAttempt, retryAttempt, startSpec, setAuto, leaveAttempt, commitAttempt, addSend, sentPoint, sentAll, holdsAuto, partFor } from '../../story/save.mjs';
-import { sendRange, buildOoc, insertOoc, markOoc, oocAhead, replyTo, sendWait } from '../../story/send.mjs';
+import { sendRange, buildOoc, insertOoc, markOoc, oocAhead, replyTo, sendWait, ownStarts } from '../../story/send.mjs';
 import { withGuide } from '../../story/guide.mjs';
 import { setLore, loreInLine, varTexts, writeVars, trainerLore, writeTrainerLore } from '../../story/lore.mjs';
+import { fixPrompt, mayHold, holds, varsIn, sameVars } from '../../story/prompt-fix.mjs';
 import { applyCompat, compatLang, bagMoney, dropTaken, statusIn, battleScene, latestStatus, compatTravelVars } from '../../story/compat.mjs';
 import { victoryChoices } from '../../story/settlement.mjs';
 import { rerollSnapshot, restartSpec, snapshotResult } from '../../director/index.js';
@@ -34,18 +36,22 @@ import { createFetchBytes } from './fetch-bytes.js';
 import { viewPictureWays } from './picture-route.js';
 import { createReplyWatch } from './reply-watch.js';
 import { showFrame, frameHidden } from './stage.js';
-import { DEFAULT_SETTINGS, settingsUnreadable, LANG_OPEN, hostLang, loadSettings, saveSettings, mountSettings, mountPreparing, botEnabled, botKey, botsSwitched, lookOf, chosenGender, adoptOldLook, commandsOn, auxOn } from './settings.js';
+import { DEFAULT_SETTINGS, DEFAULT_LOOK, settingsUnreadable, LANG_OPEN, hostLang, loadSettings, saveSettings, mountSettings, mountPreparing, botEnabled, botKey, botsSwitched, lookOf, chosenGender, adoptOldLook, commandsOn, auxOn, IMPORT_NAMES_SHOWN } from './settings.js';
 import { mountImportScreen } from './import-screen.js';
 import { makeDraft, importOffer, importOfferAi, importTurn, handBack, commitImport, commitDebugHeal, commitDebugBadges, readImports, cancelImport, inForce, newMonDraft, currentMonDraft, friendshipLockDraft } from '../../story/import.mjs';
 import { importAiMessages, readAiParty, aiFailedFound } from '../../story/import-ai.mjs';
-import { readSettingChanges, recordSettingChange, settingsBehind } from '../../story/setting-changes.mjs';
+import { readSettingChanges, recordSettingChange, settingsBehind, rulesAt } from '../../story/setting-changes.mjs';
+import { readBattlesOff, battlesOff, setBattlesOff } from '../../story/battles-off.mjs';
 import { loadPicture, savePicture, adoptOldPicture, entryMe } from './my-picture.js';
 import { storyCss, sheetCss, SHEET_CLASS } from '../../story/style.mjs';
 import { cardBounds } from '../../story/named.mjs';
 import { opponentPictureWithGender, foePartnerPicture, partnerPicture } from '../../story/trainer-look.mjs';
 import { DEFAULT_ASSET_BASE } from '../../view/assets.js';
+import { parseRecolorKey, recoloredFace } from '../../view/sprites/recolor.js';
 import { battleNamesIn } from './names.js';
 import { say } from '../../story/screen-text.mjs';
+import { createShopCards, SHOP_ACTIONS } from './shop-card.js';
+import { shopsInText } from '../../story/shop.mjs';
 
 const SPRITE = id => `https://play.pokemonshowdown.com/sprites/gen5/${id}.png`;
 const TRAINER = id => `https://play.pokemonshowdown.com/sprites/trainers/${id}.png`;
@@ -91,7 +97,7 @@ const idOf = target => `${target.chaId}:${target.chatId ?? `#${target.charIndex}
 
 const textKey = chat => JSON.stringify((chat?.message ?? []).map(m => [m?.chatId ?? null, String(m?.data ?? '')]));
 
-const unreadableChat = chat => [tableStatus(chat), saveStatus(chat), acts.queueStatus(chat), readImports(chat).status, readSettingChanges(chat).status].some(isUnreadable);
+const unreadableChat = chat => [tableStatus(chat), saveStatus(chat), acts.queueStatus(chat), readImports(chat).status, readSettingChanges(chat).status, readBattlesOff(chat).status].some(isUnreadable);
 
 function makePass(charIndex, chatIndex, chat, character, seq) {
   const target = targetOf(charIndex, chatIndex, chat, character);
@@ -107,6 +113,8 @@ function makePass(charIndex, chatIndex, chat, character, seq) {
     get save() { return memo('save', () => readSave(chat)); },
     get last() { return memo('last', () => readLast(chat)); },
     get text() { return memo('text', () => textKey(chat)); },
+
+    get readAt() { return memo('readAt', () => rulesAt(chat)); },
     get unreadable() { return memo('unreadable', () => unreadableChat(chat)); },
 
     get moved() { return memo('moved', () => importTurn(chat).moved); },
@@ -230,7 +238,7 @@ export async function hideWindow(owner) {
 
 const permits = new Map();
 
-export async function askPermission(name) {
+export async function askPermission(name, ask = () => risuai.requestPluginPermission(name)) {
   if (permits.has(name)) return permits.get(name);
   let lowered = false;
   const run = windowLine.then(async () => {
@@ -238,7 +246,7 @@ export async function askPermission(name) {
     lowered = true;
     await risuai.hideContainer();
     frameHidden();
-    const granted = (await risuai.requestPluginPermission(name)) === true;
+    const granted = (await ask()) === true;
     permits.set(name, granted);
     return granted;
   });
@@ -283,12 +291,33 @@ function faces(spec, key, chat) {
     ...(spec?.partner ? { partner: trainerFace(partnerPicture(spec)) } : {}),
     speciesUrl: species => SPRITE(spriteIdOf(sim.Dex.species.get(species))) };
 }
-const trainerFace = ({ face, sheet, silhouette, gender }) => ({ trainerUrl: face ? TRAINER(face) : undefined,
+const trainerFace = ({ sprite, face, sheet, silhouette, gender }) => ({ trainerUrl: face ? colorFace(sprite, face) : undefined,
   trainerRect: face ? cardBounds(face) : null, trainerGender: gender ?? null,
   trainerSheet: sheet ? { url: `${DEFAULT_ASSET_BASE}images/trainer/${sheet.key}.png`, rect: sheet.rect } : undefined,
   trainerSilhouette: silhouette });
 
-const pictureOptions = (key, chat) => ({ key, silhouette: settings.silhouette, chat });
+const readyFaces = new Map(), waitingFaces = new Map();
+let faceFetch = null;
+function colorFace(sprite, face) {
+  if (!parseRecolorKey(sprite).combo) return TRAINER(face);
+  if (readyFaces.has(sprite)) return readyFaces.get(sprite) ?? TRAINER(face);
+  if (!waitingFaces.has(sprite)) {
+    faceFetch ??= createFetchBytes(risuai);
+    waitingFaces.set(sprite, recoloredFace(sprite, () => faceFetch(TRAINER(face))).then(url => { readyFaces.set(sprite, url); waitingFaces.delete(sprite); }));
+  }
+  return TRAINER(face);
+}
+const FACE_WAIT_MS = 2500;
+
+async function facesWaited() {
+  if (!waitingFaces.size) return false;
+  await Promise.race([Promise.all(waitingFaces.values()), new Promise(resolve => setTimeout(resolve, FACE_WAIT_MS))]);
+  return true;
+}
+
+const pictureOptions = (key, chat) => ({ key, silhouette: settings.silhouette, chat, player: playerGender });
+
+let playerGender = DEFAULT_LOOK.gender;
 
 const playerOptions = look => ({ gender: look.gender, silhouette: look.myBack === 'silhouette' });
 
@@ -303,7 +332,9 @@ async function personaLook() {
     settings = adoptOldLook(settings, name);
     await Promise.all([adoptOldPicture(risuai.pluginStorage, name), saveSettingsInOrder(settings)]);
   }
-  return { name, look: lookOf(settings, name) };
+  const look = lookOf(settings, name);
+  playerGender = look.gender;
+  return { name, look };
 }
 
 const ballOf = mon => (mon.fainted || mon.hp === 0 ? 'fainted' : mon.status && mon.status !== 'fnt' ? 'status' : 'ok');
@@ -337,7 +368,7 @@ function cardView(pass, key, body) {
 
     sent: status === 'done' && !!pass && sentAll(pass.chat, key, info?.result?.turns ?? 0, save),
 
-    canSend: !!pass && pass.last?.blockKey === key, canRetry: !!pass && !!startSpec(save, key),
+    canSend: !!pass && !pass.survey.off && pass.last?.blockKey === key, canRetry: !!pass && !pass.survey.off && !!startSpec(save, key),
 
     canUndo: !pass || mayUndo(pass, key),
 
@@ -354,28 +385,34 @@ async function onDisplay(text) {
   if (/<(?:div|details)\b[^>]*\bclass=["'][^"']*\bx-risu-pkb-log(?:row)?\b/.test(text)) return undefined;
   if (!text.includes('<pkb')) return plainDisplay(text);
   const marked = text.replace(SHOWN_RESULT_RE, '');
-  if (!findBlocks(marked).length && !findTags(marked).length && !findMarks(marked).length && !findOocs(marked).length) return plainDisplay(text);
+  if (!hasBlocks(marked) && !findTags(marked).length && !findMarks(marked).length && !findOocs(marked).length) return plainDisplay(text);
   const pass = await sharedPass(text);
   if (!isOn(pass)) return undefined;
   const shown = takenOut(pass, marked);
-  const found = findBlocks(shown), tags = findTags(shown), marks = findMarks(shown), stories = findOocs(shown);
 
-  const at = pass.at(text);
-  const blocks = [...battlesInText(shown, messageId(pass.chat.message?.[at], at)), ...found.filter(b => b.kind !== 'battle')];
+  const at = pass.at(text), reading = pass.readAt(at);
+  const found = findBlocks(shown, reading), tags = findTags(shown), marks = findMarks(shown), stories = findOocs(shown);
+  const blocks = [...battlesInText(shown, messageId(pass.chat.message?.[at], at), reading), ...found.filter(b => b.kind !== 'battle' && b.kind !== 'shop')];
   changed();
   checkEnded(pass);
 
   const lang = currentLang(pass.chat);
   const chip = stories.length ? renderStoryChip(stories.map(s => ({ ...s.info, vs: chipOpponent(pass, s.info, lang) })), lang) : '';
-  const pieces = [...blocks.map(b => ({ ...b, what: 'block' })), ...tags.map(t => ({ ...t, what: 'tag' })), ...marks.map(m => ({ ...m, what: 'mark' })),
 
-    ...stories.map((s, i) => ({ ...s, what: 'story', html: i ? '' : chip, end: s.end + /^\s*/.exec(shown.slice(s.end))[0].length }))]
+  const cuts = blockCuts(shown, reading), cutAt = new Map(cuts.filter(c => c.block).map(c => [c.block.start, c]));
+  const cut = piece => ({ ...piece, start: cutAt.get(piece.start)?.start ?? piece.start, end: cutAt.get(piece.start)?.end ?? piece.end });
+  const pieces = [...blocks.map(b => cut({ ...b, what: 'block' })), ...tags.map(t => ({ ...t, what: 'tag' })), ...marks.map(m => ({ ...m, what: 'mark' })),
+
+    ...stories.map((s, i) => ({ ...s, what: 'story', html: i ? '' : chip, end: s.end + /^\s*/.exec(shown.slice(s.end))[0].length })),
+    ...shopsInText(shown, messageId(pass.chat.message?.[at], at), reading).map(s => cut({ ...s, what: 'shop' })),
+    ...cuts.filter(c => !c.block).map(c => ({ ...c, what: 'loose' }))]
     .sort((a, b) => b.start - a.start);
   let out = shown, drew = false;
   for (const piece of pieces) {
     let html = '';
     if (piece.what === 'block' && piece.kind === 'battle') {
-      const view = cardView(pass, piece.key, piece.body);
+      let view = cardView(pass, piece.key, piece.body);
+      if (await facesWaited()) view = cardView(pass, piece.key, piece.body);
       const card = renderBattleCard(view, view.lang).trim();
       drawn.set(piece.key, { id: pass.id, html: drawnHtml(view) });
 
@@ -383,6 +420,8 @@ async function onDisplay(text) {
       else html = view.status === 'discarded' ? renderDiscarded(view, view.lang) : wrapRecent(card, renderCollapsed(view, view.lang));
     } else if (piece.what === 'mark' && piece.kind === MARK.here) {
       html = followedCard(pass, piece.key, blocks);
+    } else if (piece.what === 'shop') {
+      html = await shops.draw(pass, at, piece);
     } else if (piece.what === 'story') html = piece.html;
     drew ||= !!html;
     out = out.slice(0, piece.start) + html + out.slice(piece.end);
@@ -416,7 +455,7 @@ function chipOpponent(pass, info, lang) {
 
 function battleBlock(where, key) {
   const info = where.survey.battles.get(key);
-  return info ? battlesIn(where.chat.message[info.index], info.index).find(b => b.key === key) ?? null : null;
+  return info ? battlesIn(where.chat.message[info.index], info.index, rulesAt(where.chat)(info.index)).find(b => b.key === key) ?? null : null;
 }
 
 function blockSpec(where, key) {
@@ -438,13 +477,13 @@ async function diaryHtml(text, pass, at) {
   try {
     const own = acts.actsIn(text, pass?.table);
     const lang = currentLang(pass?.chat);
-    const changes = findBlocks(text).some(b => b.kind === 'change') ? acts.changesIn(text, pass?.chat, await storyCtx(), lang) : null;
+    const changes = hasBlocks(text) ? acts.changesIn(text, pass?.chat, await storyCtx(), lang) : null;
     const counts = t => { const meta = pass?.table?.meta?.[t.key]; return !meta?.blockKey || pass.survey.battles.get(meta.blockKey)?.committed !== 'discarded'; };
     const results = findTags(text).filter(counts).flatMap(t => resultEvents(pass?.table?.meta?.[t.key], pass?.table?.snaps?.[t.key]));
 
     const rows = new Map([...(pass?.save?.record?.plans ?? []), ...(pass?.save?.attempt?.plans ?? [])].map(row => [row.act, row]));
     const names = screenNames(lang);
-    const commands = actsIn({ ...pass?.chat.message?.[at], data: text }, at).map(block => {
+    const commands = actsIn({ ...pass?.chat.message?.[at], data: text }, at, pass?.readAt(at)).map(block => {
       const { turns, errors } = readActAt(pass?.chat, at, block.body);
       return commandLines(turns, rows.get(block.key)?.turns ?? null, lang, names, answersCommands(pass?.chat, at) ? [] : errors);
     });
@@ -700,7 +739,7 @@ async function bindButtonsNow() {
     const element = await list.at(i);
     const cls = await element.getClassName();
     const pick = prefix => cls.match(new RegExp(`x-risu-${prefix}-([a-z0-9]+)`))?.[1];
-    const press = { key: pick('pkbk'), action: pick('pkba'), index: Number(pick('pkbi')) };
+    const press = { key: pick('pkbk'), action: pick('pkba'), index: Number(pick('pkbi')), item: pick('pkbs') };
     await element.addEventListener('click', () => onButton(press).catch(error => onButtonError(press, error)));
     await element.addClass('x-risu-pkb-bound');
   }
@@ -782,6 +821,9 @@ async function drawNotice(press, pass) {
   else if (view) await setTail(press, view);
 }
 
+const shops = createShopCards({ sim, doc: () => doc, lang: chat => currentLang(chat), compat: pass => compatBots.has(pass.target?.chaId), actionPass,
+  queue: (action, target) => queueAction(action, target), bindButtons });
+
 const forgeName = (id, key) => `${id}:${key}`;
 const forging = new Set();
 
@@ -847,8 +889,6 @@ async function askForge(press, pass) {
     await bindButtons();
   } catch (error) { await showToast(doc, failureNote(WHAT.forge, error, lang)); }
 }
-
-const FORGE_PICK = { forgewild: 'wild', forgetrainer: 'trainer' };
 async function forgeBattle(press, pass, kind) {
   const running = forgeName(pass.id, press.key);
   if (forging.has(running)) return;
@@ -885,6 +925,7 @@ async function actionPass() {
 async function onButton(press) {
   const { key, action } = press;
   if (!key) return undefined;
+  if (SHOP_ACTIONS.has(action)) return shops.press(press);
   notices.delete(key);
   switch (action) {
   case 'open': return startBattle(press);
@@ -926,13 +967,15 @@ async function onButton(press) {
   case 'discardok': return discardCard(press, pass);
   case 'restore': return restoreCard(press, pass);
   case 'forge': return askForge(press, pass);
-  case 'forgewild': case 'forgetrainer': {
+  default: {
+
+    const kind = forgeKindOf(action);
+    if (!kind) return undefined;
     const name = forgeName(pass.id, press.key);
     if (forgeAsking.get(name) !== pass.text) return;
     forgeAsking.delete(name);
-    return forgeBattle(press, pass, FORGE_PICK[action]);
+    return forgeBattle(press, pass, kind);
   }
-  default: return undefined;
   }
 }
 
@@ -1054,9 +1097,14 @@ async function prepareBattle(press, mode, retryOf, owner) {
   const now = battleIn(pass);
   if (shownIn(pass.id) || (now.key && now.key !== key)) throw failed('busy');
   if (mode === 'resume' && now.phase !== 'parked') throw failed('unresumable');
+
+  if (mode !== 'resume' && (pass.survey.off || now.card(key) === 'off')) {
+    await refreshCard(press).catch(() => {});
+    return {};
+  }
   const at = findBlockMessage(pass.chat, key);
   if (at < 0) throw failed('blockGone');
-  const block = battlesIn(pass.chat.message[at], at).find(b => b.key === key);
+  const block = battlesIn(pass.chat.message[at], at, rulesAt(pass.chat)(at)).find(b => b.key === key);
   const { spec: battle, errors } = readBattleAt(pass.chat, at, block.body);
   if (!battle) throw failed('blockBroken');
   const ctx = await storyCtx();
@@ -1092,7 +1140,7 @@ async function prepareBattle(press, mode, retryOf, owner) {
     const playerName = persona.name;
 
     spec = start ? restartSpec(start, freshSeed()) : toEngineSpec(state, battle, { ...ctx, playerName, lang: currentLang(pass.chat) },
-      { seed: freshSeed(), formatid: battleFormat(), expShare: settings.expShare, expRate: settings.expRate, picture: pictureOptions(key, pass.chat), player: playerOptions(persona.look),
+      { seed: freshSeed(), formatid: battleFormat(), expShare: settings.expShare, expRate: settings.expRate, effectItems: settings.effectItems, foeGimmicks: settings.foeGimmicks, picture: pictureOptions(key, pass.chat), player: playerOptions(persona.look),
         status: statusIn(pass.chat.message[at]) });
     startBalls = { mine: fighters.map(ballOf), ...blockBalls(battle) };
   }
@@ -1290,9 +1338,9 @@ async function writeResult(origin, { outcome, result, apply }) {
     const stages = backToBack(origin.stage) ? [...battlesBefore(origin.stage).map(b => outcomeOf(b.result)), outcome] : null;
     const line = resultLine({ outcome, battle: origin.battle, kind: battleKind(apply), caught, evolutions, stages, ...naming(battleLang(origin, chat)) });
 
-    const anchor = blockAnchorIn(chat, origin.key);
+    const anchor = blockAnchorIn(chat, origin.key, rulesAt(chat));
     const place = resultPlace(chat, placeResult(chat, { blockKey: origin.key, line, tag }));
-    table.snaps[tag] = after;
+    table.snaps[tag] = withItemTags(after);
 
     table.meta = { ...table.meta, [tag]: { blockKey: origin.key, ...anchor, outcome, turns: result.turn ?? 0,
       faceSpecies: result.captured?.species ?? origin.battle.team?.[0]?.species, title: battleTitle(origin.battle, battleLang(origin, chat), { level: false }),
@@ -1303,6 +1351,7 @@ async function writeResult(origin, { outcome, result, apply }) {
     writeLast(chat, { blockKey: origin.key, ...anchor, tag, outcome, battle: origin.battle, line, place,
       result: { turn: result.turn ?? 0, outcome: result.outcome ?? null, winner: result.winner ?? null, captured: result.captured ?? null,
         forfeited: !!result.forfeited, playerName: result.sides?.[0]?.name ?? null, log: result.log ?? [], screen: result.screen ?? [], evolutions,
+        own: ownStarts(origin.stage),
         ...(stageOf(origin.stage) > 1 ? { stage: stageOf(origin.stage) } : {}) } });
     commitAttempt(chat, origin.key);
     return true;
@@ -1342,14 +1391,18 @@ function battleForVars(where) {
   if (!battle) battle = blockSpec({ chat, survey }, key);
   if (!battle) return null;
 
-  let result = null;
+  let result = null, engineSpec = null;
   if (!pending) {
     const chain = save?.attempt?.plans?.length ? chainIn({ id: where.id, seq: where.seq, chat, survey, save }) : null;
     const at = chain?.end ?? (now.phase === 'parked' ? save.attempt.auto : null);
     if (at) turn = at.turn ?? turn;
     result = at ? statusAt(at) : (() => { try { return active.app.progress()?.result ?? null; } catch { return null; } })();
+    engineSpec = at?.spec ?? (active?.key === key ? active.origin.stage : null);
   }
-  return { spec: battle, turn: result?.turn ?? turn, pending, ...(stage > 1 ? { stage } : {}), ...(result ? { now: result } : {}), ...(commandsOn(settings) ? { commands: true } : {}) };
+
+  const tools = engineSpec ? toolsIn(engineSpec) : settings.effectItems;
+  return { spec: battle, turn: result?.turn ?? turn, pending, ...(stage > 1 ? { stage } : {}), ...(result ? { now: result } : {}), ...(commandsOn(settings) ? { commands: true } : {}),
+    ...(tools ? {} : { tools: false }) };
 }
 
 const statusMemo = new Map();
@@ -1366,17 +1419,74 @@ function statusAt(snapshot) {
 }
 
 const naming = lang => ({ lang, en: dexName });
-const varsOf = (state, where) => varTexts(state, { sim, battle: battleForVars(where), ...naming(currentLang(where.chat)) });
 
-const writeStoryVars = (into, state, where) => [writeVars(into, varsOf(state, where)), writeTrainerLore(into, trainerLore(state, naming(currentLang(where.chat))))].some(Boolean);
+const bagTools = battle => (battle ? battle.tools !== false : settings.effectItems === true);
+const varsOf = (state, where) => { const battle = battleForVars(where); return varTexts(state, { sim, battle, ...naming(currentLang(where.chat)), effectItems: bagTools(battle) }); };
+
+const rematchEntries = (state, where) => (battlesOff(where.chat) ? [] : trainerLore(state, naming(currentLang(where.chat))));
+
+const writeStoryVars = (into, state, where) => [writeVars(into, varsOf(state, where)), writeTrainerLore(into, rematchEntries(state, where))].some(Boolean);
 
 const varsKey = where => JSON.stringify([where.id, where.text ?? textKey(where.chat), stateVars().map(name => where.chat?.scriptstate?.[name] ?? null),
-  battleForVars(where), currentLang(where.chat)]);
+  battleForVars(where), currentLang(where.chat), settings.effectItems === true, battlesOff(where.chat)]);
 
 async function setVars(where) {
   const { state, table, changed } = acts.pendingState(where.chat, await storyCtx());
   if (changed) writeTable(where.chat, table);
   return writeStoryVars(where.chat, state, where) || changed;
+}
+
+const VARS_SEEN = 4;
+const varsSeen = new Map();
+function rememberVars(id, chat) {
+  const now = varsIn(chat);
+  if (now.party === undefined && now.bag === undefined && !now.lore.length) return;
+  const list = varsSeen.get(id) ?? [];
+  if (sameVars(list.at(-1), now)) return;
+  const at = list.findIndex(vars => sameVars(vars, now));
+  if (at >= 0) list.splice(at, 1);
+  list.push(now);
+  if (list.length > VARS_SEEN) list.shift();
+  varsSeen.delete(id);
+  varsSeen.set(id, list);
+  if (varsSeen.size > SEEN_CHATS) varsSeen.delete(varsSeen.keys().next().value);
+}
+
+async function freshVars(pass) {
+  const state = await pass.state();
+  return { ...varsOf(state, pass), lore: rematchEntries(state, pass).map(({ key, content }) => ({ key, content })) };
+}
+
+let freshMemo = null;
+
+async function fixRequest(messages) {
+  try {
+    if (!mayHold(messages)) return messages;
+    const pass = await readPass();
+    if (!isOn(pass) || pass.unreadable) return messages;
+    const stored = varsIn(pass.chat);
+    const key = varsKey(pass);
+    if (key === varsAt && holds(messages, stored)) return messages;
+    const fresh = freshMemo?.key === key ? freshMemo.fresh : await freshVars(pass);
+    freshMemo = { key, fresh };
+    const fixed = fixPrompt(messages, { stale: [...(varsSeen.get(pass.id) ?? []), stored], fresh });
+    if (fixed !== messages) watchSoon();
+    return fixed;
+  } catch (error) {
+    console.warn('[poke-battle] 보내는 글의 파티·가방을 바로잡지 못함', error);
+    return messages;
+  }
+}
+
+const PROMPT_UP_MS = 400;
+
+async function startReplacer() {
+  if (typeof risuai.addRisuReplacer !== 'function') return;
+  await askPermission('replacer', async () => {
+    const tip = setTimeout(() => { openLang().then(lang => showToast(doc, { text: say(lang, 'notice.replacerAsk'), kind: 'info' })).catch(() => {}); }, PROMPT_UP_MS);
+    try { await risuai.addRisuReplacer('beforeRequest', fixRequest); } finally { clearTimeout(tip); }
+    return risuai.requestPluginPermission('replacer');
+  });
 }
 
 const SETTLE_MS = 900;
@@ -1398,6 +1508,7 @@ function observe(id, chat, { ours = false } = {}) {
   observed.delete(id);
   observed.set(id, { texts: new Map(messages.map((m, i) => [messageId(m, i), m.data])), changedAt, streaming });
   if (observed.size > SEEN_CHATS) observed.delete(observed.keys().next().value);
+  rememberVars(id, chat);
   if (replyWatch?.id === id) seeReplies(replyWatch, messages, { streaming, ours });
 }
 
@@ -1421,7 +1532,7 @@ function followMoves(pass) {
 async function pendingFixes(pass) {
   if (!isOn(pass)) return { lore: !loreInLine(pass.chat, false), handBack: handsBack(pass.chat) };
   if (pass.unreadable) return {};
-  const lore = !loreInLine(pass.chat, true, botOther(pass));
+  const lore = !loreInLine(pass.chat, true, notCompatBot(pass), !battlesOff(pass.chat));
   const { state, changed: fills } = await pass.computed();
   const key = varsKey(pass);
   const differ = varsAt !== key && writeStoryVars({ scriptstate: { ...pass.chat.scriptstate }, localLore: pass.chat.localLore }, state, pass);
@@ -1469,7 +1580,7 @@ function writeFixes(pass, fixes, { messages = true, attach = null } = {}) {
     const ctx = messages && fixes.ends ? await storyCtx() : null;
     const wrote = await writeRecords(found, chat => {
       attached = attach?.(chat);
-      if (fixes.lore) setLore(chat, true, { other: botOther(pass) });
+      if (fixes.lore) setLore(chat, true, { other: notCompatBot(pass), battles: !battlesOff(chat) });
 
       if (fixes.behind) recordSettingChange(chat, settings);
       if (messages) {
@@ -1609,7 +1720,7 @@ function liveWhat(origin) {
   const screen = live.app.screen();
   const shown = Number.isInteger(progress.shown) ? progress.shown : progress.log.length;
   const snapshot = live.app.snapshot();
-  return () => ({ source: { battle: origin.battle, result: null, log: progress.log, screen: screen.lines, stage: stageOf(origin.stage) },
+  return () => ({ source: { battle: origin.battle, own: ownStarts(origin.stage), result: null, log: progress.log, screen: screen.lines, stage: stageOf(origin.stage) },
     at: { to: shown, ended: false, screenEnd: screen.lines.length, snapshot } });
 }
 
@@ -1630,7 +1741,7 @@ function sendCommitted(target, options) {
     const info = surveyBattles(chat, readTable(chat)).battles.get(target.key);
     if (!last || last.blockKey !== target.key || info?.committed !== 'done' || info.result.tag !== last.tag) throw failed('noRecord');
     const screen = last.result.screen ?? [], log = last.result.log ?? [];
-    return { source: { battle: last.battle, result: last.result, log, screen, stage: last.result.stage },
+    return { source: { battle: last.battle, own: last.result.own ?? null, result: last.result, log, screen, stage: last.result.stage },
       at: { to: log.length, ended: true, endTurn: last.result.turn ?? 0, screenEnd: screen.length, snapshot: null } };
   }, options);
 }
@@ -1638,6 +1749,8 @@ function sendCommitted(target, options) {
 function sendFromCard(pass, key, options) {
   const live = liveOrigin(pass);
   if (live?.key === key) return sendLive(live, options);
+
+  if (pass.survey.off) return Promise.resolve({ sent: false });
   if (battleIn(pass).card(key) === 'done') return sendCommitted({ ...pass.target, key, lang: currentLang(pass.chat) }, options);
 
   return plannedWhat(pass).then(planned => {
@@ -1773,7 +1886,7 @@ async function plannedWhat(where, extra = null) {
   const what = chat => {
     const again = chainIn({ id: where.id, chat });
     if (!again || again.end?.check !== chain.end?.check || !samePoint(again.position.point, position.point)) return null;
-    return { source: { battle, result: over, log: read.log, screen: read.lines, stage: stageOf(end.spec) }, notes,
+    return { source: { battle, own: ownStarts(end.spec), result: over, log: read.log, screen: read.lines, stage: stageOf(end.spec) }, notes,
       at: { to: read.log.length, ended: false, screenEnd: read.lines.length, snapshot: end } };
   };
   return { target: { ...where.target, key: position.key, lang }, what, acts: tell.map(row => row.act) };
@@ -1799,7 +1912,8 @@ async function auxCommand(pass, input) {
   const options = await planOptions();
   const now = statusAt(from);
   const status = battleStatusLines(now, createNamer(naming(lang)), battleSpecOf(pass, chain.position.key));
-  const messages = auxRequest({ status, recent: auxRecent(pass.chat, settings.auxRecent ?? AUX_RECENT), input: String(input).slice(-AUX_CHARS), double: battleKind(now) !== 'single' });
+  const messages = auxRequest({ status, recent: auxRecent(pass.chat, settings.auxRecent ?? AUX_RECENT), input: String(input).slice(-AUX_CHARS), double: battleKind(now) !== 'single',
+    tools: toolsIn(from.spec) });
   let answer;
   try { answer = await askAux({ messages, mode: FORGE_MODE, allowPlugins: true }); }
   catch (error) { console.warn('[poke-battle] 보조 모델이 명령을 뽑지 못함', error); return null; }
@@ -1922,9 +2036,10 @@ export function saveSettingsInOrder(next) {
 export function changeSettings(next) {
   const switched = botsSwitched(settings, next);
   const commands = commandsOn(settings) !== commandsOn(next);
+  const tools = (settings.effectItems === true) !== (next.effectItems === true);
   settings = next;
   changed();
-  if (switched.length || commands) watchSoon();
+  if (switched.length || commands || tools) watchSoon();
   return Promise.all(switched.map(s => reconcileBot(s.name, s.on)));
 }
 
@@ -1951,7 +2066,7 @@ export async function openSettings() {
   try {
 
     const preparing = mountPreparing({ lang: await openLang() });
-    let pass, bot = null, persona, picture = null, imports = null;
+    let pass, bot = null, persona, picture = null, imports = null, chatBattles = null;
     try {
       await showWindow(owner, { full: true });
 
@@ -1961,16 +2076,18 @@ export async function openSettings() {
       pass = await readPass();
       if (pass) bot = { name: (await characterAt(pass.charIndex, pass.chat, { fresh: true }))?.name ?? '', compat: compatStatus.get(pass.target?.chaId) ?? '' };
       if (pass) imports = importsOf(pass.chat);
+      if (pass) chatBattles = battlesOffOf(pass.chat);
     } finally { preparing.remove(); }
     const unreadable = isUnreadable(settingsStatus);
     const lang = currentLang(pass?.chat);
-    app = mountSettings({ settings, bot, persona, notice: unreadable ? settingsUnreadable(lang) : '', picture, imports, lang,
+    app = mountSettings({ settings, bot, persona, notice: unreadable ? settingsUnreadable(lang) : '', picture, imports, battlesOff: chatBattles, lang,
       inUse: { lang },
       onPicture: next => savePicture(risuai.pluginStorage, persona, next),
       onPermission: askPermission,
       onChange: next => changeInWindow(pass?.target, next),
       onImport: () => openImport(pass.target, next => app.setImports(next)),
       onCancelImport: id => cancelImportIn(pass.target, id),
+      onBattlesOff: off => switchBattlesIn(pass.target, off),
       onClose: async () => { settingsApp = undefined; importApp?.close(); await hideWindow(owner); } });
     settingsApp = app;
   } finally {
@@ -1979,12 +2096,35 @@ export async function openSettings() {
   }
 }
 
+const battlesOffOf = chat => ({ off: battlesOff(chat), status: readBattlesOff(chat).status });
+
+async function switchBattlesIn(target, off) {
+  let after = null;
+  const wrote = await writeChat(target, (chat, found) => {
+    importLock(found, chat);
+    const done = setBattlesOff(chat, off);
+    after = battlesOffOf(chat);
+    return done;
+  }, { vars: true, missing: true });
+  if (wrote === HELD) throw failed('writeBlocked');
+  watchSoon();
+  return after;
+}
+
 let importApp;
 
 const importsOf = chat => {
   const { status, imports } = readImports(chat);
-  return { status, list: imports.filter(imp => !imp.kind && inForce(imp)).map(imp => ({ id: imp.id, time: imp.time, count: imp.mons.length })) };
+  const lang = currentLang(chat);
+  return { status, list: imports.filter(imp => !imp.kind && inForce(imp))
+    .map(imp => ({ id: imp.id, time: imp.time, count: imp.mons.length, names: imp.mons.slice(0, IMPORT_NAMES_SHOWN).map(mon => importedName(mon, lang)) })) };
 };
+
+function importedName(mon, lang) {
+  if (['auto', 'current'].includes(mon.from?.species)) return say(lang, 'panel.egg');
+  const species = sim.Dex.species.get(mon.set?.species ?? '');
+  return species.exists ? displayName(sim.Dex, namesFor(lang, sim), species.name, mon.set.name) : (mon.set?.name || String(mon.set?.species ?? ''));
+}
 
 const importLock = (found, chat = found.chat) => { if (battleIn({ id: idOf(found.target), chat }).key) throw failed('inBattle'); };
 
@@ -1994,29 +2134,29 @@ async function importStart(target) {
   if (!isOn(found)) throw failed('writeBlocked');
   importLock(found);
   const ctx = await storyCtx();
-  const { state } = acts.pendingState(found.chat, ctx);
-  return { found, ctx, state };
+  const { state, holds } = acts.pendingState(found.chat, ctx);
+  return { found, ctx, state, holds };
 }
 
 async function openImport(target, applied) {
   if (importApp) return;
-  const { found, ctx, state } = await importStart(target);
+  const { found, ctx, state, holds } = await importStart(target);
   const draft = makeDraft(found.chat, state, ctx, { seed: freshSeed() });
   importApp = mountImportScreen({ draft, ctx, seed: freshSeed, lang: currentLang(found.chat),
-    onApply: async edited => applied(await applyImportTo(target, edited, ctx)),
+    onApply: async edited => applied(await applyImportTo(target, edited, ctx, holds)),
     onClose: () => { importApp = undefined; } });
 }
 
 async function debugScreen(target, screen) {
   if (!settings.debug || importApp) return;
-  const { found, ctx, state } = await importStart(target);
+  const { found, ctx, state, holds } = await importStart(target);
   const options = screen({ ctx, state });
   const owner = {};
   await showWindow(owner, { full: true });
   try {
     await new Promise(resolve => {
       importApp = mountImportScreen({ ctx, seed: freshSeed, lang: currentLang(found.chat), ...options,
-        onApply: edited => applyImportTo(target, edited, ctx), onClose: () => { importApp = undefined; resolve(); } });
+        onApply: edited => applyImportTo(target, edited, ctx, holds), onClose: () => { importApp = undefined; resolve(); } });
     });
   } finally { await hideWindow(owner); }
 }
@@ -2028,8 +2168,8 @@ export const debugEdit = (uid, target) => debugScreen(target, ({ ctx, state }) =
 
 export async function debugLock(uid, locked, target) {
   if (!settings.debug) return;
-  const { ctx, state } = await importStart(target);
-  await applyImportTo(target, friendshipLockDraft(ctx, state, uid, locked), ctx);
+  const { ctx, state, holds } = await importStart(target);
+  await applyImportTo(target, friendshipLockDraft(ctx, state, uid, locked), ctx, holds);
 }
 
 export async function debugHeal(target) {
@@ -2053,9 +2193,9 @@ async function writeImportRecord(target, write) {
   return wrote;
 }
 
-async function applyImportTo(target, draft, ctx) {
+async function applyImportTo(target, draft, ctx, holds = []) {
   return writeImportRecord(target, chat => {
-    try { commitImport(chat, draft, ctx, { now: Date.now() }); } catch (error) { throw refused(error); }
+    try { commitImport(chat, draft, ctx, { now: Date.now(), held: acts.heldRecords(chat, holds) }); } catch (error) { throw refused(error); }
     return importsOf(chat);
   });
 }
@@ -2083,15 +2223,15 @@ const askedList = () => askedChats ??= (async () => {
 const importAllowed = x => isOn(x) && !x.unreadable && !battleIn(x).key;
 let offerSeen = null;
 
-const otherBot = x => botOther(x) === true;
+const notCompatBot = x => (x?.target?.chaId && compatSeen.has(x.target.chaId) ? !compatBots.has(x.target.chaId) : null);
 
-const botOther = x => (x?.target?.chaId && compatSeen.has(x.target.chaId) ? !compatBots.has(x.target.chaId) : null);
+const knownOtherBot = x => notCompatBot(x) === true;
 
 const askedKey = (id, chat) => { const back = importTurn(chat).back; return back ? `${id}:${back.id}` : id; };
 
 async function offerOf(pass) {
   const allowed = importAllowed(pass);
-  const other = otherBot(pass);
+  const other = knownOtherBot(pass);
   const key = JSON.stringify([pass.key, allowed, other]);
   if (offerSeen?.key !== key) {
     const state = await pass.state();
@@ -2117,10 +2257,10 @@ export const importLater = target => markAsked(target);
 export async function quickImport(target, { asked = false } = {}) {
   if (asked) await markAsked(target);
   if (importApp) return;
-  const { found, ctx, state } = await importStart(target);
+  const { found, ctx, state, holds } = await importStart(target);
   const offered = importOffer(found.chat, state, ctx, { allowed: true, seed: freshSeed() });
 
-  const ai = !offered && otherBot(found) && importOfferAi(found.chat, state, { allowed: true });
+  const ai = !offered && knownOtherBot(found) && importOfferAi(found.chat, state, { allowed: true });
   const draft = offered ?? makeDraft(found.chat, state, ctx, { seed: freshSeed() });
   const options = ai ? { mode: 'aiAsk', manual: aiDraft(found.chat, state, ctx, aiFailedFound()), readAi: () => readPartyByAux(target, ctx) }
     : { mode: offered ? 'quick' : 'import', draft, money: bagMoney(found.chat, compatBots.has(found.target.chaId)) };
@@ -2129,7 +2269,7 @@ export async function quickImport(target, { asked = false } = {}) {
   try {
     await new Promise(resolve => {
       importApp = mountImportScreen({ ...options, ctx, seed: freshSeed, lang: currentLang(found.chat),
-        onApply: edited => applyImportTo(target, edited, ctx), onClose: () => { importApp = undefined; resolve(); } });
+        onApply: edited => applyImportTo(target, edited, ctx, holds), onClose: () => { importApp = undefined; resolve(); } });
     });
   } finally { await hideWindow(owner); }
 }
@@ -2138,7 +2278,7 @@ const aiDraft = (chat, state, ctx, found) => makeDraft(chat, state, ctx, { seed:
 
 async function readPartyByAux(target, ctx) {
   const { found, state } = await importStart(target);
-  const messages = importAiMessages(found.chat);
+  const messages = importAiMessages(found.chat, { recent: settings.importRecent });
   let read = { why: 'noBlock' };
   if (messages) {
     try { read = readAiParty(await askAux({ messages, mode: FORGE_MODE, allowPlugins: true }), ctx); } catch (error) { read = { why: 'aiCall', error }; }
@@ -2180,6 +2320,7 @@ async function watchNow() {
     await catchUp(pass);
     await refreshDrawn(pass);
     await refreshForge(pass);
+    await shops.refresh(pass);
   } catch (error) { console.error(error); }
   finally {
     watching = false;
@@ -2195,6 +2336,11 @@ function recheckQuiet(id) {
 
 export async function startStoryLink() {
   ({ settings, status: settingsStatus } = await loadSettings(risuai.pluginStorage));
+
+  try {
+    const name = await personaName(risuai);
+    playerGender = lookOf(name ? adoptOldLook(settings, name) : settings, name).gender;
+  } catch {                          }
   await risuai.addRisuScriptHandler('display', onDisplay);
   await risuai.addRisuScriptHandler('process', onPrompt);
   await risuai.addRisuScriptHandler('input', onInput);
@@ -2209,4 +2355,6 @@ export async function startStoryLink() {
   }
 
   await watchNow();
+
+  startReplacer().catch(error => console.warn('[poke-battle] 보내는 글 바로잡기를 켜지 못함', error));
 }

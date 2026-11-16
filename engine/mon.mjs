@@ -18,7 +18,7 @@ export const STATUS_IDS = Object.freeze(new Set(['', 'brn', 'par', 'slp', 'frz',
 
 export const toID = text => String(text ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 
-export function completeSet(dex, set, rng, { levelUp, label = set.species } = {}) {
+export function completeSet(dex, set, rng, { levelUp, label = set.species, tera = true } = {}) {
 	const out = { ...set };
 	const species = dex.species.get(out.species);
 	if (!out.moves?.length) {
@@ -58,7 +58,7 @@ export function completeSet(dex, set, rng, { levelUp, label = set.species } = {}
 		else out.gender = rng.random() < species.genderRatio.M ? 'M' : 'F';
 	}
 	if (out.shiny === undefined) out.shiny = rng.random(SHINY_ODDS) === 0;
-	if (!out.teraType) out.teraType = species.requiredTeraType || species.types[rng.random(species.types.length)];
+	if (!out.teraType && tera) out.teraType = species.requiredTeraType || species.types[rng.random(species.types.length)];
 	return out;
 }
 

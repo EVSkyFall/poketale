@@ -3,7 +3,6 @@ export function liveSeedText(battle) {
   return String(typeof prng.getSeed === 'function' ? prng.getSeed() : prng.seed);
 }
 
-// Strings -> Gen5-style seed [16 bits x 4]. Mixes FNV-1a four different ways.
 export function deriveSeed(...parts) {
   const text = parts.join('|');
   const seed = [];

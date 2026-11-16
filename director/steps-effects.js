@@ -246,6 +246,8 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
     case 'highjumpkick': case 'jumpkick': case 'supercellslam': case 'axekick':
       await hp(a[0]); await say('move-trigger.keptGoingAndCrashed', nv(a[0])); return;
     case 'firepledge': await hp(a[0]); await say('arena-tag.fireGrassPledgeLapse', nv(a[0])); return;
+
+    case 'spikyshield': await hp(a[0]); await say('own.spikyShield', { ...nv(a[0]), moveName: names.move(from.id) }); return;
     default: await hp(a[0]); await sourceMessage(a[0], String(kw.from), false);
     }
   }

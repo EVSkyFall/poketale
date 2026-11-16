@@ -1,14 +1,16 @@
 import { latestStatus } from './compat.mjs';
 import { battlesIn } from './blocks.mjs';
+import { rulesAt } from './setting-changes.mjs';
 import { readBattleAt } from './chat.mjs';
 
 export const SCENE_DEFAULT = Object.freeze({ place: 'plains', time: 'day', indoors: false });
 
 function latestBattle(chat) {
   const messages = chat?.message ?? [];
+  const readAt = rulesAt(chat);
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i]?.role !== 'char') continue;
-    const spec = battlesIn(messages[i], i).map(b => readBattleAt(chat, i, b.body).spec).filter(Boolean).at(-1);
+    const spec = battlesIn(messages[i], i, readAt(i)).map(b => readBattleAt(chat, i, b.body).spec).filter(Boolean).at(-1);
     if (spec) return spec;
   }
   return null;

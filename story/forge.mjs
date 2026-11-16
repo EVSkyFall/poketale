@@ -2,6 +2,7 @@ import { findBlocks, parseBattle, hashKey, messageId, stripForPrompt } from './b
 import { BATTLE_BLOCK_PART, varTexts, trainerLore } from './lore.mjs';
 import { dropOocs } from './chat.mjs';
 import { rulesAt } from './setting-changes.mjs';
+import { battlesOff } from './battles-off.mjs';
 import { PLAYER_NAME } from './rules.mjs';
 import { sceneLines } from './ai-names.mjs';
 
@@ -20,11 +21,9 @@ export const FORGE_ASK = {
   trainer: `Write exactly one Battle Block for a Trainer battle that could start in the latest scene, and nothing else. Use a Trainer from the scene; if none is present, bring in a Trainer who fits the place.`,
 };
 
-export const FORGE_KINDS = Object.keys(FORGE_ASK);
-
 export const mayForge = message => message?.role === 'char';
 
-export const forgeAt = (chat, { quiet = true } = {}) => (quiet ? (chat?.message ?? []).findLastIndex(mayForge) : -1);
+export const forgeAt = (chat, { quiet = true } = {}) => (quiet && !battlesOff(chat) ? (chat?.message ?? []).findLastIndex(mayForge) : -1);
 
 export const forgeKey = id => hashKey(`forge\n${id}`);
 

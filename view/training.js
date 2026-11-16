@@ -1,7 +1,8 @@
-// Modified for PokeTale on 2026-11-14. See THIRD-PARTY-NOTICES.md.
+// Modified for PokeTale on 2026-11-16. See THIRD-PARTY-NOTICES.md.
+// Adapted layouts: PlayNav, revision 7f1b4dcb8ca1cc85180272c165842374924f1564.
+// Copyright (c) 2026 poooooby, MIT License. See THIRD-PARTY-NOTICES.md.
 // Ported from PlayNav (https://github.com/poooooby/PlayNav) src/training/core_app.lua and bags_app.lua (the punch, the bag's swing, the burst, the meter's two
 // shapes, the bag list) - drawn here, no picture files. The hanging bag (pixel art, chain, straps), its swing from the clasp, the contact 70 ms after a tap
-// and the burst's bits: view/training-art.js, view/training-motion.js - only pictures wait for the contact, never the rules. PlayNav is MIT License, Copyright (c) 2026 poooooby - THIRD-PARTY-NOTICES.md.
 
 import { createCore, hangBlock, meterAxis, bagOf, BAG_IDS, BAG_SIZES, RESET_BAG, METER_MAX, METER_ORDER, statRoom } from '../story/training.mjs';
 import { mountTrainingFrame } from './training-frame.js';

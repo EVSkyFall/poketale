@@ -1,4 +1,3 @@
-// Evolution conditions shared by battle and panel actions.
 import { toID } from './mon.mjs';
 
 export const REGIONAL_FORMES = Object.freeze(new Set(['Alola', 'Galar', 'Hisui', 'Paldea']));
@@ -88,7 +87,10 @@ const CONDITIONS = Object.freeze({
 	'with a Remoraid in party': (dex, mon, now) => (now.party ?? []).some(name => toID(dex.species.get(name).baseSpecies) === 'remoraid'),
 	'with a Dark-type in the party': (dex, mon, now) => (now.party ?? []).some(name => dex.species.get(name).types.includes('Dark')),
 });
-const TIMES = Object.freeze({ day: timeOfDay => !isEvolutionNight(timeOfDay), night: isEvolutionNight, dusk: timeOfDay => timeOfDay === 'dusk',
+
+export const DUSK_FORM_HOURS = Object.freeze(new Set([17, 18, 19]));
+const TIMES = Object.freeze({ day: timeOfDay => !isEvolutionNight(timeOfDay), night: isEvolutionNight,
+	dusk: (timeOfDay, now) => timeOfDay === 'dusk' || DUSK_FORM_HOURS.has(now.clockHour),
 	daySky: timeOfDay => !isNight(timeOfDay), nightSky: isNight });
 
 const regionOf = (target, from) => (target.evoRegion ? toID(target.evoRegion) : REGIONAL_FORMES.has(target.forme) && target.forme !== from.forme ? toID(target.forme) : null);
@@ -111,7 +113,7 @@ const allowed = (target, from, mon, now) => genderAllows(mon.gender, target) && 
 
 function ruleHolds(dex, rule, mon, now) {
 	if (!rule) return true;
-	if (rule.time && !TIMES[rule.time](now.timeOfDay ?? 'day')) return false;
+	if (rule.time && !TIMES[rule.time](now.timeOfDay ?? 'day', now)) return false;
 	if (rule.friendship && !((now.friendship ?? 0) >= EVOLVE_FRIENDSHIP)) return false;
 	if (rule.count && !((mon.counts?.[rule.count.kind] ?? 0) >= rule.count.at)) return false;
 	if (rule.money && !(now.money >= rule.money)) return false;

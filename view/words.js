@@ -20,6 +20,7 @@ const OWN = {
     'own.loadFailed': '그림을 불러오지 못했습니다.\n다시 시도해 주십시오.',
     'own.renameFailed': '닉네임을 바꾸지 못했습니다.\n다시 시도해 주십시오.',
     'own.partnerMon': '{{trainerName}}의 포켓몬',
+    'own.partner': '동료',
   },
   en: {
     'own.onlyFightParty': 'Only Fight and Pokémon\ncan be used now.',
@@ -37,11 +38,11 @@ const OWN = {
     'own.loadFailed': 'Couldn’t load the pictures.\nPlease try again.',
     'own.renameFailed': 'Couldn’t change the nickname.\nPlease try again.',
     'own.partnerMon': '{{trainerName}}’s Pokémon',
+    'own.partner': 'Partner',
   },
 };
 export const VIEW_TEXT = Object.freeze({ ko: { ...ko, ...OWN.ko }, en: { ...en, ...OWN.en } });
 
-// The view's words in lang: (key, values) -> text
 export function viewWords(lang) {
   const table = VIEW_TEXT[checkLang(lang)];
   return (key, values = {}) => {

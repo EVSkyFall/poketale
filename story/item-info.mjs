@@ -3,7 +3,6 @@ import { tmNumber } from './items.mjs';
 
 export const itemText = id => (Object.hasOwn(data.text, id) ? data.text[id] : null);
 
-// Move id taught by a TM (tm024 -> 'firespin'), null if not a TM
 export function tmMove(id) {
   const n = tmNumber(id);
   return n ? data.tms[n - 1] ?? null : null;

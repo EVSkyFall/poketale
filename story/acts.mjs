@@ -1,5 +1,5 @@
-import { findBlocks, findTags, parseChange, hashKey, stripForPrompt, messageId } from './blocks.mjs';
-import { readTable, writeTable, computeState, isReflected, heldChanges, changeAt, applyOps, findMon, hpPercentOf, movePp, toID, hatchedParty, storyTick, isEgg, stateFormat } from './state.mjs';
+import { findBlocks, findTags, parseChange, hashKey, stripForPrompt, messageId, hasBlocks, readsBlockEdges } from './blocks.mjs';
+import { readTable, writeTable, computeState, isReflected, heldChanges, changeAt, applyOps, findMon, hpPercentOf, movePp, toID, hatchedParty, storyTick, isEgg, stateFormat, liveActions } from './state.mjs';
 import { readStored } from './stored.mjs';
 import { foldCtxAt, rulesAt } from './setting-changes.mjs';
 import { refusal, ruleError, ruleText } from './failure.mjs';
@@ -7,11 +7,12 @@ import { findOocs, unwrapOocs } from './chat.mjs';
 import { pkbLog } from './prompts.mjs';
 import { coveredMarks } from './save.mjs';
 import { boxOf } from './diary.mjs';
-import { itemId, customInfo } from './custom-items.mjs';
+import { itemId, customInfo, withItemTags } from './custom-items.mjs';
 import { say } from './screen-text.mjs';
 import { commandsIn } from './commands.mjs';
 import { answeredLine } from './act-prompts.mjs';
-import { dropTaken, statusIn } from './compat.mjs';
+import { dropTaken, statusIn, statusMoneyAt } from './compat.mjs';
+import { shopEvent, limitedKey } from './shop.mjs';
 
 export const QUEUE_VAR = '$pkb_queue';
 
@@ -69,6 +70,8 @@ export function runAction(state, action, ctx, { normalize = false } = {}) {
   }
 
   if (action.type === 'toss') events = events.map(e => (e.kind === 'item' ? { ...e, toss: true } : e));
+
+  if (action.type === 'shop') events = [shopEvent(ops)];
   return { state: cur, ops, events, errors };
 }
 
@@ -84,38 +87,88 @@ function withUids(state, op, ctx) {
 }
 
 export function pendingState(chat, ctx, { uptoIndex, survey } = {}) {
-  const { state, table, changed, counted, reflected, status } = computeState(chat, ctx, { uptoIndex, survey });
+  const { state, table, changed, counted, reflected, imported, status } = computeState(chat, ctx, { uptoIndex, survey });
   const at = { ...ctx, status };
   const added = readQueue(chat).actions.filter(action => !isReflected(action, reflected, counted));
   let cur = state;
-  const errors = [];
+  const errors = [], holds = [];
   for (const action of added) {
+    if (imported.has(action.id)) { holds.push(action); continue; }
     const result = runAction(cur, action, at);
     cur = result.state;
     errors.push(...result.errors);
+    if (!result.errors.length) holds.push(action);
   }
-  return { state: cur, table, errors, changed, added, status };
+  return { state: cur, table, errors, changed, added, holds, status, imported };
+}
+
+const actionRecord = ({ id, type, at, item, ops, in: holder }) => ({ id, type, at, ...(item ? { item } : {}), ops, ...(holder ? { in: holder } : {}) });
+
+export function heldRecords(chat, holds) {
+  const ids = new Set((holds ?? []).map(action => action.id));
+  return readQueue(chat).actions.filter(action => ids.has(action.id)).map(actionRecord);
 }
 
 export function queueAction(chat, ctx, input, { now = Date.now(), salt = '' } = {}) {
   if (!input || !Array.isArray(input.ops) || !input.ops.length) throw new Error('행동에 연산이 없습니다.');
   adoptQueue(chat, ctx, { salt: `${now}:${salt}` });
+  const earlier = mergedInto(chat, ctx, input);
   const queue = readQueue(chat);
   const { state: base, status } = pendingState(chat, ctx);
   const type = /^[a-z]{1,16}$/.test(String(input.type ?? '')) ? input.type : 'other';
-  const action = { id: hashKey(`${now}:${salt}:${queue.actions.length}:${JSON.stringify(input.ops)}`), type, at: now };
+  const ops = [...(earlier?.ops ?? []), ...input.ops];
+  const action = { id: hashKey(`${now}:${salt}:${queue.actions.length}:${JSON.stringify(ops)}`), type, at: now };
   if (input.item) action.item = itemId(input.item);
-  const result = runAction(base, { ...action, ops: input.ops }, { ...ctx, status }, { normalize: true });
+  if (input.shop) action.shop = String(input.shop);
+  const result = runAction(base, { ...action, ops }, { ...ctx, status }, { normalize: true });
   if (result.errors.length) throw result.notes.length ? refusal(result.notes, { join: ' / ' }) : new Error(result.errors.join(' / '));
 
   if (hatchedParty(base).length && !hatchedParty(result.state).length) throw ruleError('acts.lastInParty');
   action.ops = result.ops;
   action.events = result.events;
   const messages = chat.message ?? [];
-  if (!queue.actions.length) queue.since = { chatId: messages.at(-1)?.chatId ?? null, count: messages.length };
+  if (!queue.actions.length) queue.since = earlier?.since ?? { chatId: messages.at(-1)?.chatId ?? null, count: messages.length };
   queue.actions.push(action);
   writeQueue(chat, queue);
   return { action, state: result.state };
+}
+
+function mergedInto(chat, ctx, input) {
+  if (input.type !== 'shop' || !input.shop) return null;
+  const queue = readQueue(chat);
+  const earlier = queue.actions.at(-1);
+  if (earlier?.type !== 'shop' || earlier.shop !== String(input.shop) || earlier.sent) return null;
+  const { added, imported } = pendingState(chat, ctx);
+  if (!added.some(a => a.id === earlier.id) || imported.has(earlier.id)) return null;
+  writeQueue(chat, { ...queue, actions: queue.actions.slice(0, -1) });
+  return { ops: earlier.ops, since: queue.since };
+}
+
+export function limitedBought(chat, { survey } = {}) {
+  const actions = new Map([...liveActions(chat, { survey })].map(([id, live]) => [id, live.action]));
+  for (const action of readQueue(chat).actions) if (!actions.get(action.id)) actions.set(action.id, action);
+  return new Set([...actions.values()].flatMap(a => (a?.ops ?? []).filter(op => op?.op === 'item' && op.limited && op.delta > 0)
+    .map(op => limitedKey(op.limited, itemId(op.item)))));
+}
+
+const shopNet = action => {
+  if (action?.type !== 'shop') return 0;
+  const { got = 0, spent = 0 } = shopEvent(action.ops ?? []);
+  return got - spent;
+};
+
+export function shopBalance(chat, { upto, survey } = {}) {
+  const base = statusMoneyAt(chat, upto ?? Infinity);
+  if (!base) return null;
+  const queue = readQueue(chat);
+  const unsent = upto === undefined || nextOwnMessage(chat, queue) === upto ? queue.actions : [];
+  const queued = new Set(queue.actions.map(action => action.id));
+  let net = unsent.reduce((sum, action) => sum + shopNet(action), 0);
+  for (const [id, { action, told, at }] of liveActions(chat, { uptoIndex: upto, survey })) {
+    if (queued.has(id)) continue;
+    if (told !== null ? told > base.index : at >= 2 * base.index) net += shopNet(action);
+  }
+  return base.money + net;
 }
 
 export function attachQueue(chat, ctx, { salt = '', uptoIndex } = {}) {
@@ -123,11 +176,11 @@ export function attachQueue(chat, ctx, { salt = '', uptoIndex } = {}) {
   if (!queue.actions.length) return null;
   const { state, table, errors } = pendingState(chat, ctx, { uptoIndex });
   const tag = hashKey(`acts:${JSON.stringify(queue.since)}:${queue.actions.map(a => a.id).join(',')}:${salt}`);
-  table.snaps[tag] = state;
+  table.snaps[tag] = withItemTags(state);
   table.acts = { ...table.acts, [tag]: {
     events: queue.actions.flatMap(a => a.events ?? []), errors,
 
-    v: 2, actions: queue.actions.map(({ id, type, at, item, ops, in: holder }) => ({ id, type, at, ...(item ? { item } : {}), ops, ...(holder ? { in: holder } : {}) })),
+    v: 2, actions: queue.actions.map(actionRecord),
   } };
   writeTable(chat, table);
   writeQueue(chat, { ...queue, actions: queue.actions.map(a => ({ ...a, sent: tag })) });
@@ -294,21 +347,27 @@ export function actsIn(text, table) {
 export const heldLine = lang => say(lang, 'notice.held');
 
 export function changesIn(text, chat, ctx, lang) {
-  const blocks = findBlocks(text).filter(b => b.kind === 'change');
-  if (!blocks.length) return null;
+  if (!hasBlocks(text)) return null;
   const messages = chat?.message ?? [];
-  const keys = blocks.map(b => b.key);
+  const readAt = rulesAt(chat);
+  const changeKeys = (data, reading) => findBlocks(data, reading).filter(b => b.kind === 'change').map(b => b.key);
+  const textKeys = new Map();
+  const keysOf = reading => { const edges = readsBlockEdges(reading); if (!textKeys.has(edges)) textKeys.set(edges, changeKeys(text, reading)); return textKeys.get(edges); };
   const same = messages.findLastIndex(m => String(m?.data ?? '') === String(text));
-  const index = same >= 0 ? same : messages.findLastIndex(m => {
-    const own = findBlocks(m?.data ?? '').filter(b => b.kind === 'change').map(b => b.key);
+  const index = same >= 0 ? same : messages.findLastIndex((m, i) => {
+    const keys = keysOf(readAt(i));
+    if (!keys.length) return false;
+    const own = changeKeys(m?.data ?? '', readAt(i));
     return keys.every(k => own.includes(k));
   });
+  const blocks = findBlocks(text, index >= 0 ? readAt(index) : undefined).filter(b => b.kind === 'change');
+  if (!blocks.length) return null;
   let state = null, table = null, status = null;
   if (index >= 0 && ctx) ({ state, table, status } = computeState(chat, ctx, { uptoIndex: index - 1 }));
 
   const at = ctx && { ...(index >= 0 ? foldCtxAt(chat, ctx)(index) : ctx), status: statusIn(messages[index]) ?? status };
 
-  const reading = index >= 0 ? rulesAt(chat)(index) : undefined;
+  const reading = index >= 0 ? readAt(index) : undefined;
   const chatId = index >= 0 ? messageId(messages[index], index) : null;
   const held = index >= 0 ? heldChanges(chat, table ?? readTable(chat)) : new Set();
   const events = [], errors = [];
@@ -403,7 +462,7 @@ export function promptText(text, chat, table, { names = null, lang = 'ko', guide
   const latestText = latest >= 0 ? String(messages[latest].data ?? '') : null;
   const mine = isLatestOwn(chat, text);
 
-  const commands = taking && mine ? commandsIn(messages[latest], latest) : [];
+  const commands = taking && mine ? commandsIn(messages[latest], latest, rulesAt(chat)(latest)) : [];
   const line = commands.length ? answeredLine(commands.every(block => block.own)) : null;
   let slot = !!line;
   const covered = coveredIn(chat);
@@ -428,7 +487,11 @@ export function promptText(text, chat, table, { names = null, lang = 'ko', guide
   if (ctx && mine) events = [...passingTold(chat, ctx, latest), ...events];
   out = stripForPrompt(moved ? dropTaken(out) : out);
   if (line) out = out.includes(END_SLOT) ? out.replace(END_SLOT, `\n${line}`) : `${out}\n(OOC: ${line})`;
-  const log = pkbLog(events, { lang, en: names });
+
+  const shop = events.filter(e => e?.kind === 'shop');
+  const after = shop.length ? shopBalance(chat, { upto: latest }) : null;
+  const money = after === null ? null : after - shop.reduce((sum, e) => sum + (e.got ?? 0) - (e.spent ?? 0), 0);
+  const log = pkbLog(events, { lang, en: names, money });
   return log ? `${out}\n${log}` : out;
 }
 

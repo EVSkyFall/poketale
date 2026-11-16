@@ -1,5 +1,5 @@
 // from pokerogue src/ui/handlers/base-option-select-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-12. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-16. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/handlers/confirm-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/handlers/summary-ui-handler.ts (SummaryUiMode.LEARN_MOVE, Page.MOVES) @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/text.ts (SUMMARY*, WINDOW*, colours) @ 7d7da4a8 (AGPL-3.0-only)
@@ -94,22 +94,23 @@ export class ConfirmMenu {
 
 export class LearnMoveSummary {
   constructor(scene) { this.scene = scene; }
-  async choose({ mon, moves, newMove }) {
+  async choose({ mon, moves, newMove, forgetQuestions = null }) {
     if (this.finish || this.opening) throw new Error('Learn move screen already open');
     const s = this.scene;
     this.opening = true;
     try {
       const asset = await s.assets.mon(mon, false);
       s.life.check();
-      this.moves = moves; this.newMove = newMove;
+      this.moves = moves; this.newMove = newMove; this.questions = forgetQuestions; this.picked = null; this.confirming = false;
       await fadeSwap(s, () => this.build(mon, asset));
     } catch (error) { this.clear(); throw error; } finally { this.opening = false; }
 
     let menu;
     try {
       s.audio.cry(mon).catch(() => {});
-      menu = openMenu(s, { input: action => this.input(action), close: () => { this.finish = null; } });
-      this.finish = menu.finish;
+
+      menu = openMenu(s, { input: action => this.input(action), paused: () => this.confirming, close: () => { this.finish = this.fail = null; } });
+      this.finish = menu.finish; this.fail = menu.fail;
     } catch (error) { menu?.finish(null); this.clear(); throw error; }
     let slot;
     try { slot = await menu.promise; } catch (error) { this.clear(); throw error; }
@@ -158,8 +159,8 @@ export class LearnMoveSummary {
     this.details.attach(refs);
     for (let m = 0; m <= 4; m++) {
       const hit = s.add.rectangle(-2, 16 * m - 15, 211, 16, 0, 0).setOrigin(0).setInteractive({ useHandCursor: true });
-      hit.on('pointerover', () => this.setCursor(m));
-      hit.on('pointerdown', () => { this.setCursor(m); this.input('ok'); });
+      hit.on('pointerover', () => { if (!this.confirming) this.setCursor(m); });
+      hit.on('pointerdown', () => this.tapRow(m));
       this.list.add(hit);
     }
     this.setCursor(4);
@@ -171,21 +172,57 @@ export class LearnMoveSummary {
     this.details.select(cursor, this.selected());
   }
 
-  input(action) {
+  tapRow(m) {
     if (!this.finish) return;
-    if (action === 'up') { this.setCursor(this.cursor ? this.cursor - 1 : 4); playSelect(this.scene); }
-    else if (action === 'down') { this.setCursor(this.cursor < 4 ? this.cursor + 1 : 0); playSelect(this.scene); }
+    if (this.confirming) {
+      if (!this.confirmMenu?.finish) return;
+      this.confirmMenu.input('back');
+      this.picked = m; this.setCursor(m);
+      return;
+    }
+    if (this.picked === m) return this.input('ok');
+    this.picked = m; this.setCursor(m); playSelect(this.scene);
+  }
+
+  input(action) {
+    if (!this.finish || this.confirming) return;
+    if (action === 'up') { this.setCursor(this.cursor ? this.cursor - 1 : 4); this.picked = this.cursor; playSelect(this.scene); }
+    else if (action === 'down') { this.setCursor(this.cursor < 4 ? this.cursor + 1 : 0); this.picked = this.cursor; playSelect(this.scene); }
     else if (action === 'ok') {
-      if (this.cursor < this.moves.length) { playSelect(this.scene); this.finish(this.cursor); }
-      else if (this.cursor === 4) { playSelect(this.scene); this.finish(null); }
+      if (this.cursor < this.moves.length) {
+        playSelect(this.scene);
+        if (this.questions) this.confirmForget(this.cursor).catch(error => this.fail?.(error));
+        else this.finish(this.cursor);
+      } else if (this.cursor === 4) { playSelect(this.scene); this.finish(null); }
       else playError(this.scene);
     } else if (action === 'back') { playSelect(this.scene); this.finish(null); }
+  }
+
+  async confirmForget(slot) {
+    const s = this.scene, m = s.messages, ui = s.ui;
+    const at = [ui.getIndex(m.bg), ui.getIndex(m.container)], shown = [m.bg.visible, m.container.visible], before = m.text.text;
+    this.confirming = true;
+    let yes = false;
+    try {
+      ui.bringToTop(m.bg); ui.bringToTop(m.container);
+      m.bg.setVisible(true); m.container.setVisible(true);
+      await m.message(this.questions[slot], { hold: 0 });
+      if (!this.finish) return;
+      this.confirmMenu ??= new ConfirmMenu(s);
+      yes = await this.confirmMenu.choose();
+    } finally {
+      this.confirming = false;
+      m.text.setText(before);
+      m.bg.setVisible(shown[0]); m.container.setVisible(shown[1]);
+      ui.moveTo(m.bg, at[0]); ui.moveTo(m.container, at[1]);
+    }
+    if (yes) this.finish?.(slot);
   }
   clear() {
     this.details?.clear(); this.details = null;
     this.container?.destroy(); this.container = this.list = null;
   }
-  destroy() { if (this.finish) this.finish = null; this.clear(); }
+  destroy() { if (this.finish) this.finish = null; this.confirmMenu?.destroy(); this.clear(); }
 }
 
 export function buildMoveEffect(s, x = 106) {

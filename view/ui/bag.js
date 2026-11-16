@@ -1,5 +1,5 @@
 // from pokerogue src/ui/handlers/ball-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-12. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-16. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/handlers/command-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
 
 import { addWindow } from './window.js';
@@ -37,7 +37,7 @@ export function openBag(menu) {
   menu.detailsMask?.destroy(); menu.detailsMask = null;
   menu.container.removeAll(true); menu.drawnMode = null;
   const bagMenu = menu.scene.bagMenu ??= new BagMenu(menu.scene);
-  bagMenu.choose({ bag: menu.bag, party: menu.party ?? [], prompt }).then(choice => {
+  bagMenu.choose({ bag: menu.bag, party: menu.party ?? [], partner: menu.partner, prompt }).then(choice => {
     if (!menu.finish) return;
     if (choice) return menu.finish(choice);
     menu.mode = 'command'; menu.cursor = 1; menu.draw();
@@ -53,14 +53,14 @@ export const loadItemIcons = scene => scene.assets.image('bag_items', 'images/it
 export class BagMenu {
   constructor(scene) { this.scene = scene; }
 
-  async choose({ bag, party = [], prompt = '' }) {
+  async choose({ bag, party = [], partner = null, prompt = '' }) {
     if (this.finish) throw new Error('Bag menu already open');
     if (!Array.isArray(bag?.pockets) || !bag.pockets.length) throw new Error('Expected bag pockets');
     const scene = this.scene;
     await loadItemIcons(scene);
     scene.life.check();
     if (this.finish) throw new Error('Bag menu already open');
-    this.bag = bag; this.party = party; this.prompt = prompt;
+    this.bag = bag; this.party = party; this.partner = partner; this.prompt = prompt;
     this.measuredWidths = new Map();
     this.pocket = Math.max(0, bag.pockets.findIndex(p => p.items.length)); this.cursor = 0; this.scroll = 0; this.sub = false;
     const menu = openMenu(scene, { input: action => this.input(action), close: () => this.clear(),
@@ -77,6 +77,7 @@ export class BagMenu {
   windows() { return this.rect ? [this.rect] : []; }
 
   get length() { return this.items.length + 1; }
+
   measureWidths() {
     const s = this.scene, widths = this.measuredWidths ??= new Map();
     let probe;
@@ -94,6 +95,7 @@ export class BagMenu {
       const all = this.bag.pockets.flatMap(p => p.items);
       const namesWidth = Math.max(0, ...all.map(i => measure(i.name)));
       const countsWidth = Math.max(0, ...all.map(i => measure(`×${i.count}`)));
+
       const tabs = this.bag.pockets.map(p => measure(p.name));
       const tabsWidth = tabs.reduce((a, b) => a + b, 0) + 8 * (tabs.length - 1);
       const content = Math.max(64, namesWidth + 4 + countsWidth, measure(s.words(CANCEL_TEXT)), TAB_LEFT + tabsWidth + TAB_LEFT - 50);
@@ -144,8 +146,9 @@ export class BagMenu {
       }
 
       const iconY = top + 15 + 16 * (r + 1);
-      const icon = item.target === 'enemy' ? s.add.image(24, iconY, 'pb', ballFrame(item.id))
-        : item.emoji ? emojiIcon(s, 24, iconY, item.emoji)
+
+      const icon = item.emoji ? emojiIcon(s, 24, iconY, item.emoji)
+        : item.target === 'enemy' ? s.add.image(24, iconY, 'pb', ballFrame(item.id))
           : s.add.image(24, iconY, 'bag_items', item.id).setScale(0.5);
       const name = windowText(s, 36, y, item.name);
       const count = windowText(s, 36 + namesWidth + 4 + countsWidth, y, `×${item.count}`).setOrigin(1, 0);
@@ -251,7 +254,7 @@ export class BagMenu {
     this.sub = true;
 
     const onOpen = () => { this.container?.setVisible(false); this.wiggle(null); };
-    this.scene.party.choose({ party, forced: false, use: { item: item.id }, onOpen }).then(target => {
+    this.scene.party.choose({ party, partner: this.partner, forced: false, use: { item: item.id }, onOpen }).then(target => {
       if (!this.finish) return;
       if (target) return this.finish({ kind: 'item', item: item.id, slot: target.slot, ...(target.move !== undefined ? { move: target.move } : {}) });
       this.sub = false; this.container.setVisible(true); this.setCursor(this.cursor, true);

@@ -1,4 +1,3 @@
-// Check received assets against the pinned file hashes.
 import TABLE from './pinned-assets.json' with { type: 'json' };
 
 export const PINNED_BASE = TABLE.base;

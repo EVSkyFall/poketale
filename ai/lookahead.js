@@ -48,14 +48,12 @@ export function lookahead({ sim, json, seed, probe, sideId, mine, forcedSwitches
         replies.push({ reply, value: value(copy, sideId),
           next: copy.ended ? null : { copy, mine: moveChoices(side.active[0]), theirs: moveChoices(side.foe.active[0]) } });
         if (copy.ended) destroy(copy);
-        // Appending replies cannot bring an already discarded reply back into
-        // the worst two. Include ended replies so ties and deep seeds stay put.
+
         const keep = new Set(worstReplies(replies));
         for (const entry of replies) if (!keep.has(entry)) discard(entry);
       });
       if (replies.length) rows.push({ choice, order: i, replies, value: combine(replies.map(r => r.value)) });
-      // Retain at most two replies for each of the best two rows, plus the
-      // current row. Serialize only the positions actually searched next.
+
       const keep = new Set(rows.slice().sort(rankRows).slice(0, BEAM));
       for (const row of rows) if (!keep.has(row)) row.replies.forEach(discard);
     });
@@ -115,7 +113,6 @@ function play(sim, json, seed, sideId, mine, theirs, cap) {
   }
 }
 
-// Value of the position as seen from sideId
 function value(battle, sideId) {
   const side = battle.getSide(sideId);
   if (battle.ended) {

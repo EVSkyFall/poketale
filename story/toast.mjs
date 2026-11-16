@@ -1,6 +1,5 @@
 import { noteLooks } from './card.mjs';
 
-// How long a toast stays (ms), fading in and out at the ends
 export const TOAST_MS = 4000;
 export const TOAST_CLASS = 'x-risu-pkb-toast';
 

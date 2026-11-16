@@ -199,7 +199,7 @@ function waterNet(c, y0, y1, line) {
   for (let y = y0 + 2; y < y1 - 2; y += DOT) {
     let start = null;
     for (let x = -4; x <= c.w + 4; x += DOT) {
-      // Rank squared distances, then retain hypot's rounding for the visible edge.
+
       let d1 = 1e18, d2 = 1e18, near1 = null, near2 = null;
       for (const point of pts) {
         const dx = point[0] - x - 1, dy = (point[1] - y - 1) * 2, d = dx * dx + dy * dy;

@@ -1,5 +1,5 @@
 // from pokerogue src/main.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-14. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-16. See view/LICENSE-NOTE.md.
 // from pokerogue src/scene-base.ts @ 7d7da4a8 (AGPL-3.0-only)
 import Phaser from 'phaser';
 import { BattleScene } from './scene.js';
@@ -42,7 +42,7 @@ export async function createBattleView(options) {
     type: Phaser.WEBGL, parent: options.parent, width, height,
     pixelArt: true, roundPixels: true, backgroundColor: '#203040', banner: false,
     audio: { noAudio: true }, dom: { createContainer: false },
-    scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH }, scene: [scene], ...rendererConfig(),
+    scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH }, scene: [scene], ...rendererConfig(Phaser),
   });
 
   const resizer = new ResizeObserver(() => refitScale(game.scale));
@@ -113,7 +113,7 @@ export async function createBattleView(options) {
   view.trainerPicture = who => (destroyed ? null : scene.encounter.picture(who));
   view.playSound = path => { if (!destroyed) scene.audio?.play(path).catch(() => {}); };
 
-  view.showTrainer = () => life.run(() => showTrainer(scene));
+  view.showTrainer = options => life.run(() => showTrainer(scene, options));
   view.hideInfo = side => life.run(() => hideInfo(scene, side));
   view.pause = ms => life.run(() => pause(scene, ms));
 

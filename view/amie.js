@@ -1,4 +1,5 @@
-// Modified for PokeTale on 2026-11-14. See THIRD-PARTY-NOTICES.md.
+// Modified for PokeTale on 2026-11-16. See THIRD-PARTY-NOTICES.md.
+// Adapted layouts: PlayNav, revision 7f1b4dcb8ca1cc85180272c165842374924f1564.
 // Motions ported from PlayNav (https://github.com/poooooby/PlayNav) src/amie/play.lua - lifeMotion / stepLife (breathing, sway, hops, the wriggle while stroked,
 // the flinch, dozing), reward (a double hop with notes), the wake ("!", a white flash, it turns round), the high five leap, feeding (a flash with stars, then
 // the food held at its mouth shrinking bite by bite, crumbs, the hearts; a full Pokemon turns the food away).
@@ -27,6 +28,8 @@ const TICK_MS = 1000 / TICK_HZ;
 const FRAME_FONT = 'PkbPixel';
 
 let playLevel = DEFAULT_LEVEL;
+
+export const GAME_POINTERS = 4;
 
 const TOUCH_SLOP = 2;
 
@@ -129,6 +132,7 @@ export class AmieScreen {
     this.hud.setFoods(this.foods);
     this.showValues();
     this.finger = null;
+    this.fingers = new Set();
     this.hover = null;
     this.eating = null;
     this.playing = null;
@@ -255,9 +259,17 @@ export class AmieScreen {
 
     const field = p => { const w = s.cameras.main.getWorldPoint(p.x, p.y); return { x: w.x / 6, y: w.y / 6 }; };
     const down = p => {
-      if (!this.isOpen || this.finger) return;
+      if (!this.isOpen) return;
       const at = field(p);
-      if (this.playing) { this.finger = { id: p.id, ...at, moved: 0 }; this.playing.down(at); return; }
+
+      if (this.finger && this.playing?.many && this.finger.id !== p.id && !this.fingers.has(p.id)) {
+        this.fingers.add(p.id);
+        this.playing.down({ ...at, t: p.event?.timeStamp });
+        return;
+      }
+      if (this.finger) return;
+
+      if (this.playing) { this.finger = { id: p.id, ...at, moved: 0 }; this.playing.down({ ...at, t: p.event?.timeStamp }); return; }
 
       if (this.hud.menuOpen) { this.hud.back(); return; }
       if (this.eating) return;
@@ -269,6 +281,7 @@ export class AmieScreen {
       if (!this.isOpen) return;
       const at = field(p);
       this.hover = at;
+      if (this.fingers.has(p.id)) { this.playing?.move(at); return; }
       if (this.finger?.id !== p.id) return;
       if (this.playing) { Object.assign(this.finger, at); this.playing.move(at); return; }
       this.finger.moved += Math.hypot(at.x - this.finger.x, at.y - this.finger.y);
@@ -276,7 +289,9 @@ export class AmieScreen {
       this.path?.push({ ...at, t: s.time.now });
     };
     const up = p => {
-      if (!this.isOpen || this.finger?.id !== p.id) return;
+      if (!this.isOpen) return;
+      if (this.fingers.delete(p.id)) { this.playing?.up(field(p)); return; }
+      if (this.finger?.id !== p.id) return;
       const at = field(p);
       this.finger = null;
       if (this.playing) { this.playing.up(at); return; }
@@ -541,6 +556,7 @@ export class AmieScreen {
     this.sound.music('game');
     this.players = [this.asset, ...joined.map(uid => this.mates.find(one => one.uid === uid).asset)];
     let again = false;
+    const pointersBack = this.morePointers();
     try {
       const result = await playGame(this, game, lv);
       if (this.isOpen && result) {
@@ -557,6 +573,7 @@ export class AmieScreen {
       }
     } finally {
       this.playing = null;
+      pointersBack();
       if (this.isOpen) { this.pet.setVisible(true); this.hud.show(true); this.backdrop.setVisible(true); this.sound.music('room'); }
     }
 
@@ -565,6 +582,20 @@ export class AmieScreen {
     if (after) { after(); return; }
 
     if (again && this.isOpen) await this.startGame(game, lv);
+  }
+
+  morePointers() {
+    const m = this.scene.input?.manager;
+    if (!m?.addPointer || m.pointersTotal >= GAME_POINTERS) return () => { this.fingers.clear(); };
+    const length = m.pointers.length, total = m.pointersTotal;
+    m.addPointer(GAME_POINTERS - total);
+    return () => {
+      this.fingers.clear();
+      if (this.finger && this.finger.id >= length) this.finger = null;
+      m.pointers.length = length;
+      m.pointersTotal = total;
+      if (!m.pointers.includes(m.activePointer)) m.activePointer = m.pointers[0];
+    };
   }
 
   winPuff(id) {

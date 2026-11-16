@@ -2,7 +2,6 @@ import { TOAST_CLASS, TOAST_MS, toastKind } from '../../story/toast.mjs';
 
 let showing = null;
 
-// Shows note = { text, kind } (story/failure.mjs failureNote - two lines in one text) for TOAST_MS
 export async function showToast(doc, { text, kind }) {
   const body = doc && await doc.querySelector('body');
   if (!body) return;

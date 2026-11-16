@@ -17,3 +17,5 @@ export const NICKNAME_MAX = 20;
 export const sameNickname = (name, { nickname = '', shown }) => name === nickname || (!nickname && name === shown);
 
 export const PLAYER_NAME = 'Player';
+
+export const FORGE_KINDS = ['wild', 'trainer'];

@@ -1,0 +1,449 @@
+{
+ "targets": {
+  "hair": [
+   {"name": "black", "ramp": ["#181820", "#282830", "#404048", "#585868", "#787890"]},
+   {"name": "brown", "ramp": ["#382018", "#583828", "#785038", "#987050", "#b89070"]},
+   {"name": "light_brown", "ramp": ["#604028", "#886038", "#a88050", "#c8a070", "#e0c098"]},
+   {"name": "blonde", "ramp": ["#806020", "#a88830", "#d0b040", "#f0d868", "#f8f0a8"]},
+   {"name": "red", "ramp": ["#581818", "#882828", "#b83830", "#e05840", "#f88868"]},
+   {"name": "white", "ramp": ["#686878", "#9090a0", "#b8b8c8", "#d8d8e0", "#f0f0f0"]},
+   {"name": "blue", "ramp": ["#182858", "#284890", "#3868c0", "#5890e0", "#88b8f8"]},
+   {"name": "pink", "ramp": ["#803050", "#b04870", "#d86890", "#f090b0", "#f8c0d0"]},
+   {"name": "green", "ramp": ["#184020", "#286830", "#389048", "#60b860", "#98e090"]},
+   {"name": "purple", "ramp": ["#382058", "#583888", "#7850b0", "#9878d0", "#c0a8f0"]}
+  ],
+  "outfit": [
+   {"name": "red", "ramp": ["#601010", "#902020", "#c03028", "#e85040", "#f88070"]},
+   {"name": "orange", "ramp": ["#703010", "#a04818", "#d06820", "#f09038", "#f8b868"]},
+   {"name": "yellow", "ramp": ["#706010", "#a08818", "#d0b820", "#f0d840", "#f8f088"]},
+   {"name": "green", "ramp": ["#104818", "#207028", "#309838", "#50c058", "#88e088"]},
+   {"name": "blue", "ramp": ["#103070", "#2050a0", "#3070d0", "#5098f0", "#88c0f8"]},
+   {"name": "navy", "ramp": ["#101030", "#182050", "#283070", "#384890", "#5068b0"]},
+   {"name": "purple", "ramp": ["#301050", "#502080", "#7038a8", "#9058d0", "#b890f0"]},
+   {"name": "pink", "ramp": ["#702848", "#a04068", "#d06090", "#f088b0", "#f8b8d0"]},
+   {"name": "black", "ramp": ["#101010", "#202028", "#303038", "#484850", "#606870"]},
+   {"name": "white", "ramp": ["#8888a0", "#a8a8b8", "#c8c8d8", "#e0e0e8", "#f0f0f0"]},
+   {"name": "brown", "ramp": ["#301808", "#502818", "#704028", "#906040", "#b08060"]},
+   {"name": "grey", "ramp": ["#383840", "#585860", "#787880", "#9898a0", "#c0c0c8"]},
+   {"name": "beige", "ramp": ["#685840", "#988870", "#c0b090", "#e0d0b0", "#f0e8d0"]},
+   {"name": "light_grey", "ramp": ["#787880", "#a0a0a8", "#c0c0c8", "#d8d8e0", "#e8e8f0"]}
+  ]
+ },
+ "policy": {
+  "casual": ["head", "top", "bottom"], "formal": ["head", "top", "bottom"], "sporty": ["head", "top", "bottom"], "outdoor": ["head", "top", "bottom"],
+  "swimwear": ["head"], "winter": ["head"], "stage": ["head"], "punk": ["head"], "mystic": ["head"],
+  "uniform": [], "work": [], "medical": []
+ },
+ "snap": {
+  "formal": {"light": "white", "dark": "black", "lightColors": ["white", "beige", "light_grey"]}
+ },
+ "sprites": {
+  "youngster_m": {
+   "face": "youngster",
+   "parts": {"hat": ["#703808", "#b05000", "#e86808"], "top": ["#703808", "#b05000", "#e86808"], "bottom": ["#303028", "#505040"]},
+   "split": [{"colors": ["#703808", "#b05000", "#e86808"], "bands": [[0.47, "hat"],[1, "top"]]},{"colors": ["#303028", "#505040"], "bands": [[0.88, "bottom"],[1, "none"]]}],
+   "note": "hair under the cap; the cap is the shirt's orange - split at the brim, the cap takes the hair colour"
+  },
+  "school_kid_m": {
+   "face": "schoolkid",
+   "parts": {"hair": ["#504020", "#806828", "#a88838"], "top": ["#185860", "#389080"], "bottom": ["#504020", "#806828"]},
+   "split": [{"colors": ["#504020", "#806828"], "bands": [[0.55, "hair"],[1, "bottom"]]},{"colors": ["#185860", "#389080"], "bands": [[0.47, "none"],[0.68, "top"],[1, "none"]]}],
+   "note": "hair browns are the trousers' (split at the neck); vest teal is the bag's and shoes' (kept below the waist)"
+  },
+  "youngster_f": {
+   "face": "lass",
+   "parts": {"hair": ["#402808", "#583828"], "top": ["#908828", "#c0b038", "#e8f088"], "bottom": ["#686868", "#989898", "#c0c0c0"]},
+   "split": [{"colors": ["#402808", "#583828"], "bands": [[0.5, "hair"],[1, "none"]]},{"colors": ["#686868", "#989898", "#c0c0c0"], "bands": [[0.49, "none"],[0.67, "bottom"],[1, "none"]]}],
+   "note": "hair browns are the shoes' (kept below the shoulders); skirt grey is the collar's and socks' (only the skirt band changes)"
+  },
+  "school_kid_f": {
+   "face": "schoolkidf",
+   "parts": {"hair": ["#482820", "#684030", "#905848"], "top": ["#404078", "#6068b8", "#8898f0", "#b0c0e0"], "accent": ["#983838", "#d04858"]},
+   "split": [{"colors": ["#404078", "#6068b8", "#8898f0", "#b0c0e0"], "bands": [[0.335, "none"],[1, "top"]]}],
+   "note": "one-piece dress = top, no bottom; glasses share the dress blue (kept above the collar); red bag and shoes are accent"
+  },
+  "ace_trainer_m": {
+   "face": "acetrainer",
+   "faceAt": [-9, 89],
+   "parts": {"hair": ["#303858", "#407898", "#50a8d8"], "top": ["#202040", "#303858", "#506080"], "bottom": ["#202040", "#303858", "#506080"], "accent": ["#a05860", "#e89058"]},
+   "split": [{"colors": ["#202040", "#303858", "#506080"], "bands": [[0.3, "hair"],[0.56, "top"],[1, "bottom"]]}],
+   "note": "jacket and trousers are one navy (split at the belt); the darkest hair shade is the navy's; orange stripes and boots are accent"
+  },
+  "ace_trainer_f": {
+   "face": "acetrainerf",
+   "parts": {"hair": ["#404070", "#407898", "#68b0d8"], "top": ["#202040", "#404070", "#506080"], "bottom": ["#202040", "#404070", "#506080"], "accent": ["#604050", "#a05860", "#e89058", "#c83838"]},
+   "split": [{"colors": ["#202040", "#404070", "#506080"], "bands": [[0.29, "hair"],[0.6, "top"],[1, "bottom"]]}],
+   "note": "hair outline is the jacket navy (kept); the low pigtail's outline takes the top colour; jacket+skirt = top, leggings = bottom"
+  },
+  "backpacker_m": {
+   "face": "backpacker",
+   "parts": {"hair": ["#383028", "#505048"], "top": ["#383060", "#587098", "#60b0c8"], "bottom": ["#485040", "#687858"], "accent": ["#d85838", "#a8b0b0"]},
+   "split": [{"colors": ["#383028"], "bands": [[0.3, "hair"],[1, "none"]]}],
+   "note": "hair dark brown is the trousers' outline and sandals' (kept below the head); backpack straps share the jacket blue and change with it"
+  },
+  "rich_kid_m": {
+   "face": "richboy",
+   "parts": {"hair": ["#503028", "#604048", "#886850"], "top": ["#585070", "#a890a0", "#c8c0c8", "#e8f0f0"], "bottom": ["#585070", "#a890a0", "#c8c0c8", "#e8f0f0"], "accent": ["#204850", "#78c0b8", "#b04038"]},
+   "split": [{"colors": ["#503028", "#604048"], "bands": [[0.3, "hair"],[1, "none"]]},{"colors": ["#585070", "#a890a0", "#c8c0c8", "#e8f0f0"], "bands": [[0.6, "top"],[1, "bottom"]]}],
+   "note": "hair browns are the shoes' (kept below the head); white suit split at the belt"
+  },
+  "aroma_lady": {
+   "face": "aromalady",
+   "faceAt": [7, 71],
+   "parts": {"hair": ["#382828", "#584838", "#887040"], "bottom": ["#284838", "#407858", "#48a878"]},
+   "split": [{"colors": ["#284838", "#407858"], "bands": [[0.82, "bottom"],[1, "none"]]}],
+   "note": "blouse is the shared eye white with greys - no top; the outfit colour goes to the skirt; skirt green also colours the sparkles"
+  },
+  "rich_kid_f": {
+   "face": "lady",
+   "parts": {"top": ["#603860", "#d098e0"]},
+   "note": "hair body is the shared skin shadow - no hair; dress is the shared white - only the lilac ribbons and sleeves (top) change; no bottom"
+  },
+  "pokefan_m": {
+   "face": "pokefan",
+   "faceAt": [-6, 83],
+   "parts": {"top": ["#486098", "#68a8c8"], "bottom": ["#283050", "#384868", "#486098"], "accent": ["#f0c850", "#b89850", "#e04848"]},
+   "split": [{"colors": ["#486098"], "bands": [[0.68, "top"],[1, "bottom"]]}],
+   "note": "hair mid shade is the shared skin shadow - no hair; sweater shade is the jeans' (split at the hem)"
+  },
+  "pokefan_f": {
+   "face": "pokefanf",
+   "parts": {"top": ["#a86890", "#d890e8"]},
+   "split": [{"colors": ["#a86890"], "bands": [[0.85, "top"],[1, "none"]]}],
+   "note": "hair is the shared skin shadow - no hair; skirt uses the shared dark skin colour - no bottom"
+  },
+  "veteran_m": {
+   "face": "veteran",
+   "parts": {"hat": ["#181818", "#303038", "#383028", "#504838", "#505050"], "top": ["#181818", "#303038", "#505050"], "bottom": ["#383028", "#504838"]},
+   "split": [{"colors": ["#181818", "#303038", "#505050"], "bands": [[0.19, "hat"],[1, "top"]]},{"colors": ["#383028", "#504838"], "bands": [[0.19, "hat"],[0.84, "bottom"],[1, "none"]]}],
+   "note": "hair under the cap (its dark sides are the coat greys); the cap is the coat grey with a trousers-brown crown - split at the brim, the cap takes the hair colour; boots kept"
+  },
+  "clerk_m_2": {
+   "face": "clerk-boss",
+   "parts": {"hair": ["#303838", "#585868", "#9898a8"], "top": ["#282030", "#383848", "#504070"], "bottom": ["#282030", "#383848", "#504070"], "accent": ["#987838", "#c0c0d8", "#e8e8f8"]},
+   "split": [{"colors": ["#585868", "#9898a8"], "bands": [[0.29, "hair"],[1, "none"]]},{"colors": ["#282030", "#383848", "#504070"], "bands": [[0.6, "top"],[1, "bottom"]]}],
+   "note": "grey hair shades are the shirt's (kept below the head); vest = top, trousers = bottom (one purple, split at the waist)"
+  },
+  "veteran_f": {
+   "face": "veteranf",
+   "parts": {"hair": ["#403838", "#786050"], "top": ["#202020", "#303038", "#505050"], "bottom": ["#483030", "#784040", "#b04848"], "accent": ["#c8c8c8", "#b08058", "#c8a840"]},
+   "split": [{"colors": ["#403838", "#786050"], "bands": [[0.4, "hair"],[1, "none"]]},{"colors": ["#202020", "#303038", "#505050"], "bands": [[0.29, "none"],[0.86, "top"],[1, "none"]]},{"colors": ["#784040"], "bands": [[0.5, "none"],[1, "bottom"]]}],
+   "note": "hair browns are the bag's (kept below the shoulders); hair outline is the dress black (kept); black dress = top, red hem = bottom"
+  },
+  "rich_m": {
+   "face": "gentleman",
+   "parts": {"hair": ["#808088", "#c8c8c8"], "hat": ["#605848", "#887858", "#a89870"], "top": ["#605848", "#887858", "#a89870"], "bottom": ["#605848", "#887858", "#a89870"], "accent": ["#484870", "#9860c8", "#204828", "#408050"]},
+   "split": [{"colors": ["#605848", "#887858", "#a89870"], "bands": [[0.27, "hat"],[0.62, "top"],[1, "bottom"]]},{"colors": ["#808088", "#c8c8c8"], "bands": [[0.29, "hair"],[1, "none"]]}],
+   "note": "hair mostly under the hat; the sideburn and moustache greys are the scarf's (hair above the scarf, kept below); the beard body is the shared white (kept); the hat is the suit khaki - split at the brim, the hat takes the hair colour (its purple band is accent)"
+  },
+  "rich_f": {
+   "face": "madame",
+   "parts": {"hair": ["#484870", "#787890", "#c8c8c8"], "hat": ["#a06878", "#d098a8"], "top": ["#a06878", "#d098a8"], "accent": ["#8068b0", "#706850", "#403028"]},
+   "split": [{"colors": ["#484870", "#787890", "#c8c8c8"], "bands": [[0.31, "hair"],[1, "none"]]},{"colors": ["#a06878", "#d098a8"], "bands": [[0.27, "hat"],[1, "top"]]}],
+   "note": "grey hair shades are the stockings' and shoes' (kept below the head); the hat is the dress pink - split under the hat, the hat takes the hair colour; pink dress = top, no bottom"
+  },
+  "camper_m": {
+   "face": "camper",
+   "faceAt": [23, 56],
+   "parts": {"hair": ["#304060", "#586090"], "hat": ["#404850", "#587878", "#50a090"], "top": ["#404850", "#587878", "#50a090"], "bottom": ["#8888b0", "#b0c0e0"]},
+   "split": [{"colors": ["#404850", "#587878", "#50a090"], "bands": [[0.24, "hat"], [1, "top"]]}, {"colors": ["#8888b0", "#b0c0e0"], "bands": [[0.5, "none"], [0.76, "bottom"], [1, "none"]]}],
+   "note": "cap teal = overalls teal (split at the brim, the cap takes the hair colour); shirt, shorts and socks share the light blue (shorts band only)"
+  },
+  "preschooler_f": {
+   "face": "preschoolerf",
+   "parts": {"hat": ["#886040", "#b89838", "#e8d878"], "top": ["#203860", "#406898", "#70a8b8"], "bottom": ["#c06070", "#f88898"]},
+   "split": [{"colors": ["#886040", "#b89838", "#e8d878"], "bands": [[0.63, "hat"], [1, "none"]]}],
+   "note": "hair is the shared black (no hair part) - the yellow hat takes the hair colour (hat band only: bag and shoes keep it); blue smock = top, pink skirt = bottom"
+  },
+  "preschooler_m": {
+   "face": "preschooler",
+   "faceAt": [8, 80],
+   "parts": {"hair": ["#604830", "#886040"], "hat": ["#b09048", "#e8d878"], "top": ["#203860", "#406898", "#70a8b8"]},
+   "split": [{"colors": ["#b09048", "#e8d878"], "bands": [[0.54, "hat"], [1, "none"]]}, {"colors": ["#604830", "#886040"], "bands": [[0.57, "hair"], [1, "none"]]}],
+   "note": "yellow cap = bag and shoes (cap band only), brown hair = bag strap and shoes (head band only); smock and shorts are one blue (top, no bottom)"
+  },
+  "bug_catcher": {
+   "face": "bugcatcher",
+   "faceAt": [0, 66],
+   "parts": {"bottom": ["#383040", "#484868"]},
+   "split": [{"colors": ["#383040", "#484868"], "bands": [[0.56, "none"], [1, "bottom"]]}],
+   "note": "straw hat and hair in the shared skin colours, its green band = the bag and the net rim; white shirt shared - shorts only (the net rim shares the navy: kept above the waist)"
+  },
+  "camper_f": {
+   "face": "picnicker",
+   "faceAt": [25, 54],
+   "parts": {"hair": ["#383038", "#304060", "#586090"], "hat": ["#404850", "#587878", "#50a090"], "top": ["#404850", "#587878", "#50a090"]},
+   "split": [{"colors": ["#404850", "#587878", "#50a090"], "bands": [[0.17, "hat"], [1, "top"]]}],
+   "note": "cap teal = dress teal (split at the brim, the cap takes the hair colour); the dress is one piece (top, no bottom); light blue shirt and socks kept"
+  },
+  "collector": {
+   "face": "collector",
+   "faceAt": [28, 52],
+   "parts": {"hair": ["#303850", "#485898", "#6880c0"], "top": ["#98a0a8", "#c0c8d0", "#e8e8f8"], "bottom": ["#303850", "#485898", "#6880c0"]},
+   "split": [{"colors": ["#303850", "#485898", "#6880c0"], "bands": [[0.27, "hair"], [1, "bottom"]]}, {"colors": ["#98a0a8", "#c0c8d0", "#e8e8f8"], "bands": [[0.27, "none"], [0.66, "top"], [1, "none"]]}],
+   "note": "blue hair = the jeans (split under the head); shirt greys = glasses and socks (shirt band only); the red bag kept"
+  },
+  "ruin_maniac": {
+   "face": "ruinmaniac",
+   "faceAt": [25, 53],
+   "parts": {"hat": ["#303030", "#585040", "#807058", "#b8a880"], "top": ["#585040", "#807058", "#b8a880"], "bottom": ["#585040", "#807058"]},
+   "split": [{"colors": ["#585040", "#807058", "#b8a880"], "bands": [[0.22, "hat"], [0.6, "top"], [1, "bottom"]]}, {"colors": ["#303030"], "bands": [[0.22, "hat"], [1, "none"]]}],
+   "note": "hat, shirt and trousers are one khaki (split by height: hat above 0.22 takes the hair colour); hair hidden; the green backpack and the map kept"
+  },
+  "fisherman": {
+   "face": "fisherman",
+   "parts": {"hat": ["#686030", "#988858", "#d0b888"], "top": ["#385850", "#589088", "#78c0a8"], "bottom": ["#686030", "#988858", "#d0b888"]},
+   "split": [{"colors": ["#686030", "#988858", "#d0b888"], "bands": [[0.4, "hat"], [1, "bottom"]]}],
+   "note": "bucket hat khaki = trousers (split under the head, the hat takes the hair colour); hair hidden; teal vest = top (the white shirt is shared); rod, boots and cooler kept"
+  },
+  "hiker": {
+   "face": "hiker",
+   "faceAt": [1, 80],
+   "parts": {"hair": ["#382828", "#483830"], "top": ["#a85040", "#e87050"], "bottom": ["#382828", "#483830"]},
+   "split": [{"colors": ["#382828", "#483830"], "bands": [[0.45, "hair"], [1, "bottom"]]}, {"colors": ["#a85040", "#e87050"], "bands": [[0.14, "none"], [0.8, "top"], [1, "none"]]}],
+   "note": "beard and sideburns = trousers brown (split at the chest); orange shirt = hat band and boots (shirt band only); the tan hat and vest = the bedroll - kept"
+  },
+  "black_belt_m": {
+   "face": "blackbelt",
+   "faceAt": [-3, 80],
+   "parts": {"hair": ["#404028", "#606030"], "bottom": ["#606030", "#a8a088", "#d0d0b8"]},
+   "split": [{"colors": ["#606030"], "bands": [[0.3, "hair"], [0.6, "none"], [1, "bottom"]]}, {"colors": ["#a8a088", "#d0d0b8"], "bands": [[0.6, "none"], [1, "bottom"]]}],
+   "note": "gi jacket is the shared white (its shading kept); gi trousers = bottom (split at the belt); hair olive shade = gi folds (head band only); red headband kept"
+  },
+  "cyclist_m": {
+   "face": "cyclist",
+   "parts": {"hat": ["#484868", "#8880c0"], "top": ["#484868", "#686098", "#8880c0"], "bottom": ["#303038"]},
+   "split": [{"colors": ["#484868", "#8880c0"], "bands": [[0.25, "hat"], [0.6, "top"], [1, "none"]]}, {"colors": ["#686098"], "bands": [[0.25, "none"], [0.6, "top"], [1, "none"]]}, {"colors": ["#303038"], "bands": [[0.3, "none"], [0.65, "bottom"], [1, "none"]]}],
+   "note": "hair in the shared skin colours; the visor is the shirt purple (split under the visor, it takes the hair colour); purple = the wheels below (kept); black shorts = outlines elsewhere (shorts band only); yellow bike kept"
+  },
+  "hoopster": {
+   "face": "hoopster",
+   "faceAt": [4, 80],
+   "parts": {"hair": ["#503028"], "top": ["#204018", "#286828", "#38b038", "#889038"], "bottom": ["#204018", "#286828", "#38b038", "#889038"]},
+   "split": [{"colors": ["#503028"], "bands": [[0.155, "hair"], [1, "none"]]}, {"colors": ["#204018", "#286828", "#38b038", "#889038"], "bands": [[0.57, "top"], [1, "bottom"]]}],
+   "note": "short hair = the skin outline (head band only); jersey and shorts one green (split at the waist); yellow trim and the ball kept"
+  },
+  "infielder": {
+   "face": "infielder",
+   "faceAt": [-1, 80],
+   "parts": {"hair": ["#482828", "#784040"], "hat": ["#404850", "#585868"], "top": ["#b0a8c0", "#e8e8f8"], "bottom": ["#b0a8c0", "#e8e8f8"]},
+   "split": [{"colors": ["#404850", "#585868"], "bands": [[0.25, "hat"], [1, "none"]]}, {"colors": ["#482828", "#784040"], "bands": [[0.3, "hair"], [1, "none"]]}, {"colors": ["#b0a8c0", "#e8e8f8"], "bands": [[0.24, "none"], [0.55, "top"], [1, "bottom"]]}],
+   "note": "grey cap takes the hair colour (cap band; belt kept); brown hair = the glove (head band only); white jersey and trousers one cloth (split at the waist), red stripes kept"
+  },
+  "linebacker": {
+   "face": "linebacker",
+   "faceAt": [-1, 80],
+   "parts": {"top": ["#805010", "#e86030", "#b88818", "#f08820", "#f8a810"]},
+   "split": [{"colors": ["#805010", "#b88818", "#f8a810"], "bands": [[0.86, "top"], [1, "none"]]}],
+   "note": "helmet and jersey are one orange at the same height (bent over) - both take the top colour, no head; white trousers = the face mask (kept); shoes kept"
+  },
+  "ranger_m": {
+   "face": "pokemonranger",
+   "faceAt": [-1, 80],
+   "parts": {"hair": ["#808020", "#c8c820"], "hat": ["#703020", "#a83820", "#d05048"], "top": ["#703020", "#a83820", "#d05048"], "bottom": ["#703020", "#a83820", "#d05048"]},
+   "split": [{"colors": ["#703020", "#a83820", "#d05048"], "bands": [[0.24, "hat"], [0.56, "top"], [1, "bottom"]]}],
+   "note": "hat, jacket and trousers one red (split by height: hat takes the hair colour); the lasso outline takes the red's colour; navy vest and boots kept"
+  },
+  "striker": {
+   "face": "striker",
+   "parts": {"hair": ["#685818", "#a08840"], "top": ["#584068", "#8068b0"]},
+   "split": [{"colors": ["#584068", "#8068b0"], "bands": [[0.56, "top"], [1, "none"]]}],
+   "note": "purple jersey = the socks (jersey band only); white shorts are the shared white (no bottom)"
+  },
+  "beauty_2": {
+   "face": "beauty-gen5bw2",
+   "faceAt": [-1, 80],
+   "parts": {"hair": ["#686820", "#b0a848", "#d8e048"], "top": ["#304858", "#0068c8"], "bottom": ["#304858", "#0068c8"]},
+   "split": [{"colors": ["#0068c8"], "bands": [[0.26, "none"], [0.56, "top"], [1, "bottom"]]}, {"colors": ["#304858"], "bands": [[0.56, "top"], [1, "bottom"]]}],
+   "note": "blue bodysuit and leggings one cloth (split at the hips); the hairband is the same blue (kept); black collar, shorts and boots kept"
+  },
+  "clerk_f": {
+   "face": "clerkf",
+   "faceAt": [-1, 80],
+   "parts": {"hair": ["#282018", "#583848", "#785050"], "top": ["#484858", "#b0b0c0"], "bottom": ["#583848", "#785050", "#987080", "#c0a8a8"]},
+   "split": [{"colors": ["#583848", "#785050"], "bands": [[0.74, "hair"], [1, "bottom"]]}, {"colors": ["#282018"], "bands": [[0.74, "hair"], [1, "none"]]}, {"colors": ["#484858", "#b0b0c0"], "bands": [[0.74, "top"], [1, "none"]]}],
+   "note": "long hair browns = the skirt shading (split at the hem of the hair); the jacket is the shared white - only its grey shading takes the top colour; black stripes kept"
+  },
+  "clerk_m": {
+   "face": "clerk",
+   "faceAt": [1, 80],
+   "parts": {"hair": ["#202828", "#384040", "#585868"], "top": ["#202828", "#384040", "#585868"], "bottom": ["#202828", "#384040", "#585868"]},
+   "split": [{"colors": ["#202828", "#384040", "#585868"], "bands": [[0.21, "hair"], [0.55, "top"], [1, "bottom"]]}],
+   "note": "hair, suit jacket and trousers one dark grey (split by height: hair, jacket above the waist, trousers); shirt, tie and the case kept"
+  },
+  "parasol_lady": {
+   "face": "parasollady",
+   "faceAt": [-2, 83],
+   "parts": {"hair": ["#303040", "#504868", "#808080"], "top": ["#704050", "#983868", "#b85070", "#c85080", "#b86890", "#e888a8"]},
+   "split": [{"colors": ["#303040", "#504868", "#808080"], "bands": [[0.4, "hair"], [1, "none"]]}],
+   "note": "dress, parasol and boots are one pink at the same heights - all take the top colour (no bottom); hair greys = parasol ribs (head band only)"
+  },
+  "beauty": {
+   "face": "beauty",
+   "faceAt": [-2, 72],
+   "parts": {"hair": ["#887860", "#b89860", "#f0c060", "#f8f0b0"], "top": ["#505070", "#6880a0"]},
+   "split": [{"colors": ["#887860", "#b89860", "#f0c060"], "bands": [[0.62, "hair"], [1, "none"]]}],
+   "note": "long blonde hair = belt, bag and shoe browns (hair band only); navy top; white shorts are the shared white (no bottom). The Showdown card is other art - it stays as drawn"
+  },
+  "black_belt_f": {
+   "face": "battlegirl",
+   "faceAt": [4, 80],
+   "parts": {"hair": ["#383028"], "top": ["#783840", "#b04858", "#e05068"]},
+   "split": [{"colors": ["#383028"], "bands": [[0.5, "hair"], [1, "none"]]}],
+   "note": "red suit is one piece with a leg kicked up to the head - all top, no bottom; black hair = the suit outline (head band only)"
+  },
+  "cyclist_f": {
+   "face": "cyclistf",
+   "faceAt": [-1, 80],
+   "parts": {"hat": ["#c87088", "#f8a0c0"], "top": ["#c87088", "#f8a0c0"], "bottom": ["#504060"]},
+   "split": [{"colors": ["#c87088", "#f8a0c0"], "bands": [[0.22, "hat"], [0.56, "top"], [1, "none"]]}, {"colors": ["#504060"], "bands": [[0.48, "none"], [0.64, "bottom"], [1, "none"]]}],
+   "note": "hair in the shared skin colours; the visor is the shirt pink (split under it, the visor takes the hair colour); shoes keep the pink; the shorts' purple = the bike (shorts band only)"
+  },
+  "smasher": {
+   "face": "smasher",
+   "faceAt": [-4, 80],
+   "parts": {"hair": ["#887818", "#b8a018", "#e8d060"], "top": ["#183870", "#1858c0"]},
+   "split": [{"colors": ["#183870", "#1858c0"], "bands": [[0.88, "top"], [1, "none"]]}],
+   "note": "blue tennis dress is one piece (top); the racket rim is the same blue at the same height and follows it; shoes kept; white visor shared"
+  },
+  "backpacker_f": {
+   "face": "backpackerf",
+   "faceAt": [-1, 81],
+   "parts": {"hair": ["#585038", "#988070", "#c0b080"], "bottom": ["#585038", "#988070", "#c0b080"]},
+   "split": [{"colors": ["#585038", "#988070", "#c0b080"], "bands": [[0.3, "hair"], [0.44, "none"], [1, "bottom"]]}],
+   "note": "light hair = the khaki shorts and straps (split: head / straps kept / shorts); the shirt is under the big red backpack (no top); teal socks kept"
+  },
+  "breeder_f": {
+   "face": "pokemonbreederf",
+   "faceAt": [-2, 80],
+   "parts": {"hair": ["#403020", "#504048", "#806850"], "top": ["#a84848", "#d86868"], "bottom": ["#504048", "#806850"]},
+   "split": [{"colors": ["#504048", "#806850"], "bands": [[0.3, "hair"], [0.62, "none"], [1, "bottom"]]}, {"colors": ["#403020"], "bands": [[0.3, "hair"], [1, "none"]]}, {"colors": ["#a84848", "#d86868"], "bands": [[0.7, "top"], [1, "none"]]}],
+   "note": "brown hat and hair = the leggings and boots (split by height; the hat takes the hair colour with the hair); red dress = the bucket (dress band only); green vest kept"
+  },
+  "ranger_f": {
+   "face": "pokemonrangerf",
+   "faceAt": [3, 80],
+   "parts": {"hair": ["#301808", "#502810"], "hat": ["#703020", "#a83820", "#d85040"], "top": ["#703020", "#a83820", "#d85040"], "bottom": ["#182030", "#304060"]},
+   "split": [{"colors": ["#703020", "#a83820", "#d85040"], "bands": [[0.2, "hat"], [1, "top"]]}, {"colors": ["#182030", "#304060"], "bands": [[0.45, "none"], [0.72, "bottom"], [1, "none"]]}],
+   "note": "red hat = the jacket (split under the brim, it takes the hair colour); navy shorts = hat band, top and boots (shorts band only); tan gloves and bag kept"
+  },
+  "player_f": {
+   "face": null,
+   "parts": {"hair": ["#201818", "#502830", "#884848"], "hat": ["#b05070", "#f088b0"], "top": ["#282828", "#484848"], "bottom": ["#181818", "#282828", "#484848"]},
+   "split": [{"colors": ["#b05070", "#f088b0"], "bands": [[0.14, "hat"], [1, "none"]]}, {"colors": ["#282828", "#484848"], "bands": [[0.52, "top"], [1, "bottom"]]}],
+   "note": "white cap's pink takes the hair colour (cap band only: bag and shoes keep the pink); black vest = top, black shorts and leggings = bottom (split at the waist); white shirt shared"
+  },
+  "player_f_2": {
+   "face": null,
+   "parts": {"hair": ["#201818", "#502830", "#884848", "#b87870"], "top": ["#282828", "#484848"], "bottom": ["#181818", "#282828", "#484848"]},
+   "split": [{"colors": ["#282828", "#484848"], "bands": [[0.52, "top"], [1, "bottom"]]}],
+   "note": "long brown hair; black vest = top, black shorts and leggings = bottom (split at the waist); pink bag and shoes kept"
+  },
+  "player_f_alternate": {
+   "face": null,
+   "parts": {"hair": ["#201818", "#502830", "#884848"], "hat": ["#b05070", "#f088b0"], "top": ["#282828", "#484848"], "bottom": ["#181818", "#282828", "#484848"]},
+   "split": [{"colors": ["#b05070", "#f088b0"], "bands": [[0.14, "hat"], [1, "none"]]}, {"colors": ["#282828", "#484848"], "bands": [[0.52, "top"], [1, "bottom"]]}],
+   "note": "as player_f (the same art)"
+  },
+  "player_m": {
+   "face": null,
+   "parts": {"hat": ["#303860", "#5860a8", "#90b0f8"], "top": ["#303860", "#5860a8", "#90b0f8"], "bottom": ["#181818", "#282828", "#484848"]},
+   "split": [{"colors": ["#303860", "#5860a8", "#90b0f8"], "bands": [[0.13, "hat"], [0.88, "top"], [1, "none"]]}, {"colors": ["#282828", "#484848"], "bands": [[0.55, "none"], [1, "bottom"]]}],
+   "note": "hair under the cap; the cap's blue = the jacket (split at the brim, the cap takes the hair colour); black trousers = the jacket's black sides (trousers band only). No Showdown card - the card crops the plain atlas"
+  },
+  "player_m_2": {
+   "face": null,
+   "parts": {"hair": ["#684838", "#806050", "#b08870"], "top": ["#303860", "#5860a8", "#90b0f8"], "bottom": ["#181818", "#282828", "#484848"]},
+   "split": [{"colors": ["#303860", "#5860a8", "#90b0f8"], "bands": [[0.88, "top"], [1, "none"]]}, {"colors": ["#282828", "#484848"], "bands": [[0.55, "none"], [1, "bottom"]]}],
+   "note": "brown hair; blue jacket (its black sides kept); black trousers (trousers band only)"
+  },
+  "player_m_alternate": {
+   "face": null,
+   "parts": {"hat": ["#303860", "#5860a8", "#90b0f8"], "top": ["#303860", "#5860a8", "#90b0f8"], "bottom": ["#181818", "#282828", "#484848"]},
+   "split": [{"colors": ["#303860", "#5860a8", "#90b0f8"], "bands": [[0.13, "hat"], [0.88, "top"], [1, "none"]]}, {"colors": ["#282828", "#484848"], "bands": [[0.55, "none"], [1, "bottom"]]}],
+   "note": "as player_m (the same art)"
+  },
+  "scuba_diver_f": {
+   "face": null,
+   "parts": {"hat": ["#303030", "#484858"]},
+   "note": "swimwear: head only - the dark diving hood over the hair takes the hair colour (the wetsuit keeps its blue). No Showdown card - the card crops the plain atlas"
+  },
+  "scuba_diver_m": {
+   "face": null,
+   "parts": {"hair": ["#484030", "#806048", "#d08048", "#f0c090"]},
+   "note": "swimwear: head only - orange hair above the mask (the wetsuit keeps its blue). No Showdown card - the card crops the plain atlas"
+  },
+  "snow_ace_trainer_f": {
+   "face": "acetrainersnowf",
+   "faceAt": [9, 70],
+   "parts": {"hair": ["#302830", "#404850"]},
+   "split": [{"colors": ["#302830", "#404850"], "bands": [[0.45, "hair"], [1, "none"]]}],
+   "note": "winter: head only - dark long hair = the boots (hair band only)"
+  },
+  "swimmer_f": {
+   "face": "swimmerf",
+   "faceAt": [-3, 80],
+   "parts": {"hair": ["#603828", "#805040", "#c07050", "#d8a870"]},
+   "note": "swimwear: head only - long brown hair (the bikini keeps its green)"
+  },
+  "biker": {
+   "face": "biker",
+   "faceAt": [-4, 84],
+   "parts": {"hair": ["#784040", "#a87078"]},
+   "split": [{"colors": ["#a87078"], "bands": [[0.46, "hair"], [1, "none"]]}],
+   "note": "punk: head only - hair and beard (the beard's light brown = the bike below: hair band only)"
+  },
+  "guitarist": {
+   "face": "guitarist",
+   "faceAt": [-7, 80],
+   "parts": {"hair": ["#383840", "#505050"]},
+   "split": [{"colors": ["#383840"], "bands": [[0.24, "hair"], [1, "none"]]}, {"colors": ["#505050"], "bands": [[0.36, "hair"], [1, "none"]]}],
+   "note": "stage: head only - black ponytail; its greys = the black top and the guitar (hair band only)"
+  },
+  "musician": {
+   "face": "musician",
+   "parts": {"hair": ["#605838", "#a89040", "#d8b860"]},
+   "split": [{"colors": ["#605838", "#d8b860"], "bands": [[0.3, "hair"], [1, "none"]]}],
+   "note": "stage: head only - long blonde hair = the guitar's wood (hair band only)"
+  },
+  "snow_worker_m": {
+   "face": "workerice",
+   "faceAt": [-1, 80],
+   "parts": {"hat": ["#987010", "#f0b008"]},
+   "split": [{"colors": ["#987010", "#f0b008"], "bands": [[0.37, "hat"], [1, "none"]]}],
+   "note": "winter (and work): head only - the yellow hard hat takes the hair colour (hat band only: gloves and boots keep the yellow); hair hidden under the balaclava"
+  },
+  "fairy_tale_girl": {
+   "face": null,
+   "parts": {"hair": ["#d8c090", "#e0c898"]},
+   "note": "mystic: head only - light hair. No Showdown card - the card crops the plain atlas"
+  },
+  "halloween_rival_f": {
+   "face": null,
+   "parts": {"hair": ["#182828", "#304840", "#507050", "#709870"]},
+   "note": "mystic: head only - green hair. No Showdown card - the card crops the plain atlas"
+  },
+  "halloween_rival_m": {
+   "face": null,
+   "parts": {"hair": ["#202840", "#304070", "#406898", "#4890b0"]},
+   "note": "mystic: head only - blue hair. No Showdown card - the card crops the plain atlas"
+  },
+  "hex_maniac": {
+   "face": null,
+   "parts": {"hair": ["#585880", "#9098c0"]},
+   "note": "mystic: head only - long purple hair. No Showdown card - the card crops the plain atlas"
+  },
+  "psychic_f": {
+   "face": "psychicf",
+   "faceAt": [-5, 82],
+   "parts": {"hair": ["#383040", "#604860"]},
+   "note": "mystic: head only - dark bob hair (the pale yellow glow ring kept)"
+  },
+  "psychic_m": {
+   "face": "psychic",
+   "faceAt": [-1, 80],
+   "parts": {"hair": ["#203030", "#405050"]},
+   "note": "mystic: head only - dark hair"
+  }
+ }
+}

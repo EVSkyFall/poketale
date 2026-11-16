@@ -1,5 +1,5 @@
-// Training bags, energy and effort values.
-// Modified for PokeTale on 2026-11-10. See THIRD-PARTY-NOTICES.md.
+// Modified for PokeTale on 2026-11-16. See THIRD-PARTY-NOTICES.md.
+// Adapted layouts: PlayNav, revision 7f1b4dcb8ca1cc85180272c165842374924f1564.
 // Ported from PlayNav (https://github.com/poooooby/PlayNav): data/training_rules.lua (LIMITS, BAGS, METER, CORE: REFRESHED_HITS_DIV, SECOND_WIND_AFTER_BAG,
 // ROUTINE_REST_BAGS, BLANK_BAG_DROP, BLANK_BAG_DROP_FULLY), src/training/rules.lua (the bag catalogue, GAME_ORDER, addEv, resetEvs, statRoom, rollBlankBag,
 // pickBlackBag, isRareBag), src/training/session.lua (punch, finishBag, blankBagPunch, lieDown, wake, attachBag, HIT_LOCK).

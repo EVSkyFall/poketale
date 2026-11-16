@@ -9,7 +9,9 @@ import { RULE_IDS, DEFAULT_RULE } from '../../engine/rules.mjs';
 import { EXP_SHARE_MODES } from '../../story/items.mjs';
 import { EXP_RATES, RATES, DEFAULT_EXP_RATE, EXP_RATE_DIGITS, EXP_RATE_MIN, EXP_RATE_MAX, isExpRate, isExpRateSetting } from '../../engine/exp.mjs';
 import { TRADE_EVOLUTIONS as TRADE_EVOLUTION_IDS, DEFAULT_TRADE_EVOLUTION_SETTING } from '../../engine/evolution.mjs';
+import { FOE_GIMMICK_MODES, DEFAULT_FOE_GIMMICKS } from '../../story/gimmicks.mjs';
 import { numberPadCss, openNumberPad } from './number-pad.js';
+import { pushBack } from './contextmenu.js';
 import { controlsCss, switchControl, stepperControl, segmentControl, sliderControl } from './controls.js';
 import { PICTURE_ROUTES, DEFAULT_PICTURE_ROUTE } from './picture-route.js';
 import { shrinkPicture } from './my-picture.js';
@@ -20,6 +22,8 @@ import { sayer, perLang } from '../../story/screen-text.mjs';
 import { SHEET_FONT } from '../../story/style.mjs';
 import { TAB_COLOR, ICON as PANEL_ICON, SIZE as PANEL_SIZE, panelShift } from '../../story/panel-html.mjs';
 import { SCREEN_PLACES, DEFAULT_SCREEN_PLACE } from '../../story/panel.mjs';
+import { ITEM_EFFECTS_READY } from '../../story/item-effects.mjs';
+import { IMPORT_AI_RECENT, IMPORT_AI_RECENT_MIN, IMPORT_AI_RECENT_MAX, importAiRecent } from '../../story/import-ai.mjs';
 
 export const SETTINGS_KEY = 'pkb_settings';
 
@@ -33,7 +37,7 @@ export const langOf = tag => (/^ko\b/i.test(String(tag ?? '')) ? 'ko' : 'en');
 
 export const hostLang = () => langOf(globalThis.navigator?.language);
 export const DEFAULT_SETTINGS = Object.freeze({ iron: false, sound: false, sendFormat: 'key', theme: DEFAULT_THEME, orientation: 'portrait', lang: null, autoSend: false, commands: false, aux: false, auxRecent: 8, oocTrial: false, difficulty: 'normal',
-  rule: DEFAULT_RULE, expShare: 'always', expRate: DEFAULT_EXP_RATE, friendshipRate: DEFAULT_EXP_RATE, hatchRate: DEFAULT_EXP_RATE, tradeEvolution: DEFAULT_TRADE_EVOLUTION_SETTING, speed: DEFAULT_SPEED, typeHints: false, moveAnims: true, quality: 'high', panelPicture: DEFAULT_PICTURE_ROUTE, outsideScreens: DEFAULT_SCREEN_PLACE, panelShift: PANEL_SIZE.shift.default, aboveOthers: true,
+  rule: DEFAULT_RULE, expShare: 'always', expRate: DEFAULT_EXP_RATE, friendshipRate: DEFAULT_EXP_RATE, hatchRate: DEFAULT_EXP_RATE, tradeEvolution: DEFAULT_TRADE_EVOLUTION_SETTING, speed: DEFAULT_SPEED, typeHints: false, effectItems: false, foeGimmicks: DEFAULT_FOE_GIMMICKS, moveAnims: true, quality: 'high', panelPicture: DEFAULT_PICTURE_ROUTE, outsideScreens: DEFAULT_SCREEN_PLACE, panelShift: PANEL_SIZE.shift.default, aboveOthers: true, importRecent: IMPORT_AI_RECENT,
   silhouette: true, looks: Object.freeze({}), oldLook: null, debug: false,
   bots: Object.freeze([]), botsOff: Object.freeze([]) });
 
@@ -41,7 +45,7 @@ export const DEFAULT_LOOK = Object.freeze({ gender: 'm', myBack: 'silhouette', m
 
 const labelled = (ids, prefix) => perLang(t => Object.freeze(ids.map(id => Object.freeze([id, t(`${prefix}.${id}`)]))));
 
-const SEND_FORMAT_IDS = ['summary', 'key', 'log'];
+const SEND_FORMAT_IDS = ['result', 'summary', 'key', 'log'];
 const LOOK_IDS = ['silhouette', 'color'];
 const PICTURE_LOOK_IDS = [...LOOK_IDS, 'image'];
 const GENDER_IDS = ['m', 'f'];
@@ -51,6 +55,7 @@ export const DIFFICULTIES = labelled(DIFFICULTY_IDS, 'settings.difficulty');
 export const RULES = labelled(RULE_IDS, 'settings.rule');
 export const EXP_SHARES = labelled(EXP_SHARE_MODES, 'settings.expShare');
 export const TRADE_EVOLUTIONS = labelled(TRADE_EVOLUTION_IDS, 'settings.tradeEvolution');
+export const FOE_GIMMICKS = labelled(FOE_GIMMICK_MODES, 'settings.foeGimmicks');
 const rateChoices = rates => perLang(t => Object.freeze(rates.map(rate => Object.freeze([rate, t('settings.expRate', { rate })]))));
 
 export const EXP_RATE_CHOICES = rateChoices(EXP_RATES);
@@ -86,6 +91,17 @@ const LANG_HELP = '화면과 AI 글의 언어\nLanguage of screens and AI text';
 const AUX_RECENT_COUNTS = [4, 8, 12, 24];
 export const AUX_RECENTS = perLang(t => Object.freeze(AUX_RECENT_COUNTS.map(count => Object.freeze([count, t('settings.auxRecent', { count })]))));
 
+const IMPORT_RECENT_COUNTS = [8, 16, 24, 32];
+export const IMPORT_RECENTS = perLang(t => Object.freeze(IMPORT_RECENT_COUNTS.map(count => Object.freeze([count, t('settings.importRecent', { count })]))));
+
+export const SETTING_GROUPS = perLang(t => Object.freeze({ aux: t('settings.group.aux'), chat: t('settings.group.chat') }));
+const GROUP_LINES = new Set(['chat']);
+export const IMPORT_RECENT_TYPED = perLang(t => Object.freeze({
+  unset: t('settings.expRateTyped'), label: count => t('settings.importRecent', { count }),
+  range: t('settings.importRecentRange', { min: IMPORT_AI_RECENT_MIN, max: IMPORT_AI_RECENT_MAX }), digits: Object.freeze({ ints: 3, decimals: 0 }),
+  valid: count => Number.isInteger(count) && count >= IMPORT_AI_RECENT_MIN && count <= IMPORT_AI_RECENT_MAX,
+}));
+
 export const commandsOn = settings => settings?.commands === true;
 
 export const auxOn = settings => commandsOn(settings) && settings.aux === true;
@@ -98,10 +114,14 @@ export const SETTING_TABS = perLang((t, lang) => {
     ...('help' in extra ? {} : { help: t(`settings.help.${key}`) }), ...extra });
   const ordered = { control: 'stepper' };
   const underCommands = { needs: commandsOn, needsHelp: t('settings.needsCommands') };
+  const helper = { group: 'aux' };
+  const thisChat = { group: 'chat' };
   return Object.freeze([
     { id: 'battle', rows: [row('rule', RULES(lang)), row('expShare', EXP_SHARES(lang)), row('expRate', EXP_RATE_CHOICES(lang), { ...ordered, typed: EXP_RATE_TYPED(lang) }),
       row('friendshipRate', RATE_CHOICES(lang), { ...ordered, typed: EXP_RATE_TYPED(lang) }), row('hatchRate', RATE_CHOICES(lang), { ...ordered, typed: EXP_RATE_TYPED(lang) }),
-      row('tradeEvolution', TRADE_EVOLUTIONS(lang)), row('iron', onOff), row('difficulty', DIFFICULTIES(lang), ordered), row('speed', SPEEDS(lang), ordered), row('typeHints', onOff)] },
+      row('tradeEvolution', TRADE_EVOLUTIONS(lang)), row('iron', onOff), row('difficulty', DIFFICULTIES(lang), ordered), row('foeGimmicks', FOE_GIMMICKS(lang)), row('speed', SPEEDS(lang), ordered), row('typeHints', onOff),
+
+      ...(ITEM_EFFECTS_READY ? [row('effectItems', onOff)] : [])] },
     { id: 'screen', rows: [
       ...(LANG_OPEN ? [row('lang', LANGS, { help: LANG_HELP })] : []),
       row('sound', onOff), row('moveAnims', onOff),
@@ -112,8 +132,10 @@ export const SETTING_TABS = perLang((t, lang) => {
       row('panelShift', null, { control: 'slider', slider: PANEL_SHIFT_SLIDER(lang) }), row('aboveOthers', onOff),
     ] },
     { id: 'story', rows: [row('sendFormat', SEND_FORMATS(lang), { help: SEND_FORMAT_NOTES(lang) }), row('autoSend', onOff, { permission: 'sendChat' }),
-      row('commands', onOff), row('aux', onOff, underCommands), row('auxRecent', AUX_RECENTS(lang), { ...underCommands, ...ordered }), row('oocTrial', onOff), row('debug', onOff)] },
-    { id: 'bot', rows: [row('bot', onOff, { help: undefined }), row('bots'), row('import')] },
+      row('commands', onOff), row('oocTrial', onOff), row('debug', onOff),
+      row('aux', onOff, { ...underCommands, ...helper }), row('auxRecent', AUX_RECENTS(lang), { ...underCommands, ...ordered, ...helper })] },
+    { id: 'bot', rows: [row('bot', onOff, { help: undefined }), row('bots'), row('battlesOff', onOff, thisChat), row('import', null, thisChat),
+      row('importRecent', IMPORT_RECENTS(lang), { ...ordered, ...thisChat, typed: IMPORT_RECENT_TYPED(lang), help: '' })] },
   ].map(tab => Object.freeze({ ...tab, label: t(`settings.tab.${tab.id}`) })));
 });
 
@@ -162,12 +184,15 @@ export function normalizeSettings(raw) {
     tradeEvolution: pick(s.tradeEvolution, TRADE_EVOLUTION_IDS, DEFAULT_SETTINGS.tradeEvolution),
     speed: pick(s.speed, GAME_SPEEDS, DEFAULT_SETTINGS.speed),
     typeHints: s.typeHints === true,
+    effectItems: ITEM_EFFECTS_READY && s.effectItems === true,
+    foeGimmicks: pick(s.foeGimmicks, FOE_GIMMICK_MODES, DEFAULT_SETTINGS.foeGimmicks),
     moveAnims: s.moveAnims !== false,
     quality: pick(s.quality, QUALITY_IDS, DEFAULT_SETTINGS.quality),
     panelPicture: pick(s.panelPicture, PICTURE_ROUTES, DEFAULT_SETTINGS.panelPicture),
     outsideScreens: pick(s.outsideScreens, SCREEN_PLACES, DEFAULT_SETTINGS.outsideScreens),
     panelShift: panelShift(s.panelShift),
     aboveOthers: s.aboveOthers !== false,
+    importRecent: importAiRecent(s.importRecent),
     silhouette: s.silhouette !== false,
     debug: s.debug === true,
     looks: lookMap(s.looks),
@@ -279,12 +304,21 @@ const TAB_ICONS = {
 
 const CURSOR = '<svg class="cur" viewBox="0 0 8 10" aria-hidden="true"><path d="M1 0h2l5 5-5 5H1z" fill="currentColor"/></svg>';
 
-export function importLabel({ count }, lang) {
-  return sayer(lang)('settings.importLabel', { count });
+const pad2 = n => String(n).padStart(2, '0');
+
+export const IMPORT_NAMES_SHOWN = 3;
+
+export function importSummary({ time, count, names = [] }, lang) {
+  const t = sayer(lang), d = new Date(time);
+  const when = `${pad2(d.getMonth() + 1)}/${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  const shown = names.slice(0, IMPORT_NAMES_SHOWN), more = count - shown.length;
+  const what = !count ? t('import.bag') : more > 0 ? t('settings.histMore', { names: shown.join(', '), n: more }) : shown.join(', ');
+  return `${when} · ${what}`;
 }
 
-export function mountSettings({ parent = document.body, settings, bot = null, persona = null, notice = '', picture = null, imports = null, inUse = {}, lang,
-  onChange = () => {}, onPicture = async () => {}, onPermission = async () => false, onImport = async () => {}, onCancelImport = async () => imports, onClose = () => {} }) {
+export function mountSettings({ parent = document.body, settings, bot = null, persona = null, notice = '', picture = null, imports = null, battlesOff = null, inUse = {}, lang,
+  onChange = () => {}, onPicture = async () => {}, onPermission = async () => false, onImport = async () => {}, onCancelImport = async () => imports,
+  onBattlesOff = async () => battlesOff, onClose = () => {} }) {
   const t = sayer(lang);
   const NEEDS_CHAT = t('settings.needsChat');
   let current = normalizeSettings(settings);
@@ -364,12 +398,29 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     .pkb-settings .chip button { flex:none; width:20px; height:20px; padding:0; display:flex; align-items:center; justify-content:center; border:0; border-radius:50%;
       background:transparent; color:inherit; cursor:pointer; }
     .pkb-settings .chip button svg { width:8px; height:8px; }
-    /* Import row: open button; past imports, each with cancel (asked once more) */
-    .pkb-settings .imports { grid-column:2 / 4; display:flex; flex-wrap:wrap; gap:6px; margin-top:2px; }
-    .pkb-settings .imports[hidden] { display:none; }
-    .pkb-settings .chip .ask { display:inline-flex; gap:2px; margin-left:4px; }
-    .pkb-settings .chip .ask button { width:auto; height:20px; padding:0 6px; border-radius:999px; font-size:11px; }
-    .pkb-settings .chip .ask .yes { background:var(--red); color:#fff; }
+    /* Import row: its button; under it a small faint "past imports" that opens the list (not a row). Only the newest one has a cancel x (asked once more) */
+    .pkb-settings .hist { grid-column:2 / 4; margin-top:-2px; font-size:11.5px; line-height:1.4; color:#8299ac; }
+    .pkb-settings .hist[hidden], .pkb-settings .hist-list[hidden] { display:none; }
+    .pkb-settings .hist button { font-size:inherit; color:inherit; background:transparent; border:0; cursor:pointer; }
+    .pkb-settings .hist-open { padding:2px 0; }
+    .pkb-settings .hist-open:hover { color:#5c768c; }
+    .pkb-settings .hist-list { margin:1px 0 2px; padding-left:8px; border-left:1.5px solid #c3d4e1; color:#5f7a90; font-size:12px; }
+    .pkb-settings .hist-row { display:flex; align-items:center; gap:4px; min-height:21px; }
+    .pkb-settings .hist-x { flex:none; width:18px; height:18px; padding:0; display:flex; align-items:center; justify-content:center; border-radius:50%; }
+    .pkb-settings .hist-x:hover { background:#e1eaf1; }
+    .pkb-settings .hist-x svg { width:7px; height:7px; }
+    /* Asking before cancelling a past import: a box in the middle of the window, the rest dimmed (the import screen's look - import-screen.js askClose) */
+    .pkb-settings .ask { position:absolute; inset:0; z-index:5; display:flex; justify-content:center; align-items:center; padding:16px; background:rgba(15,24,34,.6); }
+    .pkb-settings .ask .box { width:min(320px, 100%); padding:14px 14px 12px; border:2.5px solid var(--navy); border-radius:12px; background:#fff; box-shadow:0 3px 0 var(--navy-dark); }
+    .pkb-settings .ask p { margin:0 0 12px; font-size:14px; white-space:pre-line; }
+    .pkb-settings .ask p small { font-size:12px; color:#5b768b; }
+    .pkb-settings .ask .btns { display:flex; justify-content:flex-end; gap:8px; }
+    .pkb-settings .ask .btns button { min-width:64px; padding:7px 12px 6px; font-size:13px; }
+    .pkb-settings .ask .yes { border-color:var(--red-dark); background:var(--red-fill); color:#fff; box-shadow:0 2px 0 var(--red-dark); }
+    /* Group heading (row.group): a small title over its rows, or a line with its words in the middle (GROUP_LINES); not a row */
+    .pkb-settings .group { margin:14px 0 0; padding:0 0 3px 2px; border-bottom:1.5px solid #9fbbd0; color:#4f6f8a; font-size:12px; letter-spacing:.04em; }
+    .pkb-settings .group.line { display:flex; align-items:center; gap:10px; margin:10px 0 2px; padding:0; border:0; color:#6d879b; }
+    .pkb-settings .group.line::before, .pkb-settings .group.line::after { content:""; flex:1; height:1.5px; background:#9fbbd0; }
     ${noteRule('.pkb-settings .import-fail', 'error')}
     .pkb-settings .import-fail { grid-column:2 / 4; margin:4px 0 2px; font-size:12px; }
     .pkb-settings .import-fail[hidden] { display:none; }
@@ -521,6 +572,7 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     if (bot?.name && before !== after) { hinted = true; drawHelp(); }
     drawBots();
     drawImports();
+    drawBattles();
   };
   const chip = (name, off) => {
     const c = document.createElement('span'); c.className = `chip${off ? ' off' : ''}`;
@@ -548,47 +600,66 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
   form.append(input, button(t('settings.add'), addName));
   input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addName(); } });
 
-  let pastImports = imports, importBusy = false, asking = null;
-  const importButton = button(t('settings.open'), async () => {
+  let pastImports = imports, importBusy = false, asking = null, histOpen = false;
+  const importButton = button(t('settings.importOpen'), async () => {
     importBusy = true; importFail.hidden = true; drawImports();
     try { await onImport(); } catch (error) {
       console.warn('[poke-battle] 가져오기 화면을 열지 못함', error);
       importFail.textContent = failureText(WHAT.importOpen, error, lang); importFail.hidden = false;
     } finally { importBusy = false; drawImports(); }
   });
-  const importList = document.createElement('div'); importList.className = 'imports';
+  const hist = document.createElement('div'); hist.className = 'hist';
+  const histOpenButton = document.createElement('button'); histOpenButton.type = 'button'; histOpenButton.className = 'hist-open'; histOpenButton.textContent = t('settings.histOpen');
+  histOpenButton.onclick = () => { histOpen = !histOpen; drawImports(); };
+  const histList = document.createElement('div'); histList.className = 'hist-list';
+  hist.append(histOpenButton, histList);
   const importFail = document.createElement('p'); importFail.className = 'import-fail'; importFail.setAttribute('role', 'alert'); importFail.hidden = true;
   const cancelPast = async id => {
-    importBusy = true; asking = null; importFail.hidden = true; drawImports();
+    importBusy = true; closeAsk(); importFail.hidden = true; drawImports();
     try { pastImports = await onCancelImport(id); } catch (error) {
       console.warn('[poke-battle] 가져오기를 취소하지 못함', error);
       importFail.textContent = failureText(WHAT.importCancel, error, lang); importFail.hidden = false;
     } finally { importBusy = false; drawImports(); drawHelp(); }
   };
-  const importChip = imp => {
-    const c = document.createElement('span'); c.className = 'chip';
-    const label = document.createElement('span'); label.textContent = importLabel(imp, lang);
-    c.append(label);
-    if (asking === imp.id) {
-      const ask = document.createElement('span'); ask.className = 'ask';
-      const yes = document.createElement('button'); yes.type = 'button'; yes.className = 'yes'; yes.textContent = t('settings.cancelIt'); yes.onclick = () => cancelPast(imp.id);
-      const no = document.createElement('button'); no.type = 'button'; no.textContent = t('settings.keep'); no.onclick = () => { asking = null; drawImports(); };
-      ask.append(yes, no); c.append(ask);
-      return c;
-    }
-    const remove = document.createElement('button'); remove.type = 'button'; remove.innerHTML = crossIcon(3); remove.disabled = importBusy;
-    const what = t('settings.cancelImport', { label: importLabel(imp, lang) });
-    remove.setAttribute('aria-label', what); remove.title = what;
-    remove.onclick = () => { asking = imp.id; drawImports(); };
-    c.append(remove);
-    return c;
-  };
+
+  function askCancel(imp) {
+    closeAsk();
+    const yes = button(t('import.yes'), () => cancelPast(imp.id)); yes.classList.add('yes');
+    const no = button(t('import.no'), closeAsk); no.classList.add('no');
+    const question = document.createElement('p'); question.append(`${t('settings.histAsk')}\n`);
+    const what = document.createElement('small'); what.textContent = importSummary(imp, lang); question.append(what);
+    const buttons = document.createElement('div'); buttons.className = 'btns'; buttons.append(yes, no);
+    const box = document.createElement('div'); box.className = 'box'; box.append(question, buttons);
+    asking = document.createElement('div'); asking.className = 'ask'; asking.setAttribute('role', 'alertdialog'); asking.setAttribute('aria-label', t('settings.histAsk'));
+    asking.append(box);
+    asking.addEventListener('pointerdown', e => { if (e.target === asking) closeAsk(); });
+    card.append(asking);
+    no.focus?.();
+  }
+  function closeAsk() { asking?.remove(); asking = null; }
+
+  function drawHistory(list) {
+    histList.replaceChildren(...[...list].reverse().map((imp, n) => {
+      const r = document.createElement('div'); r.className = 'hist-row';
+      const what = document.createElement('span'); what.className = 'hist-what'; what.textContent = importSummary(imp, lang);
+      r.append(what);
+      if (n === 0) {
+        const x = document.createElement('button'); x.type = 'button'; x.className = 'hist-x'; x.innerHTML = crossIcon(3); x.disabled = importBusy;
+        x.setAttribute('aria-label', t('settings.histCancel')); x.title = t('settings.histCancel');
+        x.onclick = () => askCancel(imp);
+        r.append(x);
+      }
+      return r;
+    }));
+  }
   function drawImports() {
     importButton.disabled = importBusy || !enabledNow();
     importRow?.classList.toggle('off', !enabledNow());
     const list = pastImports?.list ?? [];
-    importList.replaceChildren(...list.map(importChip));
-    importList.hidden = !list.length;
+    hist.hidden = !list.length;
+    histOpenButton.setAttribute('aria-expanded', String(histOpen));
+    histList.hidden = !histOpen;
+    drawHistory(histOpen ? list : []);
   }
 
   const importHelp = row => () => {
@@ -597,6 +668,24 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     return isUnreadable(pastImports?.status) ? `${row.help}\n${unreadableLine(lang)}` : row.help;
   };
   let importRow = null;
+
+  let chatBattles = battlesOff, battlesBusy = false, battlesChoices = null, battlesRow = null;
+  const battlesFail = document.createElement('p'); battlesFail.className = 'import-fail'; battlesFail.setAttribute('role', 'alert'); battlesFail.hidden = true;
+  const battlesUsable = () => !!chatBattles && enabledNow() && !isUnreadable(chatBattles.status);
+  const switchBattles = async off => {
+    battlesBusy = true; battlesFail.hidden = true; drawBattles();
+    try { chatBattles = await onBattlesOff(off); } catch (error) {
+      console.warn('[poke-battle] 이 채팅 배틀 끄기를 바꾸지 못함', error);
+      battlesFail.textContent = failureText(WHAT.botSetting, error, lang); battlesFail.hidden = false;
+    } finally { battlesBusy = false; drawBattles(); }
+  };
+  function drawBattles() {
+    if (!battlesChoices) return;
+    battlesChoices.set(chatBattles?.off === true);
+    battlesChoices.disable(battlesBusy || !battlesUsable());
+    battlesRow.classList.toggle('off', !battlesUsable());
+  }
+  const battlesHelp = row => () => (!bot ? NEEDS_CHAT : isUnreadable(chatBattles?.status) ? `${row.help}\n${unreadableLine(lang)}` : row.help);
 
   const pages = new Map();
   for (const tab of SETTING_TABS(lang)) {
@@ -607,15 +696,26 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     tabBar.append(tabButton);
     const page = document.createElement('div'); page.className = 'page'; page.setAttribute('role', 'tabpanel'); page.setAttribute('aria-label', tab.label);
     list.append(page); pages.set(tab.id, page);
+    let groupNow = null;
     for (const row of tab.rows) {
+      if (row.group && row.group !== groupNow) {
+        const heading = document.createElement('div'); heading.className = GROUP_LINES.has(row.group) ? 'group line' : 'group';
+        heading.textContent = SETTING_GROUPS(lang)[row.group];
+        page.append(heading);
+      }
+      groupNow = row.group ?? null;
       if (row.key === 'bot') {
         botChoices = choices(row.control, row.options, enabledNow(), row.label, on => changeBots(setBotEnabled(current, bot.name, on)), { disabled: !bot?.name });
         line(page, row.label, botHelp(botSub), botChoices.el).classList.toggle('off', !bot?.name);
       } else if (row.key === 'bots') {
         line(page, row.label, botHelp(row.help)).append(form, names);
+      } else if (row.key === 'battlesOff') {
+        battlesChoices = choices(row.control, row.options, chatBattles?.off === true, row.label, switchBattles);
+        battlesRow = line(page, row.label, battlesHelp(row), battlesChoices.el);
+        battlesRow.append(battlesFail);
       } else if (row.key === 'import') {
         importRow = line(page, row.label, importHelp(row), importButton);
-        importRow.append(importList, importFail);
+        importRow.append(hist, importFail);
       } else if (row.key === 'persona') {
         line(page, t('settings.personaOf', { label: row.label, name: persona ?? t('settings.unknown') }), () => (persona ? row.help : NEEDS_CHAT)).classList.toggle('off', !persona);
       } else if (row.look) {
@@ -635,11 +735,11 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
         }, { typed: row.typed, slider: row.slider });
         const above = page.children[page.children.length - 1];
         const r = line(page, row.label, () => (row.needs && !row.needs(current) ? row.needsHelp : row.help), group.el);
-        if (row.needs) {
+        if (row.needs && !row.group) {
           above?.classList.add('joined');
           r.classList.add('sub');
-          under.push({ r, group, needs: row.needs });
         }
+        if (row.needs) under.push({ r, group, needs: row.needs });
       }
     }
   }
@@ -647,21 +747,25 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     for (const tabButton of tabBar.children) tabButton.setAttribute('aria-selected', String(tabButton.dataset.tab === id));
     for (const [key, page] of pages) page.hidden = key !== id;
     list.scrollTop = 0;
-    pick(pages.get(id).firstElementChild);
+    pick(pages.get(id).querySelector('.row'));
   }
   drawPicture();
   drawBots();
   drawImports();
+  drawBattles();
   drawUnder();
   showTab(SETTING_TABS(lang)[0].id);
 
   let closed = false;
-  const close = async () => { if (closed) return; closed = true; try { await onClose(); } finally { root.remove(); } };
+  const close = async () => { if (closed) return; closed = true; popBack(); try { await onClose(); } finally { root.remove(); } };
+
+  const back = () => { if (asking) closeAsk(); else close(); };
+  const popBack = pushBack(root, back);
   root.querySelector('.hd .x').onclick = close;
-  root.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); close(); } });
+  root.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); back(); } });
   root.addEventListener('pointerdown', e => { if (e.target === root) close(); });
   root.querySelector('.hd .x').focus();
-  return { close, get settings() { return current; }, setImports(next) { pastImports = next; asking = null; drawImports(); drawHelp(); } };
+  return { close, get settings() { return current; }, setImports(next) { pastImports = next; closeAsk(); drawImports(); drawHelp(); } };
 }
 
 export function mountPreparing({ parent = document.body, lang }) {

@@ -1,7 +1,7 @@
 // from pokerogue src/ui/battle-info/player-battle-info.ts @ 7d7da4a8 (AGPL-3.0-only)
+// Modified for PokeTale on 2026-11-16. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/battle-info/battle-info.ts (setLevelDisplay) @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/containers/party-exp-bar.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-28. See view/LICENSE-NOTE.md.
 
 import Phaser from 'phaser';
 import { addTextObject } from './text.js';
@@ -52,7 +52,6 @@ export class ExpBar {
     info.container.add([this.label, this.bar]);
   }
 
-  // Set instantly (updatePokemonExpDisplay skip)
   set(level, ratio = 0) {
     this.scene.tweens.killTweensOf(this.maskRect);
     this.levelShown = level; this.ratio = ratio;

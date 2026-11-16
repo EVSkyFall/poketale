@@ -59,7 +59,6 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 const animationsDone = element => Promise.all(element.getAnimations().map(animation => animation.finished.catch(() => {})));
 
-// Restart the same animation (remove the class, force a style calculation, add it again)
 function restart(button, cls) {
   button.classList.remove('shaking', 'flying');
   void button.offsetWidth;
@@ -74,7 +73,6 @@ export async function flyAway(button, { hold = 900 } = {}) {
   button.classList.remove('flying');
 }
 
-// Only a slight shake when there is no new turn since last time
 export async function shake(button) {
   restart(button, 'shaking');
   await animationsDone(button);

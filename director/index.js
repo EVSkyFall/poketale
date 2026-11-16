@@ -2,7 +2,7 @@ import { createStoryBattle, extractResult } from '../engine/core.mjs';
 import { createProtocolReader } from './parse.js';
 import { createSteps } from './steps.js';
 import { arrange } from './order.js';
-import { text, ownText, nameWithAffix } from './text.js';
+import { text, nameWithAffix } from './text.js';
 import { checkLang, DEFAULT_LANG } from './lang.js';
 import { simpleAI, isReviving, lockedTurn } from './simple-ai.js';
 import { monView } from './mon.js';
@@ -18,11 +18,10 @@ import { replaceMove } from '../engine/exp.mjs';
 import { chooseEnemyParts, hasEnemyItem } from '../engine/bag.mjs';
 import { commitChoice } from '../ai/commit.js';
 import { chooseDouble } from './double.js';
-import { requestIndex } from './party-slot.js';
 
 export function partySlots(battle, names, lang, request, { trapped = false, reviving = false, options } = {}) {
   const side = battle.sides[0];
-  const mine = request.side.pokemon.map((pokemon, i) => {
+  return request.side.pokemon.map((pokemon, i) => {
 
     const mon = monView(battle, names, pokemon.ident, pokemon.details, pokemon.condition, side.pokemon[i]?.maxhp);
     const slot = { ...mon, active: !!pokemon.active, fainted: / fnt$/.test(pokemon.condition) };
@@ -34,13 +33,15 @@ export function partySlots(battle, names, lang, request, { trapped = false, revi
     else if (trapped && !slot.active) slot.blocked = text('battle.noEscapeSwitch', {}, lang);
     return slot;
   });
+}
 
-  const partner = battle.sides[2]?.pokemon.filter(p => p.m.partner);
-  if (!partner?.length) return mine;
-  const theirs = battle.sides[2].getRequestData().pokemon.map((pokemon, i) => ({
-    ...monView(battle, names, pokemon.ident, pokemon.details, pokemon.condition, battle.sides[2].pokemon[i]?.maxhp),
-    active: !!pokemon.active, fainted: / fnt$/.test(pokemon.condition), partner: battle.sides[2].name, blocked: ownText('own.partnerPokemon', {}, lang) }));
-  return [mine[0], ...theirs.filter(slot => slot.active), ...mine.slice(1), ...theirs.filter(slot => !slot.active)];
+function partnerParty(battle, names) {
+  const side = battle.sides[0].allySide;
+  if (!side?.pokemon.some(p => p.m.partner)) return null;
+  const party = side.getRequestData().pokemon.slice(0, 6).map((pokemon, i) => ({
+    ...monView(battle, names, pokemon.ident, pokemon.details, pokemon.condition, side.pokemon[i]?.maxhp),
+    active: !!pokemon.active, fainted: / fnt$/.test(pokemon.condition) }));
+  return { name: side.name, party };
 }
 
 export { isReviving };
@@ -51,7 +52,7 @@ function switchChoice(choice, party, { reviving = false } = {}) {
     || (reviving ? !slot.fainted : slot.active || slot.fainted)) {
     throw new Error('Invalid player choice');
   }
-  return `switch ${requestIndex(party, choice.slot) + 1}`;
+  return `switch ${choice.slot + 1}`;
 }
 
 const DENIED = {
@@ -289,7 +290,8 @@ export async function runBattle({ sim, spec, options = {}, view, names, lang = D
 
       if (battle.activePerHalf > 1) {
         return chooseDouble({ battle, view, names, lang, run, bag, gimmicks, switchChoice, moveDeniedText, moveInfo,
-          partySlots: (req, extra) => partySlots(battle, names, lang, req, { ...extra, options: battleOptions }) }, request);
+          partySlots: (req, extra) => partySlots(battle, names, lang, req, { ...extra, options: battleOptions }),
+          partner: () => partnerParty(battle, names) }, request);
       }
       if (request.forceSwitch) {
 

@@ -1,5 +1,5 @@
-// Petting, feeding and visit state.
-// Modified for PokeTale on 2026-11-12. See THIRD-PARTY-NOTICES.md.
+// Modified for PokeTale on 2026-11-16. See THIRD-PARTY-NOTICES.md.
+// Adapted layouts: PlayNav, revision 7f1b4dcb8ca1cc85180272c165842374924f1564.
 // Ported from PlayNav (https://github.com/poooooby/PlayNav): data/amie_rules.lua (PET, HIT, HIGH_FIVE, IDLE numbers),
 // src/amie/session.lua (petTouch, hit, highFive, feedStart / feedHold: bites), src/amie/play.lua (handlePress, update: wake, petting, high five, dozing),
 // src/amie/rules.lua (the Poke Puff catalogue), data/amie_rules.lua PUFF (bites per species, the pace of a nearly full Pokemon, species that do not eat).
@@ -9,7 +9,7 @@ import SPOT_TABLE from '../data/amie-spots.json' with { type: 'json' };
 import { FRIENDSHIP_MAX } from '../engine/friendship.mjs';
 import { toID } from '../engine/mon.mjs';
 import { OUTSIDE_ITEMS, FOOD_BERRY } from './items.mjs';
-import { isCustomItem, hasTag } from './custom-items.mjs';
+import { isCustomItem, hasEffect } from './custom-items.mjs';
 
 export const ENJOY_MAX = 100;
 
@@ -75,7 +75,7 @@ export function afterMessage(state) {
 const FOOD_CUSTOM = 1;
 
 export function foodFriendship(id, sim, holder) {
-  if (isCustomItem(id)) return hasTag(holder, id, 'food') ? FOOD_CUSTOM : 0;
+  if (isCustomItem(id)) return hasEffect(holder, id, 'food') ? FOOD_CUSTOM : 0;
   const key = toID(id);
   return (Object.hasOwn(OUTSIDE_ITEMS, key) ? OUTSIDE_ITEMS[key].food : null) ?? (sim.Dex.items.get(key).isBerry ? FOOD_BERRY : 0);
 }

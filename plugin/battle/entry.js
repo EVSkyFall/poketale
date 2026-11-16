@@ -1,9 +1,18 @@
 import { isNamedSprite } from '../../story/named.mjs';
+import { isWild } from '../../director/index.js';
+import { waitingTrainer } from '../../engine/core.mjs';
 import { loadFont } from '../../view/fonts.js';
 
 const ENTRY_FONT = 'PkbPixel';
 
 export const entryNamed = spec => (isNamedSprite(spec?.p2?.trainerSprite) ? { name: spec.p2.name ?? '' } : null);
+
+export function entryFoes(spec) {
+  if (!spec?.p2 || isWild(spec)) return [];
+  const first = { name: spec.p2.name ?? '', sprite: spec.p2.trainerSprite, black: !!spec.p2.trainerSilhouette };
+  const second = spec.foePartner && !waitingTrainer(spec) ? spec.foePartner : null;
+  return second ? [first, { name: second.name ?? '', sprite: second.trainerSprite ?? first.sprite, black: !!second.trainerSilhouette }] : [first];
+}
 
 export const ENTRY_MS = Object.freeze({
   plateAt: 30, plate: 320,
@@ -73,7 +82,14 @@ export const ENTRY_CSS = `
     box-shadow:0 0 0 2px #151515, 4px 4px 0 2px #0005; }
   .poke-battle .pkb-entry .who.foe { right:1.5%; bottom:2%; }
   .poke-battle .pkb-entry .who.foe canvas { filter:drop-shadow(-4px 4px 0 #0003); }
-  .poke-battle .pkb-entry .who.foe.black canvas { filter:brightness(0) drop-shadow(-4px 4px 0 #0005); } /* Opponent silhouette: the same fill as mine, the shadow toward the opponent's side */
+  .poke-battle .pkb-entry .who.foe canvas.black { filter:brightness(0) drop-shadow(-4px 4px 0 #0005); } /* Opponent silhouette: the same fill as mine, the shadow toward the opponent's side */
+  /* Two opposing trainers: side by side in one row, the second a little to the right and in front, overlapping like on the field (view/encounter.js -4 / 28 in an 80 box) */
+  .poke-battle .pkb-entry .who.foe .figs { display:flex; align-items:flex-end; }
+  .poke-battle .pkb-entry .who.foe.pair canvas { height:calc(var(--fig) * .9); }
+  .poke-battle .pkb-entry .who.foe.pair canvas + canvas { margin-left:calc(var(--fig) * -.56); }
+  /* "A & B" (names given as a list): each name kept on one line, the line breaks after "&" when both do not fit the pictures' width; a single very long name still wraps between words */
+  .poke-battle .pkb-entry .who.foe b { white-space:normal; word-break:keep-all; overflow-wrap:anywhere; text-align:center; max-width:var(--fig); box-sizing:border-box; }
+  .poke-battle .pkb-entry .who.foe b span { display:inline-block; max-width:100%; }
   .poke-battle .pkb-entry .who b { font-weight:400; padding:2px 12px; border-radius:6px; box-shadow:0 3px 0 #0006; color:#fff; }
   .poke-battle .pkb-entry .who.me b { margin-top:calc(var(--fig) * .06); background:#151515cc; }
   .poke-battle .pkb-entry .who.foe b { margin-bottom:calc(var(--fig) * .06); background:#151515; }
@@ -105,7 +121,7 @@ const VS_SVG = `<svg class="vs" viewBox="0 0 200 110" aria-hidden="true"><g tran
 
 export const STAMP_SOUND = 'se/hit_strong.wav';
 
-export function mountEntry(root, { kind = 'trainer', boss = false, named = null, names = {}, foeBlack = false, meBlack = true, reduced = false, start = performance.now(),
+export function mountEntry(root, { kind = 'trainer', boss = false, named = null, names = {}, foeBlack = false, foe2Black = false, meBlack = true, reduced = false, start = performance.now(),
   pictures = Promise.resolve({}), sound = null } = {}) {
   const wild = kind === 'wild';
   const element = document.createElement('div');
@@ -185,8 +201,13 @@ export function mountEntry(root, { kind = 'trainer', boss = false, named = null,
   const vsLayer = $('.vs-layer'), namedLayer = $('.named'), ribbon = $('.named p');
   const me = $('.who.me'), foe = $('.who.foe'), mark = $('.vs');
   me.querySelector('b').textContent = names.me ?? '';
-  foe.querySelector('b').textContent = names.foe ?? '';
-  foe.classList.toggle('black', foeBlack);
+
+  const foeTag = foe.querySelector('b');
+  if (Array.isArray(names.foe)) names.foe.forEach((name, i) => {
+    if (i) foeTag.append(' & ');
+    foeTag.append(Object.assign(document.createElement('span'), { textContent: name }));
+  });
+  else foeTag.textContent = names.foe ?? '';
   me.classList.toggle('black', meBlack);
   ribbon.textContent = named?.name ?? '';
 
@@ -217,7 +238,15 @@ export function mountEntry(root, { kind = 'trainer', boss = false, named = null,
     }
 
     if (art.me) me.prepend(art.me);
-    if (art.foe) foe.append(art.foe);
+
+    const figures = [[art.foe, foeBlack], [art.foe2, foe2Black]].filter(([canvas]) => canvas);
+    for (const [canvas, black] of figures) canvas.classList.toggle('black', black);
+    if (figures.length > 1) {
+      const row = document.createElement('div');
+      row.className = 'figs';
+      row.append(...figures.map(([canvas]) => canvas));
+      foe.classList.add('pair'); foe.append(row);
+    } else if (figures.length) foe.append(figures[0][0]);
     tween(me, [{ opacity: 0, transform: `translateX(-${MOTION.slide}cqmin)` }, { opacity: 1, transform: 'none' }], at, ENTRY_MS.slide, EASE.slide);
     tween(foe, [{ opacity: 0, transform: `translateX(${MOTION.slide}cqmin)` }, { opacity: 1, transform: 'none' }], at, ENTRY_MS.slide, EASE.slide);
     const stamp = ENTRY_MS.stamp + lag, landed = stamp + ENTRY_MS.stampIn;

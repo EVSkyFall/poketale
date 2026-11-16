@@ -1,5 +1,5 @@
 // from pokerogue src/phases/enemy-command-phase.ts, src/field/pokemon.ts (getNextMove, getNextTargets), src/field/trainer.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-10. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-16. See view/LICENSE-NOTE.md.
 
 import { snapshot, restore, rolloutMove, tryChoice, applyGimmick, atSlot } from './engine-copy.js';
 import { partyMatchupScores, getMatchupScore, sortScores, nextSummonIndex } from './matchup.js';
@@ -7,7 +7,7 @@ import { targetScore, targetWeight, combineScores, tableEntry } from './move-sco
 import { liveSeedText, deriveSeed, createRng } from './rng.js';
 import { lookahead, switchChoices } from './lookahead.js';
 import { DEFAULT_POLICY, bossHealItems } from './policy.js';
-import { checkEnemyItem } from '../engine/bag.mjs';
+import { checkEnemyItem, toolsOn } from '../engine/bag.mjs';
 import { trainerOf, twinSeat } from '../engine/seats.mjs';
 import { holdDecision } from './commit.js';
 import { moveTargets } from '../director/targets.js';
@@ -16,6 +16,13 @@ import { isReviving } from '../director/simple-ai.js';
 export { DEFAULT_POLICY, bossHealItems };
 
 export const DIFFICULTIES = ['easy', 'normal', 'hard', 'max'];
+
+export function gimmickRules(foeGimmick) {
+  if (foeGimmick === 'tera') return { mega: false, tera: 'ace' };
+  if (foeGimmick === 'mega') return { mega: true, tera: 'never' };
+  if (foeGimmick === 'none') return { mega: false, tera: 'never' };
+  return {};
+}
 
 export function aiTier({ trainer = true, difficulty = 'normal', boss = false } = {}) {
   if (!trainer) return 'wild';
@@ -187,6 +194,9 @@ function commandSlot(ctx, seat, s, plan, turn) {
   const { opts, probe } = ctx;
 
   if (!seat.user || seat.user.fainted || seat.active.commanding) return { kind: 'pass', choice: 'pass' };
+
+  const tools = toolsOn(ctx.liveSide.battle, ctx.liveSide.active[seat.i]);
+  if (tools.length) return { kind: 'move', tools, ...chooseMove(ctx, seat, { attackOnly: tools.includes('taunt'), wild: tools.includes('distract') }) };
   if (plan && s.itemsLeft > 0 && wantsHeal(ctx, seat, plan.item)) {
 
     const koCheck = knockOutCheck(ctx, seat);
@@ -392,9 +402,12 @@ function rollSummary(e, user, targets) {
   return { damage: foes.reduce((sum, hit) => sum + hit.damage, 0), ko: foes.some(hit => hit.ko), failed: hits.some(hit => hit.failed) };
 }
 
-function chooseMove(ctx, seat) {
-  const { opts, rng } = ctx;
-  const pool = usableMoves(seat.active);
+function chooseMove(ctx, seat, how = {}) {
+  const { rng } = ctx;
+  const opts = how.wild ? { ...ctx.opts, tier: 'wild', bossPokemon: false } : ctx.opts;
+  const usable = usableMoves(seat.active);
+  const attacks = how.attackOnly ? usable.filter(m => ctx.probe.dex.moves.get(m.id).category !== 'Status') : [];
+  const pool = attacks.length ? attacks : usable;
   if (!pool.length) return { choice: 'default', reason: 'no usable move' };
   if (pool.length === 1) {
 

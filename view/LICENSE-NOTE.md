@@ -2,7 +2,7 @@
 
 Portions of this project are adapted from [PokeRogue](https://github.com/pagefaultgames/pokerogue), revision `7d7da4a829258b19e3f1615185fc6dd4d3d815f7`, Copyright 2024-2026 Pagefault Games, licensed under AGPL-3.0-only.
 
-Modified for PokeTale; modification notice date: 2026-11-10. Original source paths are listed below and retained in the corresponding source file headers. Full license and asset attribution information is in [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md).
+Modified for PokeTale; modification notice date: 2026-11-16. Original source paths are listed below and retained in the corresponding source file headers. Full license and asset attribution information is in [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md).
 
 ## Changes
 

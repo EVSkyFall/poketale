@@ -1,8 +1,5 @@
 // from pokerogue src/pipelines/field-sprite.ts (onBind uniforms, flush per object) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-05. See view/LICENSE-NOTE.md.
-// Apply a color matrix per sprite without shared render targets.
-
-import Phaser from 'phaser';
+// Modified for PokeTale on 2026-11-16. See view/LICENSE-NOTE.md.
 
 export const COLOR_MATRIX_PIPELINE = 'SpriteColorMatrix';
 
@@ -36,9 +33,19 @@ void main() {
   gl_FragColor = vec4(result.rgb * result.a, result.a);
 }`;
 
+export function hueMatrix(deg) {
+  const r = deg * Math.PI / 180, c = Math.cos(r), s = Math.sin(r);
+  return [
+    0.213 + c * 0.787 - s * 0.213, 0.715 - c * 0.715 - s * 0.715, 0.072 - c * 0.072 + s * 0.928, 0, 0,
+    0.213 - c * 0.213 + s * 0.143, 0.715 + c * 0.285 + s * 0.140, 0.072 - c * 0.072 - s * 0.283, 0, 0,
+    0.213 - c * 0.213 - s * 0.787, 0.715 - c * 0.715 + s * 0.715, 0.072 + c * 0.928 + s * 0.072, 0, 0,
+    0, 0, 0, 1, 0,
+  ];
+}
+
 let ColorMatrixPipeline;
 
-function pipelineClass() {
+function pipelineClass(Phaser) {
   return ColorMatrixPipeline ??= class extends Phaser.Renderer.WebGL.Pipelines.SinglePipeline {
     constructor(game) { super({ game, fragShader: FRAG }); }
 
@@ -47,8 +54,8 @@ function pipelineClass() {
   };
 }
 
-export function rendererConfig() {
-  return { disablePreFX: true, pipeline: { [COLOR_MATRIX_PIPELINE]: pipelineClass() } };
+export function rendererConfig(Phaser) {
+  return { disablePreFX: true, pipeline: { [COLOR_MATRIX_PIPELINE]: pipelineClass(Phaser) } };
 }
 
 export const matrixData = matrix => Float32Array.from(matrix, (v, i) => (i % 5 === 4 ? v / 255 : v));

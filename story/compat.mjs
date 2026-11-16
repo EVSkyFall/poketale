@@ -1,4 +1,4 @@
-import { norm } from './norm.mjs';
+import { norm, foldNorm } from './norm.mjs';
 import storyNames from '../data/story-names.json' with { type: 'json' };
 
 import STATUS_WORDS from '../data/status-words.json' with { type: 'json' };
@@ -17,7 +17,7 @@ export const COMPAT_ENTRIES = Object.freeze([
   { name: '📣 Battle Intention', lines: ['intention'] },
 ].map(entry => Object.freeze({ ...entry, lines: Object.freeze(entry.lines), mark: `[${COMPAT_LINES[entry.lines[0]]}` })));
 
-export const compatFold = text => norm(String(text ?? '').normalize('NFD').replace(/\p{M}/gu, ''));
+export const compatFold = foldNorm;
 
 export const COMPAT_LINE_RE = /\[([^[\]\n]*)\]/g;
 
@@ -279,10 +279,11 @@ const HOUR_RE = new RegExp(`(\\d{1,2})\\s*(?:[:：${STATUS_WORDS.clock.hour.join
 const MERIDIEM_WORDS = wordTable(STATUS_WORDS.clock.meridiem);
 
 export function readTime(text) {
-  const hour = hourOf(text);
+  const hour = clockHourOf(text);
   return hour !== null ? timeOfDayAt(hour) : timeWordIn(text);
 }
-function hourOf(text) {
+
+export function clockHourOf(text) {
   const m = HOUR_RE.exec(text);
   if (!m) return null;
   const hour = Number(m[1]);
@@ -308,10 +309,12 @@ export function readStatusWindow(inner) {
   const money = fields.money && MONEY_RE.test(fields.money) ? Number(fields.money.replaceAll(',', '')) : null;
   return {
     timeOfDay: fields.time ? readTime(fields.time) : null,
+    hour: fields.time ? clockHourOf(fields.time) : null,
     weather: fields.weather ? (indoors ? 'none' : wordIn(WEATHER_WORDS, fields.weather) ?? 'none') : null,
     region: fields.region ? wordIn(REGION_WORDS, fields.region) : null,
     place: ['area', 'site', 'location'].map(key => (fields[key] ? wordIn(PLACE_WORDS, fields[key]) : null)).find(Boolean) ?? null,
     location: fields.location ?? null,
+    site: fields.site ?? null,
     date: fields.date ?? null,
     money: Number.isSafeInteger(money) ? money : null,
     indoors,
@@ -331,13 +334,17 @@ export function latestStatus(chat, upto = Infinity) {
   return null;
 }
 
-export const bagMoney = (chat, compat) => (compat ? statusMoney(chat) : null);
+export const bagMoney = (chat, compat, state = null) => (compat ? statusMoney(chat) : OWN_MONEY_SHOWN ? state?.money ?? null : null);
 
-export function statusMoney(chat) {
+export const OWN_MONEY_SHOWN = false;
+
+export const statusMoney = (chat, upto = Infinity) => statusMoneyAt(chat, upto)?.money ?? null;
+
+export function statusMoneyAt(chat, upto = Infinity) {
   const messages = chat?.message ?? [];
-  for (let i = messages.length - 1; i >= 0; i--) {
+  for (let i = Math.min(upto, messages.length - 1); i >= 0; i--) {
     const found = windowsIn(messages[i]).find(w => w.money !== null);
-    if (found) return found.money;
+    if (found) return { money: found.money, index: i };
   }
   return null;
 }
@@ -347,6 +354,7 @@ const SHELTERED = new Set(['cave', 'ice_cave', 'fairy_cave', 'seabed', 'laborato
 export function battleScene(battle, status) {
   const place = battle?.place ?? status?.place ?? 'plains';
   const timeOfDay = battle?.time ?? status?.timeOfDay ?? 'day';
+  const hour = (battle?.time ? battle.hour : status?.hour) ?? null;
   const field = SHELTERED.has(place) ? 'none' : status?.weather ?? 'none';
-  return { place, time: dayOrNight(timeOfDay), timeOfDay, weather: FIELD_WEATHERS[field], terrain: FIELD_TERRAINS[field] ?? null };
+  return { place, time: dayOrNight(timeOfDay), timeOfDay, hour, weather: FIELD_WEATHERS[field], terrain: FIELD_TERRAINS[field] ?? null };
 }

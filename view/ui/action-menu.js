@@ -1,5 +1,5 @@
 // from pokerogue src/ui/handlers/command-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-12. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-16. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/handlers/fight-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/handlers/target-select-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/handlers/battle-message-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
@@ -38,7 +38,7 @@ const asksTarget = target => !!target && (target.choose || target.spread) && tar
 export class ActionMenu {
   constructor(scene) { this.scene = scene; this.memos = {}; this.position = 'player'; }
 
-  choose({ moves, canSwitch = false, party, mega = false, tera = '', bag, run, position = 'player', back = false }) {
+  choose({ moves, canSwitch = false, party, partner = null, mega = false, tera = '', bag, run, position = 'player', back = false }) {
     if (this.finish) throw new Error('Action menu already open');
     if (!Array.isArray(moves) || !moves.length || moves.length > 4) throw new Error('Expected 1–4 move options');
     if (!POSITIONS.includes(position) || !isPlayerSide(position)) throw new Error(`Invalid command position: ${position}`);
@@ -54,6 +54,7 @@ export class ActionMenu {
     this.cursor = this.lastCommand === 2 || !this.lastCommand ? 0 : this.lastCommand;
 
     this.party = canSwitch && Array.isArray(party) ? party : null;
+    this.partner = partner;
     this.gimmick = GimmickButton.create(this, { mega, tera });
     this.bag = bag ?? null;
     this.run = run ?? null;
@@ -207,7 +208,7 @@ export class ActionMenu {
     this.mode = 'party'; this.notice = '';
 
     const onOpen = () => { this.detailsMask?.destroy(); this.detailsMask = null; this.container?.removeAll(true); this.drawnMode = null; };
-    this.scene.party.choose({ party: this.party, forced: false, onOpen }).then(choice => {
+    this.scene.party.choose({ party: this.party, partner: this.partner, forced: false, onOpen }).then(choice => {
       if (!this.finish) return;
       if (choice) return this.finish(choice);
       this.mode = 'command'; this.cursor = 2; this.draw();

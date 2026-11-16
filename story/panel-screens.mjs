@@ -119,6 +119,7 @@ function rememberView(screen, mon, env, t) {
 const STEP_LINES = {
   ask: ['battle.learnMovePrompt', 'battle.learnMoveLimitReached', 'battle.learnMoveReplaceQuestion'],
   pick: ['battle.learnMoveForgetQuestion'],
+  forget: ['own.learnMoveForgetConfirm'],
   giveup: ['battle.learnMoveStopTeaching'],
   done: ['battle.countdownPoof', 'battle.learnMoveForgetSuccess', 'battle.learnMoveAnd', 'battle.learnMove'],
   learned: ['battle.learnMove'],
@@ -128,14 +129,15 @@ function learnView(screen, mon, env, t) {
   const { state, ctx, lang } = env;
   const names = namesFor(lang, ctx.sim);
   const asking = ASKING.has(screen.step);
+  const choosing = screen.step === 'pick' || screen.step === 'forget';
   const who = slotView(mon, ctx, state, lang).name, moveName = names.move(screen.move);
   let list;
   if (asking) {
 
     const plan = keep(inputs('learn', mon, lang, null, state, screen.move), () => learnModel(outsideCtx(ctx, state, lang, null), mon, screen.move));
-    const rows = [moveRow(plan.newMove, { i: 0, mark: t('panel.sc.newMove'), fresh: true }), ...plan.moves.map((move, i) => moveRow(move, { i: i + 1, pick: screen.step === 'pick' }))];
+    const rows = [moveRow(plan.newMove, { i: 0, mark: t('panel.sc.newMove'), fresh: true }), ...plan.moves.map((move, i) => moveRow(move, { i: i + 1, pick: choosing }))];
     const at = Math.min(screen.show ?? 0, rows.length - 1);
-    list = { rows, selected: at, detail: moveDetail(at ? plan.moves[at - 1] : plan.newMove, t), picking: screen.step === 'pick' };
+    list = { rows, selected: at, detail: moveDetail(at ? plan.moves[at - 1] : plan.newMove, t), picking: choosing };
   } else {
 
     const moves = summaryOf(mon, env).summary.moves;
@@ -143,7 +145,10 @@ function learnView(screen, mon, env, t) {
     list = { rows: moves.map((move, i) => moveRow(move, { i: -1, ...(move.id === screen.move ? { mark: t('panel.sc.newMove'), fresh: true } : {}) })), selected: at, detail: moveDetail(moves[at], t), still: true };
   }
   const values = { pokemonName: who, moveName };
-  const line = key => expText(key, key === 'battle.learnMoveForgetSuccess' ? { pokemonName: who, moveName: names.move(screen.forgot) } : values, { lang }).replace(/\n/g, ' ');
+
+  const forgetting = screen.step === 'forget' ? mon.set.moves[screen.show - 1] : null;
+  const line = key => expText(key, key === 'battle.learnMoveForgetSuccess' ? { pokemonName: who, moveName: names.move(screen.forgot) }
+    : key === 'own.learnMoveForgetConfirm' ? { moveName: names.move(forgetting) } : values, { lang }).replace(/\n/g, ' ');
   const yesNo = [{ hit: { t: 'scYes' }, label: t('panel.yes') }, { hit: { t: 'scNo' }, label: t('panel.no') }];
 
   const forget = screen.step === 'pick' && screen.show > 0 ? mon.set.moves[screen.show - 1] : null;
@@ -155,7 +160,7 @@ function learnView(screen, mon, env, t) {
     title: t(levelUp ? 'panel.levelUp' : screen.source.kind === 'remember' ? 'panel.title.remember' : 'panel.sc.learn'), right: who, list,
     band: levelUp ? { chips: [...(left ? [t('panel.sc.movesLeft', { n: left })] : []), ...(mon.pending?.evolve ? [t('panel.sc.thenEvolve')] : [])],
       step: t('panel.sc.learning', { move: moveName }) } : null,
-    hint: asking ? t(screen.step === 'pick' ? 'panel.sc.pickHint' : 'panel.sc.rowHint') : null,
+    hint: asking ? t(choosing ? 'panel.sc.pickHint' : 'panel.sc.rowHint') : null,
     window: { text: STEP_LINES[screen.step].map(line).join('\n'), options },
   };
 }

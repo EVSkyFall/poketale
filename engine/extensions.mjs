@@ -9,12 +9,15 @@ import { installSeats } from './seats.mjs';
 import { installField } from './field.mjs';
 import { installFriendship } from './friendship.mjs';
 import { installCounts } from './counts.mjs';
+import { allowRayquazaMega } from './showdown-compat.mjs';
 
 export const EXTENSIONS = [
 
 	{ name: 'line-tags', at: 'create', install: (sim, battle) => attachLineTags(battle), keys: ['storyLogMeta'], copy: 'strip' },
 
 	{ name: 'rules', at: 'create', install: applyFormatRules, keys: [], copy: 'reapply' },
+
+	{ name: 'rayquaza-mega', at: 'create', install: (sim, battle) => allowRayquazaMega(battle), keys: [], copy: 'reapply' },
 	{ name: 'winner', at: 'create', install: (sim, battle) => installWinner(battle), keys: ['storyWinner'], copy: 'keep',
 		fields: ['outcome', 'winner'], result: winnerResult },
 

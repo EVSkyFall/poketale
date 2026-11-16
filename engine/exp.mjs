@@ -75,7 +75,7 @@ export function attachExperience(sim, battle, spec, { exp: table, levelUp }) {
 
 	const effort = formatRules(sim, battle.format).effort && Array.isArray(table.effort);
 	const state = { sim, table, levelUp, effort, share: spec.expShare !== false, rate: spec.expRate ?? DEFAULT_EXP_RATE, faced: new Map(), awarded: new Set(), learnQueue: [],
-		world: { timeOfDay: spec.timeOfDay ?? 'day', weather: spec.weather ?? null, region: spec.region ?? null, money: spec.money ?? null, badges: spec.badges ?? 0,
+		world: { timeOfDay: spec.timeOfDay ?? 'day', ...(Number.isInteger(spec.clockHour) ? { clockHour: spec.clockHour } : {}), weather: spec.weather ?? null, region: spec.region ?? null, money: spec.money ?? null, badges: spec.badges ?? 0,
 			trade: spec.tradeEvolution ?? ABSENT_TRADE_EVOLUTION, partner: !!spec.partner } };
 	states.set(battle, state);
 	const [p1] = battle.sides;

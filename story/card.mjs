@@ -12,7 +12,8 @@ const PLACE = Object.fromEntries(BIOMES.map(k => [keyOf(k), k]));
 const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;', '{': '&#123;', '}': '&#125;' };
 
 export const esc = value => String(value ?? '').replace(/[&<>"'{}]/g, c => ESC[c]);
-const safeKey = key => String(key ?? '').toLowerCase().replace(/[^a-z0-9]/g, '') || 'none';
+
+export const safeKey = key => String(key ?? '').toLowerCase().replace(/[^a-z0-9]/g, '') || 'none';
 const safeUrl = url => (typeof url === 'string' && /^(https?:\/\/|data:image\/)/i.test(url.trim()) ? url.trim() : '');
 
 export function placeName(place, lang) {
@@ -59,7 +60,7 @@ const band = (look, lang) => say(lang, `card.band.${look}`);
 const OUTCOME_CLS = { win: 'win', lose: 'lose', forfeit: 'gray', run: 'gray', capture: 'cap', stop: 'gray' };
 
 const outcomeLabel = (outcome, lang) => say(lang, `card.outcome.${Object.hasOwn(OUTCOME_CLS, outcome) ? outcome : 'end'}`);
-const STATUSES = new Set(['ready', 'locked', 'progress']);
+const STATUSES = new Set(['ready', 'locked', 'progress', 'off']);
 
 export const FONT = '"PkbPixel","Malgun Gothic","Apple SD Gothic Neo","Noto Sans KR",sans-serif';
 
@@ -392,6 +393,8 @@ export function renderCardTail(view, lang) {
     }
   } else if (status === 'locked') {
     act = `<div class="x-risu-pkb-lock">${t('card.lockedNote')}</div>`;
+  } else if (status === 'off') {
+    buttons = false;
   } else {
     act = btn(key, 'open', t('card.open'));
   }
@@ -420,7 +423,7 @@ export function renderBattleCard(view, lang) {
   }
   if (status === 'discarded') return renderDiscarded(view, lang);
 
-  const discard = errors.length || view.canUndo === false ? null : key;
+  const discard = errors.length || view.canUndo === false || status === 'off' ? null : key;
   let look, head, face, info;
   if (status === 'progress') {
 
@@ -439,10 +442,10 @@ export function renderBattleCard(view, lang) {
     head = header(lang, spec, band('done', lang), !r.storyEnded && r.turns ? say(lang, 'card.turn', { n: r.turns }) : '');
     face = opponentFace(view, lang, { stamp, species });
     info = titleRow(spec, lang) + subRow(spec, lang) + (r.storyEnded ? `<span class="x-risu-pkb-ended">${esc(say(lang, 'card.storyEnded'))}</span>` : '');
-  } else if (status === 'locked') {
+  } else if (status === 'locked' || status === 'off') {
 
     look = 'locked';
-    head = header(lang, spec, band('locked', lang), '', discard);
+    head = header(lang, spec, band(status, lang), '', discard);
     face = opponentFace(view, lang, { dim: true });
     info = titleRow(spec, lang) + subRow(spec, lang) + teamBalls(spec);
   } else {

@@ -1,6 +1,5 @@
 import { buildEngine, replaySnapshot, applyInput, fingerprint, stateCheck, checkSnapshot, battlePoint, moveDeniedText, hiddenTrapText, partySlots, isReviving, SNAPSHOT_VERSION } from './index.js';
-import { partyIndex } from './party-slot.js';
-import { isBall } from '../engine/bag.mjs';
+import { isBall, toolsOn } from '../engine/bag.mjs';
 import { autoPick, forcedPicks, joinParts } from './double.js';
 import { moveTargets } from './targets.js';
 import { createSteps } from './steps.js';
@@ -20,8 +19,10 @@ const plain = request => !!request && !request.wait && !request.forceSwitch && !
 function namedIn(list, who) {
   const byName = list.findIndex(p => p && who.name && sameName(p.name, who.name));
   if (byName >= 0) return byName;
-  return list.findIndex(p => p && who.species && (p.species.id === who.species || p.baseSpecies.id === who.species
-    || p.battle.dex.species.get(p.m?.start?.species ?? '').id === who.species));
+
+  const ids = who.forms ?? (who.species ? [who.species] : []);
+  return list.findIndex(p => p && (ids.includes(p.species.id) || ids.includes(p.baseSpecies.id)
+    || ids.includes(p.battle.dex.species.get(p.m?.start?.species ?? '').id)));
 }
 
 function slotOf(side, who) {
@@ -34,7 +35,7 @@ function bagPick({ battle, bag, names, lang }, request, command, slot, ...more) 
   const target = battle.sides[0].pokemon[slot];
   const move = command.move ? target?.moveSlots.findIndex(s => s.id === command.move) : target?.moveSlots.findIndex(s => s.pp < s.maxpp);
   const party = partySlots(battle, names, lang, request);
-  return bag.choice({ kind: 'item', item: command.item, slot: partyIndex(party, slot), move: Math.max(move ?? 0, 0) }, party, ...more);
+  return bag.choice({ kind: 'item', item: command.item, slot, move: Math.max(move ?? 0, 0) }, party, ...more);
 }
 
 function resolveMine(ctx, request, me) {
@@ -69,7 +70,9 @@ function resolveMine(ctx, request, me) {
   if (me.kind === 'item') {
     if (!bag || !(bag.counts.get(me.item) > 0)) return { reason: 'noItem' };
     const named = slotOf(side, me.target);
-    const slot = named >= 0 ? named : side.pokemon.findIndex(p => p.isActive);
+
+    const cheered = bag.cheerSlot(me.item);
+    const slot = named >= 0 ? named : cheered >= 0 ? cheered : side.pokemon.findIndex(p => p.isActive);
     try { return { choice: bagPick(ctx, request, me, slot) }; }
     catch { return { reason: 'cantUse' }; }
   }
@@ -83,8 +86,11 @@ function resolveFoe(battle, request, foe, i = 0, side = battle.sides[1]) {
   if (!foe || !plain(request)) return null;
   const pokemon = side.active[i];
   if (!request.active[i] || !pokemon || pokemon.fainted) return null;
+  const tools = toolsOn(battle, pokemon);
+  if (tools.length && foe.kind !== 'move') return null;
   if (foe.kind === 'move') {
     const index = request.active[i].moves.findIndex(option => option.id === foe.move && !option.disabled && (option.pp ?? 1) > 0);
+    if (index >= 0 && tools.includes('taunt') && battle.dex.moves.get(foe.move).category === 'Status') return null;
     return index < 0 ? null : `move ${index + 1}${targetLoc(battle, pokemon, request.active[i].moves[index], foe.at)}`;
   }
   if (foe.kind === 'switch') {
@@ -155,9 +161,8 @@ async function resolveDouble(ctx, request, turn) {
     let failed = null;
     const choice = await forcedPicks(request, party, (i, chosen, candidates) => {
       const { key, command } = commandAt(turn, i, alone);
-      const index = command?.kind === 'switch' ? slotOf(side, command.target) : -1;
-      const slot = index < 0 ? -1 : partyIndex(party, index);
-      if (candidates.includes(slot)) return { text: `switch ${index + 1}`, slot };
+      const slot = command?.kind === 'switch' ? slotOf(side, command.target) : -1;
+      if (candidates.includes(slot)) return { text: `switch ${slot + 1}`, slot };
       failed = { reason: command ? 'noSwitch' : 'noCommand', part: key };
       return null;
     });
@@ -179,8 +184,8 @@ async function resolveDouble(ctx, request, turn) {
     if (command.kind === 'item') {
 
       if (!bag || !((bag.counts.get(command.item) ?? 0) - (taken.get(command.item) ?? 0) > 0)) return no('noItem');
-      const named = slotOf(side, command.target);
-      const slot = named >= 0 ? named : side.pokemon.indexOf(pokemon);
+      const named = slotOf(side, command.target), cheered = bag.cheerSlot(command.item);
+      const slot = named >= 0 ? named : cheered >= 0 ? cheered : side.pokemon.indexOf(pokemon);
       let pick;
       try { pick = bagPick(ctx, request, command, slot, i, taken); }
       catch { return no('cantUse'); }

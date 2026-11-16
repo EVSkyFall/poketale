@@ -1,4 +1,3 @@
-// Remove unwanted edge colors from panel sprites.
 import { LoadError } from '../../view/retry.js';
 
 export const DEFRINGE = Object.freeze({

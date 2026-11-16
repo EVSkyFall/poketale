@@ -5,7 +5,6 @@ import en from './screen-text-en.mjs';
 
 export const SCREEN_TEXT = Object.freeze({ ko, en });
 
-// One screen text in lang: the template of key with values filled in
 export function say(lang, key, values = {}) {
   const table = SCREEN_TEXT[checkLang(lang)];
   if (!Object.hasOwn(table, key)) throw new Error(`Unknown screen text key: ${key}`);

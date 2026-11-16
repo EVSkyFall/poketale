@@ -1,9 +1,9 @@
 // from pokerogue src/phases/quiet-form-change-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
+// Modified for PokeTale on 2026-11-16. See view/LICENSE-NOTE.md.
 // from pokerogue src/phases/pokemon-transform-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/phases/pokemon-anim-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/field/pokemon.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui-inputs.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 
 import { AbilityBar } from './ui/ability-bar.js';
 import { BattleStats } from './ui/battle-stats.js';
@@ -24,7 +24,6 @@ export const EFFECT_SOUNDS = ['battle_anims/PRSFX- Transform.wav', 'battle_anims
 
 const SUB_OFFSET = { player: [-30, 10], enemy: [30, -10] };
 
-// Where a position's substitute doll stands: the single-battle slot moved by the field offset
 const dollSpot = (scene, side) => {
   const slot = SPRITE_SLOTS[teamOf(side)], [dx, dy] = fieldOffset(scene.double, side);
   return [slot.x + dx, slot.bottom + dy];
@@ -82,7 +81,6 @@ export class BattleEffects {
     this.showStats();
   }
 
-  // Treats everything pressed as released (window focus lost, collapse)
   releaseStats() { this.statsHeld.clear(); this.showStats(); }
   showStats() {
     const visible = this.statsHeld.size > 0;
@@ -214,7 +212,6 @@ export class BattleEffects {
     this.subs[side]?.sprite.setVisible(visible);
   }
 
-  // Ally Switch (scene.swap): the substitute doll and stat stages follow the mon to its new position
   swap(a, b) {
     for (const map of [this.subs, this.stages]) {
       [map[a], map[b]] = [map[b], map[a]];

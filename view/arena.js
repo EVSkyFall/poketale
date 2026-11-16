@@ -1,8 +1,8 @@
 // from pokerogue src/field/arena-base.ts @ 7d7da4a8 (AGPL-3.0-only)
+// Modified for PokeTale on 2026-11-16. See view/LICENSE-NOTE.md.
 // from pokerogue src/field/arena.ts (getBiomeKey, getBiomeHasProps) @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/battle-scene.ts (launchBattle arenaBg, loadBiomeAssets, base positions in reset) @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/enums/biome-id.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-28. See view/LICENSE-NOTE.md.
 
 export const BIOMES = ['town', 'plains', 'grass', 'tall_grass', 'metropolis', 'forest', 'sea', 'swamp', 'beach', 'lake', 'seabed',
   'mountain', 'badlands', 'cave', 'desert', 'ice_cave', 'meadow', 'power_plant', 'volcano', 'graveyard', 'dojo', 'factory', 'ruins',

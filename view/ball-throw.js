@@ -1,7 +1,7 @@
 // from pokerogue src/phases/attempt-capture-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
+// Modified for PokeTale on 2026-11-16. See view/LICENSE-NOTE.md.
 // from pokerogue src/data/pokeball.ts (doPokeballBounceAnim, getPokeballTintColor) @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/animations.ts (addPokeballOpenParticles, addPokeballCaptureStars) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-28. See view/LICENSE-NOTE.md.
 
 import BAG_ICONS from '../data/bag-icons.json' with { type: 'json' };
 import { ballFrame } from './ui/bag.js';
@@ -11,14 +11,12 @@ export const BALL_SOUNDS = ['se/pb_throw.wav', 'se/crit_throw.wav', 'se/pb_rel.w
 
 const TINTS = { pb: 0xd52929, gb: 0x94b4de, ub: 0xe6cd31, rb: 0xd52929, mb: 0xa441bd, lb: 0xffde6a };
 
-// Ball image key (ballFrame) -> tint color (getPokeballTintColor). Also used for sending out (scene.summon)
 export const ballTint = key => TINTS[key] ?? TINTS.pb;
 const FRAME_MS = 1000 / 60;
 const sin = (index, amplitude) => amplitude * Math.sin(index * (Math.PI / 128));
 const cos = (index, amplitude) => amplitude * Math.cos(index * (Math.PI / 128));
 const gauss = stdev => Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(2 * Math.PI * Math.random()) * stdev;
 
-// Ball throw images and sounds (prefetched during the entrance sequence - scene.warmUp)
 export function loadBallThrow(scene) {
   return Promise.all([
     scene.assets.image('pb_particles', 'images/effects/pb_particles.png', BAG_ICONS.pb_particles),

@@ -28,6 +28,7 @@ const steps = [
   "tools/build-named-trainers.mjs",
   "tools/build-leader-names.mjs",
   "tools/build-dex-lists.mjs",
+  "tools/build-shop.mjs",
   "tools/build-font.mjs",
   "plugin/build-battle.mjs"
 ];

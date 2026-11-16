@@ -1,6 +1,6 @@
 import { createStoryBattle, extractResult, waitingTrainer } from '../../engine/core.mjs';
 import { runBattle, isWild } from '../../director/index.js';
-import { createEnemyAI } from '../../ai/index.js';
+import { createEnemyAI, gimmickRules } from '../../ai/index.js';
 import { battleNames, battleNamesIn } from './names.js';
 import { DEFAULT_LANG } from '../../director/lang.js';
 import { mark } from './marks.js';
@@ -20,6 +20,8 @@ export function previewBattle(sim, spec, options, names = battleNames) {
       }),
       moves: [...new Set(team.flatMap(({ mon }) => mon.moves.map(move => move.id)))],
       ...(preview.activePerHalf > 1 ? { double: true } : {}),
+
+      ...(preview.activePerHalf > 1 && preview.sides[0].allySide ? { tag: true } : {}),
     };
   } finally { preview.destroy(); }
 }
@@ -28,6 +30,8 @@ export const preloadMons = (sim, spec, options) => previewBattle(sim, spec, opti
 const AI_NOTES_MAX = 20;
 
 export { isWild };
+
+export const enemyOptions = spec => ({ trainer: !isWild(spec), difficulty: spec.difficulty ?? 'normal', boss: !!spec.boss, ...gimmickRules(spec.foeGimmick) });
 
 export function battleMusicOptions(sim, spec, viewOptions = {}) {
 
@@ -153,7 +157,7 @@ export function createBattleSession({ sim, spec, options, createView, viewOption
 
         const result = await runBattle({ sim, spec: battleSpec, options, view: guarded, names, lang, development,
 
-          enemyAI: createEnemyAI(sim, { trainer: !isWild(battleSpec), difficulty: battleSpec.difficulty ?? 'normal', boss: !!battleSpec.boss, onDecision }),
+          enemyAI: createEnemyAI(sim, { ...enemyOptions(battleSpec), onDecision }),
           from, onTurn: turnStart, replayView, commands, onBattle: c => { control = c; } });
 
         return result && { ...result, screen: [...screen] };

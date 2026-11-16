@@ -1,4 +1,3 @@
-// Track story replies while an auxiliary screen is open.
 import { messageId, stripForPrompt } from '../../story/blocks.mjs';
 
 export const REPLY_QUIET_MS = 1500;

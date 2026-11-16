@@ -166,7 +166,7 @@ for (const [k, m] of starts.entries()) {
   if (!dexMove.exists) { unmatched.push(name); continue; }
   matched.add(dexMove.id);
   if (!attrs.length && !firstMove) continue;
-  moves[dexMove.id] = { chance, power, ...(firstMove ? { firstMove } : {}), attrs };
+  moves[dexMove.id] = { line: lineOf(m.index), chance, power, ...(firstMove ? { firstMove } : {}), attrs };
 }
 
 const legendary = [];
@@ -185,6 +185,7 @@ for (const file of readdirSync(speciesDir).filter(f => f.endsWith('.ts')).sort()
 
 const showdownOnly = sim.Dex.moves.all().filter(m => !m.isNonstandard && m.num > 0 && !matched.has(m.id)).map(m => m.id);
 const out = {
+  source: 'vendor/pokerogue @ 7d7da4a8 src/data/moves/move.ts initMoves(), src/data/balance/species/*.ts',
   moves, legendary: legendary.sort(),
   pokerogueOnly: unmatched,
   showdownOnly,

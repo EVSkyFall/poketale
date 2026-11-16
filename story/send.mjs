@@ -1,6 +1,6 @@
 import { wrapOoc, findOocs } from './chat.mjs';
 import { readLog, turnSpan, hasEvents } from './narrate.mjs';
-import { storyOoc, RESULT_LINE_RE } from './prompts.mjs';
+import { storyOoc, sentFormat, RESULT_LINE_RE } from './prompts.mjs';
 import { outcomeOf } from './outcome.mjs';
 import { hashKey, findTags, findMarks } from './blocks.mjs';
 import { say } from './screen-text.mjs';
@@ -35,12 +35,18 @@ export function sendRange({ sent = { upto: -1 }, log = [], to = log.length, ende
   return { from, to: end, first, read };
 }
 
+export const ownStarts = spec => (Array.isArray(spec?.p1?.team) ? spec.p1.team : [])
+  .map(member => ({ species: String(member?.set?.species ?? ''), ability: String(member?.set?.ability ?? '') }));
+
 export function buildOoc(format, source, range, { screenFrom = 0, screenTo, lang = 'ko', en = null, guide = false } = {}) {
   const ended = !!source.result;
-  const text = storyOoc(format, { battle: source.battle, result: source.result, ended, first: range.first, read: range.read,
+  const form = sentFormat(format, ended);
+
+  const whole = form === 'result' && Array.isArray(source.log) ? readLog(source.log) : null;
+  const text = storyOoc(form, { battle: source.battle, own: source.own ?? null, result: source.result, ended, first: range.first, read: range.read, whole,
     screen: (source.screen ?? []).slice(screenFrom, screenTo), stage: source.stage, lang, en });
   const span = turnSpan(range.read);
-  return { text, info: { battle: source.key ?? '', turns: span ? [span.fromTurn, span.toTurn] : null, result: ended ? outcomeOf(source.result) : '', ...(guide ? { form: format } : {}) } };
+  return { text, info: { battle: source.key ?? '', turns: span ? [span.fromTurn, span.toTurn] : null, result: ended ? outcomeOf(source.result) : '', ...(guide ? { form } : {}) } };
 }
 
 export function newUuid(crypto = globalThis.crypto) {

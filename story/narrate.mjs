@@ -1,5 +1,6 @@
 import { toID } from '../engine/mon.mjs';
 import { nicknamed } from './ai-names.mjs';
+import { TOOL_TURNS } from './tools.mjs';
 
 const USER = '{{user}}';
 
@@ -18,8 +19,14 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
   let changed = null;
   let zpower = null;
   let resized = null;
+  let recentUser = null;
+  const lastMoveBy = new Map();
+  const teraOf = new Map();
+  let hint = -1, stellar = false, shell = null;
+  let hits = [];
   const lines = log ?? [];
   const end = Math.min(to, lines.length);
+  const illusion = new Set(lines.filter(l => l.startsWith('|replace|')).map(l => SIDE[/^(p\d)/.exec(l.split('|')[2] ?? '')?.[1]]).filter(Boolean));
   const identOf = ident => /^(p\d)([a-z]?):\s*(.*)$/.exec(ident).slice(1);
   const meet = (player, name) => {
     const mon = { player, side: SIDE[player], ident: name, species: name, seat: null, hp: null, maxhp: null };
@@ -49,6 +56,26 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
   };
   const types = typeWatch(dex, seen, () => [...at.values()]);
 
+  const guardOf = mon => {
+    if (!mon) return null;
+    if (mon.known) return { state: 'real' };
+    const field = new Set(at.values());
+    const accounted = met.filter(m => m !== mon && m.side === mon.side && ILLUSION_SPECIES.has(toID(m.species)) && (m.hp === 0 || field.has(m))).length;
+    const guard = { state: 'maybe', side: mon.side, species: mon.species, accounted };
+    (mon.guards ??= []).push(guard);
+    return guard;
+  };
+
+  const reasonOf = (cmd, args, i) => {
+    const target = args[0] ? seen(args[0]) : null;
+    if (cmd === '-immune' && hint === i - 1) return { from: { kind: 'abilities', name: 'Prankster' } };
+    if (cmd === '-resisted' && target && shell === target) return { from: { kind: 'abilities', name: 'Tera Shell' } };
+    if (cmd === '-supereffective' && stellar && target && teraOf.has(target)) return { note: 'Terastallized' };
+    const { real, ...found } = causeOf(cmd, args, types);
+    if (real) found.guard = guardOf(target);
+    return found.skin ? { ...found, skin: { ...found.skin, user: ref(found.skin.user), guard: guardOf(found.skin.user) } } : found;
+  };
+
   for (let i = 0; i < end; i++) {
     const line = lines[i];
     if (split === 1) { split = 0; continue; }
@@ -69,13 +96,20 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
     };
     const silent = args.includes('[silent]');
 
+    const onMove = (mon, effect) => {
+      if (recent?.type !== 'move' || (mon && mon === recentUser)) return false;
+      moveOf().effects.push(effect);
+      return true;
+    };
+    const absorbed = (mon, ability) => onMove(mon, { kind: 'tag', tag: 'absorbed', mon: null, byMon: ref(mon), by: { kind: 'abilities', name: ability } });
+
     const gimmick = event => {
       push(event, false);
       if (live && !event.ended) summary.gimmicks.push(event);
     };
     switch (cmd) {
     case 'player': if (SIDE[args[0]] && args[1]) players[SIDE[args[0]]] = args[1]; break;
-    case 'turn': turns.push({ turn: Number(args[0]), events: [] }); summary.turns = Number(args[0]); recent = null; zpower = null; break;
+    case 'turn': turns.push({ turn: Number(args[0]), events: [] }); summary.turns = Number(args[0]); recent = null; zpower = null; lastMoveBy.clear(); break;
     case 'switch': case 'drag': {
       const [player, letter, name] = identOf(args[0]);
       const field = new Set(at.values());
@@ -84,6 +118,7 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
       met.push(mon);
       mon.species = args[1].split(',')[0];
       mon.seat = player + letter;
+      Object.assign(mon, { known: false, guards: [] });
       at.set(mon.seat, mon);
       setHp(mon, args[2]);
       if (live && !sent.has(mon)) { sent.add(mon); summary.sent.push(ref(mon)); }
@@ -102,8 +137,21 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
     case 'replace': {
 
       const mon = who(args[0]);
+      const was = ref(mon);
       mon.ident = identOf(args[0])[2];
       mon.species = args[1].split(',')[0];
+      for (const guard of mon.guards ?? []) guard.state = 'disguised';
+      Object.assign(mon, { known: true, guards: [] });
+
+      if (recent?.type !== 'move' || recentUser === mon || !hits.some(h => h.mon === mon && h.effect.kind === 'hp')) break;
+      types.line(cmd, args);
+      for (const h of hits.filter(one => one.mon === mon)) {
+        h.effect.mon = ref(mon);
+        if (h.effect.kind !== 'tag') continue;
+        for (const k of ['types', 'from', 'note', 'skin', 'guard']) delete h.effect[k];
+        Object.assign(h.effect, reasonOf(h.cmd, h.args, h.i));
+      }
+      (recent.reveal ??= []).push({ was, mon: ref(mon) });
       break;
     }
     case 'move': {
@@ -113,6 +161,11 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
       if (z) zpower = null;
       const event = { type: 'move', mon: ref(mon), move: args[1], target: target && target !== mon ? ref(target) : null, miss: args.includes('[miss]'), ...(z ? { z } : {}), effects: [] };
       push(event);
+      recentUser = mon;
+      hits = [];
+      lastMoveBy.set(mon, args[1]);
+      stellar = args.includes('[anim] Tera Blast Stellar');
+      shell = null;
       if (z && live) summary.gimmicks.push(event);
       break;
     }
@@ -125,8 +178,10 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
       break;
     }
     case '-zpower': zpower = who(args[0]); break;
-    case '-terastallize': gimmick({ type: 'tera', mon: ref(who(args[0])), tera: args[1] }); break;
+    case '-terastallize': teraOf.set(who(args[0]), args[1]); gimmick({ type: 'tera', mon: ref(who(args[0])), tera: args[1] }); break;
     case '-start': case '-end': {
+
+      if (cmd === '-start' && args[1] === 'ability: Flash Fire') { absorbed(who(args[0]), 'Flash Fire'); break; }
       if (args[1] !== 'Dynamax') break;
       const mon = who(args[0]);
       resized = { mon, at: i };
@@ -141,14 +196,51 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
       const delta = before === null ? 0 : Math.round(mon.hp / mon.maxhp * 100 - before * 100);
       const prev = from ? null : moveOf();
       const entry = { mon: ref(mon), delta, before: before === null ? null : Math.round(before * 100), hp: pct(mon), from };
-      if (prev) prev.effects.push({ kind: 'hp', ...entry });
+      if (prev) {
+        const effect = { kind: 'hp', ...entry };
+        prev.effects.push(effect);
+        hits.push({ effect, mon });
+      }
       else push({ type: cmd === '-damage' ? 'damage' : 'heal', ...entry });
       break;
     }
     case '-supereffective': case '-resisted': case '-crit': case '-immune': case '-miss': {
       const prev = moveOf();
       const tag = { '-supereffective': 'super effective', '-resisted': 'not very effective', '-crit': 'critical hit', '-immune': 'no effect', '-miss': 'missed' }[cmd];
-      if (prev) prev.effects.push({ kind: 'tag', tag, mon: args[0] ? ref(who(args[0])) : null, ...causeOf(cmd, args, types) });
+      if (!prev) break;
+      const mon = args[0] ? who(args[0]) : null;
+      const effect = { kind: 'tag', tag, mon: mon ? ref(mon) : null, ...reasonOf(cmd, args, i) };
+      prev.effects.push(effect);
+      if (mon) hits.push({ effect, mon, cmd, args, i });
+      break;
+    }
+    case '-hint': if (/Dark is immune to Prankster/.test(args[0] ?? '')) hint = i; break;
+    case '-activate': {
+      if (!/^p\d/.test(args[0] ?? '')) break;
+      const mon = who(args[0]);
+
+      const guard = lastMoveBy.get(mon);
+      if (args[1] === 'move: Protect' && guard && PROTECTS.has(toID(guard))) onMove(mon, { kind: 'tag', tag: 'blocked', mon: null, by: { kind: 'moves', name: guard } });
+      else if (args[1] === 'item: Safety Goggles') onMove(mon, { kind: 'tag', tag: 'no effect', mon: ref(mon), from: { kind: 'items', name: 'Safety Goggles' } });
+      else if (args[1] === 'ability: Tera Shell') shell = mon;
+      break;
+    }
+
+    case 'cant': {
+      const ability = /^ability:\s*(.+)$/.exec(args[1] ?? '')?.[1];
+      const of = tagArg(args, 'of');
+      if (ability && of && recent?.type === 'move' && recent.move === args[2] && seen(of) === recentUser) {
+        const blocker = who(args[0]);
+        onMove(blocker, { kind: 'tag', tag: 'blocked', mon: null, byMon: ref(blocker), by: { kind: 'abilities', name: ability } });
+      }
+      break;
+    }
+
+    case '-fail': {
+      const from = fromOf(args);
+      if (from && !from.kind && WEATHER_FAIL.has(from.name) && /^p\d/.test(args[0] ?? '') && seen(args[0]) === recentUser) {
+        onMove(null, { kind: 'tag', tag: 'no effect', mon: null, from: { kind: 'abilities', name: from.name } });
+      }
       break;
     }
     case '-status': push({ type: 'status', mon: ref(who(args[0])), status: args[1] }); break;
@@ -166,11 +258,29 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
     }
 
     case '-story-item': push({ type: 'item', mon: ref(who(args[0])), item: args[2], ...(args[3] ? { label: args[3] } : {}) }); break;
+
+    case '-story-tool': {
+      const trainer = tagArg(args, 'trainer') ?? null;
+      push({ type: 'tool', mon: ref(who(args[0])), item: args[2], label: args[3], tag: args[4], trainer, failed: args.includes('[fail]'), boosts: [] });
+      break;
+    }
+    case '-boost': case '-unboost': {
+      const mon = seen(args[0]);
+      if (recent?.type === 'tool' && recent.tag === 'cheer' && mon && mon.seat === recent.mon.seat) {
+        recent.boosts.push({ stat: args[1], amount: Number(args[2]) * (cmd === '-boost' ? 1 : -1) });
+      }
+      break;
+    }
     case '-story-run': if (live && args[2] === 'escaped') summary.ran = true; push({ type: 'run', result: args[2] }); break;
     case '-story-levelup': push({ type: 'levelup', mon: ref(who(args[0])), level: Number(args[2]) }); break;
     case 'win': if (live) summary.winner = args[0]; break;
 
-    case '-ability': if (!silent) push({ type: 'ability', mon: ref(who(args[0])), ability: args[1], from: fromOf(args) }, false); break;
+    case '-ability':
+      if (silent) break;
+
+      if (args[2] === 'boost' && ABSORB.has(toID(args[1])) && absorbed(who(args[0]), args[1])) break;
+      push({ type: 'ability', mon: ref(who(args[0])), ability: args[1], from: fromOf(args) }, false);
+      break;
     case '-item': if (!silent) push({ type: 'helditem', mon: ref(who(args[0])), item: args[1], from: fromOf(args) }, false); break;
     case '-enditem': {
       if (silent) break;
@@ -184,7 +294,7 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
       if (args.includes('[upkeep]')) break;
       const now = args[0] === 'none' ? null : args[0];
       if (now === weather) break;
-      const of = args.find(a => a.startsWith('[of]'))?.replace(/^\[of\]\s*/, '');
+      const of = tagArg(args, 'of');
       push(now ? { type: 'weather', weather: now, from: fromOf(args), of: of ? ref(who(of)) : null } : { type: 'weather', weather: null, ended: weather }, false);
       weather = now;
       break;
@@ -199,7 +309,20 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
     }
     types.line(cmd, args);
   }
-  return { turns: turns.filter(t => t.events.length), summary, players };
+
+  const later = new Map(at);
+  for (let i = end; i < lines.length; i++) {
+    const [, cmd, ...args] = lines[i].split('|');
+    if (!/^p\d[a-z]:/.test(args[0] ?? '')) continue;
+    const [player, letter] = identOf(args[0]);
+    if (cmd === 'switch' || cmd === 'drag') later.set(player + letter, null);
+    else if (cmd === 'swap') {
+      const to = player + 'abc'[Number(args[1])], mover = later.get(player + letter);
+      later.set(player + letter, later.get(to) ?? null);
+      later.set(to, mover ?? null);
+    } else if (cmd === 'replace') for (const guard of later.get(player + letter)?.guards ?? []) guard.state = 'disguised';
+  }
+  return { turns: turns.filter(t => t.events.length), summary, players, illusion: [...illusion] };
 }
 
 function causeOf(cmd, args, types) {
@@ -208,25 +331,37 @@ function causeOf(cmd, args, types) {
     if (from) return from.kind === 'abilities' ? { from } : {};
   }
   if (!['-supereffective', '-resisted', '-immune'].includes(cmd) || !args[0]) return {};
-  const found = types.cause(cmd, args[0]);
-  return found?.length ? { types: found } : {};
+  return types.cause(cmd, args[0]) ?? {};
 }
+
+const PROTECTS = new Set(['protect', 'detect', 'kingsshield', 'spikyshield', 'banefulbunker', 'obstruct', 'silktrap', 'burningbulwark']);
+const ABSORB = new Set(['lightningrod', 'stormdrain', 'sapsipper', 'motordrive', 'wellbakedbody', 'windrider']);
+const WEATHER_FAIL = new Set(['Primordial Sea', 'Desolate Land']);
 
 const WEATHER_TYPE = { SunnyDay: 'Fire', DesolateLand: 'Fire', RainDance: 'Water', PrimordialSea: 'Water', Sandstorm: 'Rock', Hail: 'Ice', Snowscape: 'Ice' };
 const TERRAIN_TYPE = { electricterrain: 'Electric', grassyterrain: 'Grass', mistyterrain: 'Fairy', psychicterrain: 'Psychic' };
 const DRIVE_TYPE = { Douse: 'Water', Shock: 'Electric', Burn: 'Fire', Chill: 'Ice' };
 const ATE = new Set(['pixilate', 'aerilate', 'refrigerate', 'galvanize']);
 
+const SKINS = { pixilate: ['Pixilate', 'Fairy'], aerilate: ['Aerilate', 'Flying'], refrigerate: ['Refrigerate', 'Ice'], galvanize: ['Galvanize', 'Electric'],
+  normalize: ['Normalize', 'Normal'], liquidvoice: ['Liquid Voice', 'Water'] };
+const ATE_KEEP = new Set(['judgment', 'multiattack', 'naturalgift', 'revelationdance', 'technoblast', 'terrainpulse', 'weatherball']);
+const NORMALIZE_KEEP = new Set([...ATE_KEEP, 'hiddenpower', 'struggle']);
+
+const UMBRELLA_WEATHER = new Set(['SunnyDay', 'DesolateLand', 'RainDance', 'PrimordialSea']);
+
 function typeWatch(dex, seen, field = () => []) {
   const none = { line() {}, cause: () => null };
   if (!dex) return none;
 
   const state = new WeakMap();
-  let turn = 0, weather = null, terrain = null, deluge = -1, moveType = null, moveId = null;
+  let turn = 0, weather = null, terrain = null, deluge = -1, moveType = null, moveId = null, moveUser = null, gassed = false;
   const of = mon => {
-    if (!state.has(mon)) state.set(mon, { species: null, types: null, added: '', tera: null, roost: -1, electrify: -1, calm: false, balloon: false, risen: false });
+    if (!state.has(mon)) state.set(mon, { species: null, types: null, added: '', tera: null, roost: -1, electrify: -1, calm: false, balloon: false, risen: new Set(),
+      ability: null, changed: false, dynamax: false });
     return state.get(mon);
   };
+  const lost = (mon, ability = '?') => { if (mon) Object.assign(of(mon), { ability, changed: true }); };
   const speciesOf = mon => dex.species.get(of(mon).species ?? mon.species);
   const mayHave = (mon, ids) => Object.values(speciesOf(mon).abilities ?? {}).some(name => ids.includes(toID(name)));
   const typesOf = mon => {
@@ -241,7 +376,7 @@ function typeWatch(dex, seen, field = () => []) {
   };
   const CALM = ['cloudnine', 'airlock'];
   const calmField = () => field().some(mon => of(mon).calm);
-  const airborne = mon => of(mon).balloon || of(mon).risen || !!typesOf(mon)?.includes('Flying') || mayHave(mon, ['levitate']);
+  const airborne = mon => of(mon).balloon || of(mon).risen.size > 0 || !!typesOf(mon)?.includes('Flying') || mayHave(mon, ['levitate']);
   const typeOfMove = (user, name) => {
     const move = dex.moves.get(name);
     if (!user || !move.exists) return null;
@@ -250,7 +385,7 @@ function typeWatch(dex, seen, field = () => []) {
     switch (move.id) {
     case 'terablast': if (s.tera) type = s.tera; break;
     case 'weatherball':
-      if ((weather && calmField()) || mayHave(user, ['megasol'])) return null;
+      if (UMBRELLA_WEATHER.has(weather) || (weather && calmField()) || mayHave(user, ['megasol'])) return null;
       type = WEATHER_TYPE[weather] ?? 'Normal'; break;
     case 'terrainpulse':
       if (terrain && airborne(user)) return null;
@@ -263,7 +398,9 @@ function typeWatch(dex, seen, field = () => []) {
     default: if (move.onModifyType) return null;
     }
 
-    for (const id of Object.values(species.abilities ?? {}).map(toID)) {
+    if (s.ability === '?') return null;
+    const abilities = s.ability === null ? Object.values(species.abilities ?? {}).map(toID) : [s.ability].filter(Boolean);
+    for (const id of abilities) {
       const ability = dex.abilities.get(id);
       if (!ability.onModifyType) continue;
       if (!ATE.has(id) || type === 'Normal') return null;
@@ -271,42 +408,91 @@ function typeWatch(dex, seen, field = () => []) {
     if (s.electrify === turn || (deluge === turn && type === 'Normal')) type = 'Electric';
     return !type || type === 'Stellar' || type === '???' ? null : type;
   };
+
+  const gives = (cmd, type, list) => {
+    if (cmd === '-immune') return list.some(t => !dex.getImmunity(type, t));
+    if (list.some(t => !dex.getImmunity(type, t))) return false;
+    const total = list.reduce((a, t) => a + dex.getEffectiveness(type, t), 0);
+    return Math.sign(total) === (cmd === '-supereffective' ? 1 : -1);
+  };
+
+  const skinOf = (cmd, target) => {
+    const move = dex.moves.get(moveId ?? '');
+    if (!moveUser || !move.exists || move.onModifyType || move.isZ || of(moveUser).dynamax || of(moveUser).electrify === turn || deluge === turn) return null;
+    if (move.id === 'terablast' && of(moveUser).tera) return null;
+    const list = typesOf(target);
+    const options = [];
+    for (const [id, [ability, type]] of Object.entries(SKINS)) {
+      const applies = id === 'liquidvoice' ? !!move.flags?.sound : id === 'normalize' ? !NORMALIZE_KEEP.has(move.id) : move.type === 'Normal' && !ATE_KEEP.has(move.id);
+      if (!applies || move.type === type) continue;
+      options.push({ ability, ok: !!list && gives(cmd, type, list) });
+    }
+    return options.length ? { user: moveUser, options, changed: of(moveUser).changed || gassed } : null;
+  };
+
+  const statusTypes = list => {
+    const move = dex.moves.get(moveId ?? '');
+    if (!move.exists || move.category !== 'Status') return [];
+    if (move.id === 'leechseed') return list.filter(t => t === 'Grass');
+    const kinds = [move.status, move.flags?.powder ? 'powder' : null].filter(Boolean);
+    return list.filter(t => kinds.some(k => !dex.getImmunity(k, t)));
+  };
   return {
     line(cmd, args) {
       const mon = seen(args[0] ?? '');
       switch (cmd) {
       case 'turn': turn = Number(args[0]); break;
-      case 'switch': case 'drag': if (mon) Object.assign(of(mon), { calm: false, balloon: false, risen: false });
-      case 'replace': if (mon) Object.assign(of(mon), { species: null, types: null, added: '', roost: -1, electrify: -1 }); break;
-      case 'detailschange': case '-formechange': if (mon) Object.assign(of(mon), { species: args[1].split(',')[0], types: null, added: '' }); break;
+
+      case 'switch': case 'drag': if (mon) Object.assign(of(mon), { calm: false, balloon: false, risen: new Set(), ability: null, dynamax: false });
+      case 'replace':
+        if (mon) Object.assign(of(mon), { species: null, types: null, added: '', roost: -1, electrify: -1 });
+        if (mon && cmd === 'replace') of(mon).changed = true;
+        break;
+      case 'detailschange': case '-formechange': if (mon) Object.assign(of(mon), { species: args[1].split(',')[0], types: null, added: '', ability: null, changed: true }); break;
       case '-terastallize': if (mon) of(mon).tera = args[1]; break;
       case '-transform': {
         const into = seen(args[1]);
         if (mon && into) Object.assign(of(mon), { types: typesOf(into), added: '', calm: of(into).calm });
+        lost(mon);
         break;
       }
       case '-start': {
         if (!mon) break;
         const value = args[2] && !args[2].startsWith('[') ? args[2] : null;
         if (args[1] === 'typechange') {
-          const from = args.find(a => a.startsWith('[of]'))?.replace(/^\[of\]\s*/, '');
+          const from = tagArg(args, 'of');
           const list = value ? value.split('/') : from && seen(from) ? typesOf(seen(from)) : null;
           if (list) Object.assign(of(mon), { types: list, added: '' });
         } else if (args[1] === 'typeadd' && value) of(mon).added = value;
-        else if (/^(move: )?(Magnet Rise|Telekinesis)$/.test(args[1])) of(mon).risen = true;
+        else if (/^(move: )?(Magnet Rise|Telekinesis)$/.test(args[1])) of(mon).risen.add(args[1].replace(/^move: /, ''));
+        else if (args[1] === 'Dynamax') of(mon).dynamax = true;
         break;
       }
       case '-end':
         if (mon && args[1] === 'typechange') of(mon).types = null;
-        if (mon && /^(move: )?(Magnet Rise|Telekinesis)$/.test(args[1])) of(mon).risen = false;
+        if (mon && /^(move: )?(Magnet Rise|Telekinesis)$/.test(args[1])) of(mon).risen.delete(args[1].replace(/^move: /, ''));
+        if (mon && args[1] === 'Dynamax') of(mon).dynamax = false;
 
         if (args[1] === 'ability: Neutralizing Gas') for (const one of field()) if (mayHave(one, CALM)) of(one).calm = true;
         break;
-      case '-ability': if (mon && CALM.includes(toID(args[1]))) of(mon).calm = true; break;
-      case '-endability': if (mon) of(mon).calm = false; break;
+      case '-ability':
+        if (mon && CALM.includes(toID(args[1]))) of(mon).calm = true;
+        if (toID(args[1]) === 'neutralizinggas') gassed = true;
+
+        if (mon) {
+          of(mon).ability = toID(args[1]);
+          if (args.some(a => a.startsWith('[from]'))) of(mon).changed = true;
+        }
+        break;
+      case '-endability': if (mon) { of(mon).calm = false; lost(mon, ''); } break;
       case '-activate': {
-        const other = seen(args.find(a => a.startsWith('[of]'))?.replace(/^\[of\]\s*/, '') ?? '');
-        if (mon && other && args[1] === 'move: Skill Swap') [of(mon).calm, of(other).calm] = [of(other).calm, of(mon).calm];
+        const other = seen(tagArg(args, 'of') ?? '');
+
+        const swap = /^(move: )?Skill Swap$/.test(args[1] ?? '');
+        if (mon && other && swap) [of(mon).calm, of(other).calm] = [of(other).calm, of(mon).calm];
+        if (swap) { lost(mon); lost(other); }
+
+        if (['ability: Mummy', 'ability: Lingering Aroma'].includes(args[1])) lost(seen(args[2] ?? ''), toID(args[1].replace(/^ability: /, '')));
         break;
       }
       case '-item': if (mon && args[1] === 'Air Balloon') of(mon).balloon = true; break;
@@ -322,22 +508,35 @@ function typeWatch(dex, seen, field = () => []) {
         if (/Terrain$/.test(name)) terrain = cmd === '-fieldstart' ? name : null;
         break;
       }
-      case 'move': moveType = typeOfMove(mon, args[1]); moveId = toID(args[1]); break;
+      case 'move': moveType = typeOfMove(mon, args[1]); moveId = toID(args[1]); moveUser = mon; break;
       default: break;
       }
     },
     cause(cmd, ident) {
       const target = seen(ident);
-      const list = target && moveType ? typesOf(target) : null;
-      if (!list) return null;
-      if (cmd === '-immune') return list.filter(t => !dex.getImmunity(moveType, t));
+      if (!target) return null;
+      const skin = skinOf(cmd, target);
+      const real = [target.side];
+      const out = more => (more || skin ? { ...more, ...(skin ? { skin } : {}), real } : null);
+      const list = moveType ? typesOf(target) : null;
+      if (!list) return out(null);
+      if (cmd === '-immune') {
+        const chart = list.filter(t => !dex.getImmunity(moveType, t));
+        if (chart.length) return out({ types: chart });
+        const status = statusTypes(list);
+        if (status.length) return out({ types: status });
+
+        const up = moveType !== 'Ground' ? [] : [...(of(target).balloon ? [{ kind: 'items', name: 'Air Balloon' }] : []),
+          ...[...of(target).risen].map(name => ({ kind: 'moves', name }))];
+        return out(up.length === 1 ? { from: up[0] } : null);
+      }
 
       const mods = list.map(t => dex.getEffectiveness(moveType, t) + (moveId === 'freezedry' && t === 'Water' ? 2 : 0)
         + (moveId === 'flyingpress' ? dex.getEffectiveness('Flying', t) : 0));
       const total = mods.reduce((a, b) => a + b, 0);
       const sign = cmd === '-supereffective' ? 1 : -1;
-      if (Math.sign(total) !== sign) return null;
-      return list.filter((t, i) => Math.sign(mods[i]) === sign);
+      if (Math.sign(total) !== sign) return out(null);
+      return out({ types: list.filter((t, i) => Math.sign(mods[i]) === sign) });
     },
   };
 }
@@ -348,12 +547,19 @@ function nickOf(mon) {
   return name && name !== species && name !== base ? mon.ident : null;
 }
 
+const FROM_MOVES = new Set(['Spiky Shield']);
+
+function tagArg(args, tag) {
+  return args.find(a => a.startsWith(`[${tag}]`))?.replace(new RegExp(`^\\[${tag}\\]\\s*`), '');
+}
+
 function fromOf(args) {
   const raw = args.find(a => a.startsWith('[from]'));
   if (!raw) return null;
   const text = raw.replace(/^\[from\]\s*/, '');
   const m = /^(item|ability|move):\s*(.+)$/i.exec(text);
   if (m) return { kind: { item: 'items', ability: 'abilities', move: 'moves' }[m[1].toLowerCase()], name: m[2] };
+  if (FROM_MOVES.has(text)) return { kind: 'moves', name: text };
   return { kind: null, name: text };
 }
 
@@ -419,10 +625,10 @@ const zMoveName = (move, namer) => (/^Z-./.test(move) ? namer.zStatus(move.slice
 function gimmickText(e, namer, sides) {
   const user = () => userText(e.mon, namer, sides);
   switch (e.type) {
-  case 'mega': return e.into ? `${user()} Mega Evolved into ${namer.forme(e.into)}` : `${user()} Mega Evolved`;
+  case 'mega': return e.into ? `${user()} Mega Evolved into ${namer.species(e.into)}` : `${user()} Mega Evolved`;
   case 'primal': return `${user()} underwent Primal Reversion`;
 
-  case 'burst': return `${user()} underwent Ultra Burst and became ${namer.forme(e.into ?? 'Necrozma-Ultra')}`;
+  case 'burst': return `${user()} underwent Ultra Burst and became ${namer.species(e.into ?? 'Necrozma-Ultra')}`;
   case 'dynamax': return e.ended ? `${user()} returned to normal size` : `${user()} ${e.gmax ? 'Gigantamaxed' : 'Dynamaxed'}`;
   case 'tera': return `${user()} Terastallized into the ${e.tera} type`;
   case 'move': return e.z ? `${user()} used the Z-Move ${zMoveName(e.move, namer)}` : null;
@@ -430,26 +636,70 @@ function gimmickText(e, namer, sides) {
   }
 }
 
-function tagText(x, mon, namer) {
+function tagText(x, mon, namer, ctx) {
+  if (x.tag === 'blocked' || x.tag === 'absorbed') return `${x.tag} by ${x.byMon ? `${mon(x.byMon)}'s ` : ''}${namer[x.by.kind](x.by.name)}`;
   const text = x.tag === 'no effect' && x.mon ? `no effect on ${mon(x.mon)}` : x.tag;
+  if (!ctx.sure(x.guard)) return text;
+
+  const start = x.skin && ctx.sure(x.skin.guard) ? ctx.start(x.skin.user) : null;
+  const skin = start && x.skin.options.find(o => toID(o.ability) === start);
+  if (skin) return skin.ok && !x.skin.changed ? `${text} from ${mon(x.skin.user)}'s ${namer.abilities(skin.ability)}` : text;
   if (x.types) return `${text} (${x.types.join('/')} type)`;
+  if (x.note) return `${text} (${x.note})`;
   return x.from ? `${text}${fromText(x.from, namer)}` : text;
 }
 
-function eventText(e, namer, sides) {
+const ILLUSION_SPECIES = new Set(['zorua', 'zoroark', 'zoruahisui', 'zoroarkhisui']);
+
+function reasonCtx(read, battle, own = null) {
+  const halves = { theirs: [...(battle?.team ?? []), ...(battle?.foePartner?.team ?? [])], mine: [...(battle?.partner?.team ?? [])] };
+  const mine = Array.isArray(own) ? own : [];
+  const mayIllude = set => (set?.ability ? toID(set.ability) === 'illusion' : ILLUSION_SPECIES.has(toID(set?.species)));
+  const broken = new Set(read?.illusion ?? []);
+  const count = (side, known, team) => {
+    const n = known ? team.filter(mayIllude).length : null;
+    return n === 0 && broken.has(side) ? null : n;
+  };
+  const users = { theirs: count('theirs', Array.isArray(battle?.team), halves.theirs), mine: count('mine', Array.isArray(own), [...halves.mine, ...mine]) };
+  const risky = new Set(broken);
+  if (halves.mine.some(mayIllude)) risky.add('mine');
+  const sure = guard => {
+    if (!guard || guard.state === 'real') return true;
+    if (guard.state === 'disguised') return false;
+    const n = users[guard.side];
+    if (n === null || n === undefined) return !risky.has(guard.side);
+    return n === 0 || (n === 1 && ILLUSION_SPECIES.has(toID(guard.species))) || guard.accounted >= n;
+  };
+  const start = ref => {
+    const seat = String(ref?.seat ?? '');
+    const team = ref?.side === 'theirs' ? halves.theirs : seat.startsWith('p3') ? halves.mine : seat.startsWith('p1') ? mine : [];
+    const same = team.filter(set => toID(set?.species) === toID(ref?.species));
+    if (!same.length || same.some(set => !set.ability)) return null;
+    const ids = new Set(same.map(set => toID(set.ability)));
+    return ids.size === 1 ? [...ids][0] : null;
+  };
+  return { sure, start };
+}
+
+function eventText(e, namer, sides, ctx = reasonCtx(null, null)) {
   const mon = m => monText(m, namer);
   switch (e.type) {
   case 'switch': return sentOutText(ownerOf(e.mon, sides), mon(e.mon), sides);
   case 'move': {
 
+    if (e.reveal?.length) {
+      const reveal = e.reveal.map(r => `${mon(r.was)} was really ${mon(r.mon)}, disguised by ${namer.abilities('Illusion')}`).join('. ');
+      return `${reveal}. ${eventText({ ...e, reveal: null }, namer, sides, ctx)}`;
+    }
+
     const user = userText(e.mon, namer, sides);
 
-    const head = e.cont ? `${user}'s ${namer.moves(e.move)}` : e.z ? gimmickText(e, namer, sides) : `${user} used ${namer.moves(e.move)}`;
+    const head = e.cont ? `${user}'s ${zMoveName(e.move, namer)}` : e.z ? gimmickText(e, namer, sides) : `${user} used ${namer.moves(e.move)}`;
     if (e.miss) return `${head} → missed`;
 
     const parts = [
       ...e.effects.filter(x => x.kind === 'hp').map(x => hpText(mon(x.mon), x)),
-      ...e.effects.filter(x => x.kind === 'tag').map(x => tagText(x, mon, namer)),
+      ...e.effects.filter(x => x.kind === 'tag').map(x => tagText(x, mon, namer, ctx)),
     ];
     return parts.length ? `${head} → ${parts.join(', ')}` : head;
   }
@@ -458,6 +708,7 @@ function eventText(e, namer, sides) {
   case 'faint': return `${mon(e.mon)} fainted`;
   case 'ball': return `${namer.items(e.ball)} thrown at ${mon(e.mon)} → ${e.result === 'caught' ? 'caught' : e.result === 'blocked' ? 'blocked' : 'broke free'}`;
   case 'item': return `${ownerName(ownerOf(e.mon, sides), sides)} used ${e.label ?? namer.items(e.item)} on ${mon(e.mon)}`;
+  case 'tool': return toolText(e, mon, sides);
   case 'run': return e.result === 'escaped' ? 'Got away safely' : 'Could not get away';
   case 'levelup': return `${mon(e.mon)} grew to Lv${e.level}`;
 
@@ -466,6 +717,8 @@ function eventText(e, namer, sides) {
   case 'enditem':
     if (e.how === 'eat') return `${mon(e.mon)} ate its ${namer.items(e.item)}`;
     if (e.how === 'lost') return `${mon(e.mon)} lost its ${namer.items(e.item)}${fromText(e.from, namer)}`;
+
+    if (toID(e.item) === 'airballoon') return `${mon(e.mon)}'s ${namer.items(e.item)} popped`;
     return `${mon(e.mon)}'s ${namer.items(e.item)} was used up`;
   case 'weather':
     if (!e.weather) return WEATHER_EN[e.ended]?.[1] ?? 'The weather cleared';
@@ -477,15 +730,32 @@ function eventText(e, namer, sides) {
   }
 }
 
-export function keyLines(read, namer, sides = {}) {
+const STAT_EN = { atk: 'Attack', def: 'Defense', spa: 'Sp. Atk', spd: 'Sp. Def', spe: 'Speed', accuracy: 'accuracy', evasion: 'evasiveness' };
+const listEn = items => (items.length > 1 ? `${items.slice(0, -1).join(', ')} and ${items.at(-1)}` : items[0] ?? '');
+function toolText(e, mon, sides) {
+  const target = e.trainer ?? mon(e.mon);
+  const used = `${sides.mine} used ${e.label} on ${target}`;
+  if (e.failed) return `${used} → no effect`;
+  const name = e.trainer ?? mon(e.mon);
+  if (e.tag === 'cheer') {
+    const rose = e.boosts.filter(b => b.amount > 0).map(b => STAT_EN[b.stat] ?? b.stat), fell = e.boosts.filter(b => b.amount < 0).map(b => STAT_EN[b.stat] ?? b.stat);
+    return [used, ...(rose.length ? [`${name}'s ${listEn(rose)} rose`] : []), ...(fell.length ? [`${name}'s ${listEn(fell)} fell`] : [])].join('. ');
+  }
+  if (e.tag === 'taunt') return `${used}. ${name} is taunted into attacking for ${TOOL_TURNS} turns`;
+  if (e.tag === 'distract') return `${used}. ${name} is distracted for ${TOOL_TURNS} turns`;
+  return used;
+}
+
+export function keyLines(read, namer, sides = {}, { battle = null, own = null } = {}) {
   const who = sidesOf(read, sides);
+  const ctx = reasonCtx(read, battle, own);
   const byTurn = new Map();
   for (const t of read.turns) {
     const turn = Math.max(1, t.turn);
     byTurn.set(turn, [...(byTurn.get(turn) ?? []), ...t.events]);
   }
   return [...byTurn].map(([turn, events]) => {
-    const sentences = events.map(e => eventText(e, namer, who)).filter(Boolean);
+    const sentences = events.map(e => eventText(e, namer, who, ctx)).filter(Boolean);
     return `Turn ${turn}: ${sentences.join('. ')}${sentences.length ? '.' : ''}`;
   });
 }
@@ -505,7 +775,14 @@ export function summaryLine(read, namer, { evolutions = [], sides = {} } = {}) {
     if (sent.length) parts.push(`${sentOutText(owner, list(sent), who)}.`);
   }
   for (const e of s.gimmicks ?? []) parts.push(`${gimmickText(e, namer, who)}.`);
-  if (s.fainted.length) parts.push(`Fainted: ${list(s.fainted)}.`);
+  const facts = endFacts(read, namer, { evolutions });
+  return [...parts, ...(facts ? [facts] : [])].join(' ');
+}
+
+export function endFacts(read, namer, { evolutions = [] } = {}) {
+  const s = read.summary;
+  const parts = [];
+  if (s.fainted.length) parts.push(`Fainted: ${s.fainted.map(m => monText(m, namer)).join(', ')}.`);
   if (s.caught) parts.push(`Caught: ${monText(s.caught.mon, namer)} with ${namer.items(s.caught.ball)}.`);
   else if (s.ran) parts.push('Ran away.');
   const evolved = evolutions.filter(e => e?.evolved === true);

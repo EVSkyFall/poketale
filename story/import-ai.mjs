@@ -4,9 +4,14 @@ import { sceneLines } from './ai-names.mjs';
 import { ruleNote } from './failure.mjs';
 import { PARTY_MAX } from './rules.mjs';
 import { compatFold } from './compat.mjs';
+import { canHold } from './panel.mjs';
 
 export const IMPORT_AI_RECENT = 16;
-export const IMPORT_AI_CHARS = 2500;
+export const IMPORT_AI_RECENT_MIN = 1;
+export const IMPORT_AI_RECENT_MAX = 100;
+
+export const importAiRecent = value => (typeof value === 'number' && Number.isFinite(value)
+  ? Math.min(IMPORT_AI_RECENT_MAX, Math.max(IMPORT_AI_RECENT_MIN, Math.round(value))) : IMPORT_AI_RECENT);
 
 export const IMPORT_AI_INTRO = `You read a Pokémon story and write down the Pokémon {{user}} owns now. Write no story text.
 Write only what the story shows. Do not invent Pokémon the story never mentioned.`;
@@ -29,12 +34,12 @@ export const IMPORT_AI_ASK = `Write exactly one Change Block listing the Pokémo
 
 const storyText = text => stripForPrompt(dropOocs(text));
 
-export function importAiScene(chat) {
-  return (chat?.message ?? []).slice(-IMPORT_AI_RECENT).map(m => ({ role: m?.role, text: storyText(m?.data).trim().slice(-IMPORT_AI_CHARS) })).filter(m => m.text);
+export function importAiScene(chat, recent = IMPORT_AI_RECENT) {
+  return (chat?.message ?? []).slice(-importAiRecent(recent)).map(m => ({ role: m?.role, text: storyText(m?.data).trim() })).filter(m => m.text);
 }
 
-export function importAiMessages(chat) {
-  const scene = importAiScene(chat);
+export function importAiMessages(chat, { recent = IMPORT_AI_RECENT } = {}) {
+  const scene = importAiScene(chat, recent);
   if (!scene.length) return null;
   return [
     { role: 'system', content: [IMPORT_AI_INTRO, '## Change Block', IMPORT_AI_FORMAT].join('\n\n') },
@@ -51,7 +56,8 @@ function foundOf(set, sim) {
   const extra = {};
   if (set.ability) extra.ability = sim.Dex.abilities.get(set.ability).name;
   if (set.moves?.length) extra.moves = set.moves.map(m => sim.Dex.moves.get(m).id);
-  if (set.item) extra.item = set.item;
+
+  if (set.item && canHold(set.item, sim)) extra.item = set.item;
   if (set.nature) extra.nature = set.nature;
   if (set.gender) extra.gender = set.gender;
   if (set.teraType) extra.teraType = set.teraType;

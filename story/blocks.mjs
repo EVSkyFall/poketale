@@ -3,13 +3,18 @@ import movesTable from '../data/names/moves.json' with { type: 'json' };
 import abilitiesTable from '../data/names/abilities.json' with { type: 'json' };
 import itemsTable from '../data/names/items.json' with { type: 'json' };
 import storyNames from '../data/story-names.json' with { type: 'json' };
+import aiForms from '../data/names/ai-forms.json' with { type: 'json' };
 import { PARTY_MAX, PAIR_TEAM_MAX, MAX_LEVEL, MAX_MOVES, MAX_IV, OT_NAME_MAX } from './rules.mjs';
 import { STATS } from '../engine/mon.mjs';
 import { toID, koSpellings, readsOfficial } from '../names/index.js';
-import { DEFAULT_EMOJI, customItemId, splitEmoji } from './custom-items.mjs';
+import { DEFAULT_EMOJI, CUSTOM_EFFECTS, customItemId, splitEmoji, topEffect } from './custom-items.mjs';
 import { ruleNote } from './failure.mjs';
-import { readTime } from './compat.mjs';
+import { readTime, clockHourOf } from './compat.mjs';
 import { norm } from './norm.mjs';
+import { readHair, readOutfit } from './trainer-colors.mjs';
+import { readStyles } from './trainer-pool.mjs';
+import { ITEM_EFFECTS_READY } from './item-effects.mjs';
+import { readFormWords } from './form-words.mjs';
 
 export { norm };
 
@@ -45,9 +50,106 @@ function buildReverse(kind, official) {
   return reverse[`${kind}:${official}`] = { names, aliases };
 }
 
+export const readsFormNames = reading => reading?.aiFormNames !== false;
+
+export const readsItemTags = reading => ITEM_EFFECTS_READY && reading?.itemTags !== false;
+
+export const readsFoeLooks = reading => reading?.foeLooks !== false;
+
+export const readsTrainerColors = reading => reading?.trainerColors !== false;
+const COLOR_KEYS = new Set(['hair', 'outfit', 'foePartnerHair', 'foePartnerOutfit']);
+
+export const readsMobStyles = reading => reading?.mobStyles !== false;
+const STYLE_KEYS = new Set(['outfitStyle', 'foePartnerStyle']);
+const FIELD_RE = /^\s*(effect|for)(?:\s*[:：]\s*|\s+)(\S.*?)\s*$/iu;
+
+const FOR_TAIL_RE = /^(?:(\S+)\s+)?for(?:\s*[:：]\s*|\s+)(\S.*)$/iu;
+
+function itemField(part) {
+  const m = FIELD_RE.exec(part);
+  if (!m) return null;
+  if (m[1].toLowerCase() === 'for') return { effect: null, owner: m[2] };
+  const tail = FOR_TAIL_RE.exec(m[2]);
+  return tail ? { effect: tail[1]?.toLowerCase() ?? null, owner: tail[2] } : { effect: m[2].toLowerCase(), owner: '' };
+}
+
+const joinField = (got, field) => ({ effect: topEffect(got.effect ?? [], field.effect ?? []), owner: field.owner || got.owner });
+
+function takeFields(value, read) {
+  const none = { text: String(value), effect: null, owner: '' };
+  if (!read) return none;
+  const parts = String(value).split(/[|｜]/);
+  let got = { effect: null, owner: '' }, found = false;
+  const kept = [parts[0]];
+  for (const part of parts.slice(1)) {
+    const field = itemField(part);
+    if (!field) { kept.push(part); continue; }
+    found = true;
+    got = joinField(got, field);
+  }
+  return found ? { text: kept.join('|').trim(), ...got } : none;
+}
+
+function takeTag(text, tags) {
+  const m = tags ? /^(.*\S)\s+(\S+)$/u.exec(String(text).trim()) : null;
+  return m && CUSTOM_EFFECTS.includes(m[2]) && /\p{L}/u.test(m[1]) ? { name: m[1], tag: m[2] } : { name: String(text).trim(), tag: null };
+}
+
+const MEGA_TATSUGIRI = ['Mega Tatsugiri'];
+const SHARED_FORMS = Object.freeze({
+  meowsticmmega: { gender: 'M', from: 'meowstic' }, meowsticfmega: { gender: 'F', from: 'meowsticf' },
+  tatsugiricurlymega: { from: 'tatsugiri', also: MEGA_TATSUGIRI }, tatsugiridroopymega: { from: 'tatsugiridroopy', also: MEGA_TATSUGIRI },
+  tatsugiristretchymega: { from: 'tatsugiristretchy', also: MEGA_TATSUGIRI },
+});
+
+export function pickForm(ids, { gender, species, seed } = {}) {
+  const fits = ids.filter(id => (!gender || !SHARED_FORMS[id].gender || SHARED_FORMS[id].gender === gender)
+    && (!species || id === species || SHARED_FORMS[id].from === species));
+  if (fits.length === 1) return fits[0];
+  if (seed === undefined) return null;
+  const among = fits.length ? fits : ids;
+  return among[seededIndex(seed, among.length)];
+}
+
+let formReverse;
+function buildFormReverse() {
+  const keys = new Map(), named = new Map();
+  const add = (k, id) => {
+    if (!k) return;
+    named.set(k, [...new Set([...(named.get(k) ?? []), id])]);
+    if (!keys.has(k)) return void keys.set(k, id);
+    const old = keys.get(k);
+    keys.set(k, old === null || old === id ? old : old.length < id.length && id.startsWith(old) ? old : id.length < old.length && old.startsWith(id) ? id : null);
+  };
+  for (const [id, row] of Object.entries(aiForms)) {
+    if (!Array.isArray(row) || !Object.hasOwn(speciesTable, id)) continue;
+
+    const [en, ko, ...old] = row;
+    if (ko) add(norm(ko), id);
+    for (const name of [en, ...old, ...(SHARED_FORMS[id]?.also ?? [])]) {
+      add(toID(name), id), add(norm(name), id);
+      if (ko) add(norm(`${name}(${ko})`), id);
+    }
+  }
+
+  for (const [k, id] of keys) if (id === null && named.get(k).every(f => Object.hasOwn(SHARED_FORMS, f))) keys.set(k, named.get(k));
+  return formReverse = keys;
+}
+
+const formId = (id, k) => { const keys = formReverse ?? buildFormReverse(); return (id ? keys.get(id) : null) ?? keys.get(k) ?? null; };
+
 const NON_LATIN = /(?=\p{L})\P{Script=Latin}/u;
 
-export function lookupId(kind, raw, { allLetters = false, reading } = {}) {
+export function lookupId(kind, raw, { allLetters = false, reading, form } = {}) {
+  const found = readId(kind, raw, allLetters, reading);
+  return Array.isArray(found) ? pickForm(found, { seed: String(raw ?? '').trim(), ...form }) : found;
+}
+
+export function sharedForms(raw, reading) {
+  const found = readId('species', raw, false, reading);
+  return Array.isArray(found) ? found : null;
+}
+function readId(kind, raw, allLetters, reading) {
   const table = TABLES[kind];
   if (!table) throw new TypeError(`모르는 이름표: ${kind}`);
   const id = allLetters && NON_LATIN.test(String(raw ?? '')) ? '' : toID(raw);
@@ -55,8 +157,11 @@ export function lookupId(kind, raw, { allLetters = false, reading } = {}) {
   const official = readsOfficial(reading);
   const { names, aliases } = reverse[`${kind}:${official}`] ?? buildReverse(kind, official);
   const k = norm(raw);
-  return names.get(id) ?? names.get(k) ?? aliases.get(k) ?? (kind === 'items' ? tmId(raw, reading) : null);
+  return names.get(id) ?? names.get(k) ?? aliases.get(k) ?? (kind === 'items' ? tmId(raw, reading) : null)
+    ?? (kind === 'species' && readsFormNames(reading) ? formId(id, k) ?? formWords(raw, reading) : null);
 }
+
+const formWords = (raw, reading) => readFormWords(raw, { readHalf: half => readId('species', half, false, reading), shared: id => Object.hasOwn(SHARED_FORMS, id) });
 
 let tmByMove;
 function tmId(raw, reading) {
@@ -71,8 +176,8 @@ function tmId(raw, reading) {
   return (move && tmByMove.get(move)) ?? null;
 }
 
-export function speciesName(raw, reading) {
-  const id = lookupId('species', raw, { reading });
+export function speciesName(raw, reading, form) {
+  const id = lookupId('species', raw, { reading, form });
   return id ? speciesTable[id].en : null;
 }
 
@@ -111,8 +216,18 @@ const LOOKS = words({
   young_man: ['youngman', '청년', '젊은남자', '젊은남성'], young_woman: ['youngwoman', 'younglady', '숙녀', '아가씨', '젊은여자', '젊은여성'],
   middle_aged_man: ['middleagedman', '중년남자', '중년남성', '아저씨'], middle_aged_woman: ['middleagedwoman', '중년여자', '중년여성', '아주머니', '아줌마'],
   old_man: ['oldman', 'elderlyman', '노인', '할아버지', '노인남자'], old_woman: ['oldwoman', 'elderlywoman', '할머니', '노부인', '노인여자'],
+
+  toddler: ['toddler', 'littlekid', 'preschooler', '유아', '아기', '꼬마', '어린아이', '유치원생'],
 });
-const LOOK_GENDER = { boy: 'M', girl: 'F', young_man: 'M', young_woman: 'F', middle_aged_man: 'M', middle_aged_woman: 'F', old_man: 'M', old_woman: 'F' };
+
+export const LOOK_GENDER = { boy: 'M', girl: 'F', young_man: 'M', young_woman: 'F', middle_aged_man: 'M', middle_aged_woman: 'F', old_man: 'M', old_woman: 'F' };
+
+const readLook = (value, styleFields) => {
+  const l = LOOKS.get(norm(value));
+  return l === 'toddler' && !styleFields ? undefined : l;
+};
+
+export const seededIndex = (seed, n) => parseInt(hashKey(seed), 36) % n;
 
 export function hashKey(str) {
   let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
@@ -128,39 +243,123 @@ export function hashKey(str) {
   return (n % 36 ** 8).toString(36).padStart(8, '0');
 }
 
-const BLOCK_RE = /<\s*pkb-(battle|change|end|act)\s*>([\s\S]*?)<\s*\/\s*pkb-\1\s*>/gi;
+const BLOCK_KINDS = 'battle|change|end|act|shop';
+
+const BLOCK_RE = new RegExp(String.raw`<\s*pkb-(${BLOCK_KINDS})\s*>([\s\S]*?)<\s*\/\s*pkb-\1\s*>`, 'gi');
 const TAG_RE = /<pkb#([a-z0-9]+)>/g;
 
 const MARK_RE = /<pkb!([a-z]):([a-z0-9]+)>/g;
 
 export const MARK = { open: 'p', discarded: 'x', here: 'h', moved: 'm', openedAt: 'w' };
 
-export function findBlocks(text) {
-  const out = [];
-  for (const m of String(text ?? '').matchAll(BLOCK_RE)) {
-    out.push({ kind: m[1].toLowerCase(), body: m[2], start: m.index, end: m.index + m[0].length, key: hashKey(m[2].trim()) });
-  }
-  return out;
+export const readsBlockEdges = reading => reading?.blockEdges !== false;
+
+export function findBlocks(text, reading) {
+  const s = String(text ?? '');
+  if (!readsBlockEdges(reading)) return [...s.matchAll(BLOCK_RE)].map(m => blockOf(m[1], m[2], m.index, m.index + m[0].length));
+  return [...mentionsOut(s).matchAll(NARROW_RE)].map(m => {
+    const from = m.index + m[0].indexOf('>') + 1;
+    return blockOf(m[1], s.slice(from, from + m[2].length), m.index, m.index + m[0].length);
+  });
 }
+const blockOf = (kind, body, start, end) => ({ kind: kind.toLowerCase(), body, start, end, key: hashKey(body.trim()) });
+
+const NARROW_RE = new RegExp(String.raw`<\s*pkb-(${BLOCK_KINDS})\s*>((?:(?!<\s*pkb-\1\s*>)[\s\S])*?)<\s*\/\s*pkb-\1\s*>`, 'gi');
+
+const CODE_SPAN_RE = /(?<!`)(`+)(?!`)[^\n]*?[^`\n]\1(?!`)/g;
+
+const REASONING_RE = /<\s*(thoughts|think)\s*>[\s\S]*?<\s*\/\s*\1\s*>/gi;
+
+const blank = part => part.replace(/[^\n]/g, ' ');
+
+function spanMentionsOut(span) {
+  let out = '', from = 0;
+  for (const m of span.matchAll(NARROW_RE)) { out += blank(span.slice(from, m.index)) + m[0]; from = m.index + m[0].length; }
+  return out + blank(span.slice(from));
+}
+
+const mentionsOut = text => codeMentionsOut(text).replace(REASONING_RE, blank);
+const codeMentionsOut = text => text.replace(CODE_SPAN_RE, spanMentionsOut);
+
+const OPEN_TAG_RE = new RegExp(String.raw`<\s*pkb-(${BLOCK_KINDS})\s*>`, 'gi');
+const CLOSE_TAG_RE = new RegExp(String.raw`<\s*\/\s*pkb-(?:${BLOCK_KINDS})\s*>$`, 'i');
+
+const REASONING_TAG_RE = /<\s*\/?\s*(?:thoughts|think)\s*>/gi;
+
+function pastReasoning(text, start, closeAt) {
+  let from = start;
+  for (const m of text.slice(start, closeAt).matchAll(REASONING_TAG_RE)) from = start + m.index + m[0].length;
+  return from;
+}
+
+function cutStart(text, block, edges) {
+  const whole = text.slice(block.start, block.end);
+  const closeAt = block.end - CLOSE_TAG_RE.exec(whole)[0].length;
+  let from = block.start;
+  if (!edges) for (const m of whole.slice(0, closeAt - block.start).matchAll(OPEN_TAG_RE)) if (m[1].toLowerCase() === block.kind) from = block.start + m.index;
+  return pastReasoning(text, from, closeAt);
+}
+
+export function blockCuts(text, reading) {
+  const s = String(text ?? ''), edges = readsBlockEdges(reading);
+  const cuts = findBlocks(s, reading).map(block => ({ start: cutStart(s, block, edges), end: block.end, block }));
+  if (edges) spanCuts(s, cuts);
+
+  const whole = edges && reading ? drafts(s) : (from, to) => wholeBlocks(s, from, to);
+  const loose = [];
+  cuts.forEach((cut, i) => {
+    const from = i ? cuts[i - 1].end : 0;
+    loose.push(...whole(from, cut.start));
+  });
+  loose.push(...whole(cuts.at(-1)?.end ?? 0, s.length));
+  return [...cuts, ...loose].sort((a, b) => a.start - b.start);
+}
+
+function wholeBlocks(text, from, to, masked = text) {
+  return [...masked.slice(from, to).matchAll(NARROW_RE)].map(m => {
+    const start = from + m.index, end = start + m[0].length;
+    return { start: pastReasoning(text, start, end - CLOSE_TAG_RE.exec(m[0])[0].length), end };
+  });
+}
+
+function drafts(text) {
+  const masked = codeMentionsOut(text), reasoning = [...masked.matchAll(REASONING_RE)].map(m => [m.index, m.index + m[0].length]);
+  return (from, to) => reasoning.flatMap(([start, end]) => (start < to && end > from ? wholeBlocks(text, Math.max(start, from), Math.min(end, to), masked) : []));
+}
+
+function spanCuts(text, cuts) {
+  for (const m of text.matchAll(CODE_SPAN_RE)) {
+    const start = m.index, end = start + m[0].length;
+    const inside = cuts.filter(cut => cut.block.start > start && cut.block.end < end);
+    if (!inside.length) continue;
+    const first = inside[0], last = inside.at(-1);
+    if (pastReasoning(text, start, first.start) === start) first.start = start;
+    if (text.slice(last.end, end).search(REASONING_TAG_RE) < 0) last.end = end;
+  }
+}
+
+const withoutBlocks = (text, reading) => blockCuts(text, reading).reduceRight((out, cut) => out.slice(0, cut.start) + out.slice(cut.end), String(text ?? ''));
+
+export const hasBlocks = text => String(text ?? '').search(BLOCK_RE) >= 0;
 
 export const messageId = (message, index) => message?.chatId ?? `#${index}`;
 
 export const battleKey = (id, n, body) => hashKey(`${id}\n${n}\n${hashKey(String(body ?? '').trim())}`);
 
-export const battlesInText = (text, id) => findBlocks(text).filter(b => b.kind === 'battle').map((b, n) => ({ ...b, hash: b.key, key: battleKey(id, n, b.body) }));
+export const battlesInText = (text, id, reading) => findBlocks(text, reading).filter(b => b.kind === 'battle').map((b, n) => ({ ...b, hash: b.key, key: battleKey(id, n, b.body) }));
 
-export const battlesIn = (message, index) => battlesInText(message?.data ?? '', messageId(message, index));
+export const battlesIn = (message, index, reading) => battlesInText(message?.data ?? '', messageId(message, index), reading);
 
-export function blockAnchorIn(chat, key) {
+export function blockAnchorIn(chat, key, readingAt = () => undefined) {
   const messages = chat?.message ?? [];
   for (let i = 0; i < messages.length; i++) {
-    const block = battlesIn(messages[i], i).find(b => b.key === key);
+    const block = battlesIn(messages[i], i, readingAt(i)).find(b => b.key === key);
     if (block) return { block: block.hash, ...(typeof messages[i].time === 'number' ? { blockTime: messages[i].time } : {}) };
   }
   return {};
 }
 
-export const actsIn = (message, index) => findBlocks(message?.data ?? '').filter(b => b.kind === 'act').map((b, n) => {
+export const actsIn = (message, index, reading) => findBlocks(message?.data ?? '', reading).filter(b => b.kind === 'act').map((b, n) => {
   const id = ACT_ID_RE.exec(b.body)?.[1];
   return { ...b, own: !!id, key: id ? hashKey(`act-id\n${id}`) : battleKey(`act:${messageId(message, index)}`, n, b.body) };
 });
@@ -169,6 +368,10 @@ const ACT_ID_RE = /^\s*id\s*:\s*([a-z0-9]+)\s*$/im;
 export function actBlock(body, id) {
   return { text: `<pkb-act>\nid: ${id}\n${String(body ?? '').trim()}\n</pkb-act>`, key: hashKey(`act-id\n${id}`) };
 }
+
+export const shopsInText = (text, id, reading) => findBlocks(text, reading).filter(b => b.kind === 'shop')
+  .map((b, n) => ({ ...b, hash: b.key, key: battleKey(`shop:${id}`, n, b.body), shop: parseShop(b.body) }));
+export const shopsIn = (message, index, reading) => shopsInText(message?.data ?? '', messageId(message, index), reading);
 
 export function findTags(text) {
   return [...String(text ?? '').matchAll(TAG_RE)].map(m => ({ key: m[1], start: m.index, end: m.index + m[0].length }));
@@ -179,9 +382,11 @@ export function findMarks(text) {
 }
 export const markText = (kind, key) => `<pkb!${kind}:${key}>`;
 
-export function stripForPrompt(text) {
-  return String(text ?? '').replace(BLOCK_RE, '').replace(TAG_RE, '').replace(MARK_RE, '').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
-}
+const tidy = text => text.replace(TAG_RE, '').replace(MARK_RE, '').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+
+export const stripForPrompt = (text, reading) => tidy(withoutBlocks(text, reading));
+
+export const stripBlocksRead = (text, reading) => (readsBlockEdges(reading) ? stripForPrompt(text, reading) : tidy(String(text ?? '').replace(BLOCK_RE, '')));
 
 function lines(body, errors) {
   const out = [];
@@ -205,6 +410,19 @@ const BATTLE_KEYS = words({
 
   foePartner: ['foepartner', 'opponent2', 'trainer2', 'name2', 'secondtrainer', '상대동료', '상대2', '둘째상대', '이름2'],
   foePartnerPokemon: ['foepartnerpokemon', 'opponent2pokemon', 'trainer2pokemon', 'pokemon2', 'foepartnermon', '상대동료포켓몬', '상대2포켓몬', '둘째상대포켓몬', '포켓몬2'],
+
+  foePartnerGender: ['foepartnergender', 'foepartnersex', 'opponent2gender', 'trainer2gender', 'gender2', 'sex2', '상대동료성별', '상대2성별', '둘째상대성별', '성별2'],
+  foePartnerLook: ['foepartnerlook', 'foepartnerlooks', 'foepartnerappearance', 'opponent2look', 'trainer2look', 'look2', '상대동료모습', '상대동료외모', '상대2모습',
+    '둘째상대모습', '모습2', '외모2'],
+
+  hair: ['hair', 'haircolor', 'haircolour', '머리', '머리색', '머리카락', '머리카락색', '머리색깔', '헤어', '머리칼'],
+  outfit: ['outfit', 'outfitcolor', 'outfitcolour', 'clothes', 'clothing', 'clothescolor', '옷', '옷색', '옷색깔', '복장', '의상', '옷차림'],
+  foePartnerHair: ['foepartnerhair', 'foepartnerhaircolor', 'opponent2hair', 'trainer2hair', 'hair2', '상대동료머리', '상대동료머리색', '상대2머리색', '둘째상대머리색', '머리색2'],
+  foePartnerOutfit: ['foepartneroutfit', 'foepartnerclothes', 'opponent2outfit', 'trainer2outfit', 'outfit2', '상대동료옷', '상대동료옷색', '상대동료복장', '상대2옷색',
+    '둘째상대옷색', '옷색2', '복장2'],
+
+  outfitStyle: ['outfitstyle', 'clothingstyle', 'clothesstyle', 'outfitkind', '스타일', '옷스타일', '복장스타일', '의상스타일', '옷종류'],
+  foePartnerStyle: ['foepartnerstyle', 'foepartneroutfitstyle', 'opponent2style', 'trainer2style', 'style2', '상대동료스타일', '상대2스타일', '둘째상대스타일', '스타일2'],
 });
 const FORMAT = words({ single: ['single', 'singles', 'singlebattle', '1v1', '싱글', '싱글배틀'], double: ['double', 'doubles', 'doublebattle', '2v2', '더블', '더블배틀'] });
 
@@ -225,12 +443,28 @@ const CHANGE_KEYS = words({
 
 const LEVEL_RES = [/(?:\blv\.?|\blvl\.?|\bl|레벨)\s*\.?\s*(\d{1,3})(?!\d)/i, /(?<!\d)(\d{1,3})\s*(?:레벨|lv\b)/i];
 
-function takeLevel(text) {
-  for (const re of LEVEL_RES) {
+function takeLevel(text, res = LEVEL_RES) {
+  for (const re of res) {
     const m = re.exec(text);
     if (m) return { level: Number(m[1]), rest: (text.slice(0, m.index) + ' ' + text.slice(m.index + m[0].length)).trim() };
   }
   return { level: null, rest: text.trim() };
+}
+
+const LEVEL_MORE = [/(?:\blevel|\blvl|\blv|레벨)\s*[:：]?\s*\.?\s*(\d{1,3})(?!\d)/i, /(?<=[\p{Script=Latin}\d])lv\.?\s*(\d{1,3})(?!\d)/iu];
+const HEAD_GENDER = /\s([♂♀])\uFE0F?$/u;
+
+function readHead(head, reading, form, level) {
+  const { level: own, rest } = takeLevel(head);
+  const plain = { level, rest, species: rest ? speciesName(rest, reading, form) : null };
+  if ((plain.species && level != null) || !readsFormNames(reading)) return plain;
+  const more = own == null ? takeLevel(head, LEVEL_MORE) : { level: own, rest };
+  const sign = HEAD_GENDER.exec(more.rest);
+  const name = sign ? more.rest.slice(0, sign.index).trim() : more.rest;
+  if (!name || (more.rest === rest && !sign) || (level ?? more.level) == null) return plain;
+  const gender = sign ? GENDER.get(norm(sign[1])) : undefined;
+  const species = speciesName(name, reading, form?.gender || !gender ? form : { ...form, gender });
+  return species ? { level: level ?? more.level, rest: name, species, ...(gender ? { gender } : {}) } : plain;
 }
 
 function splitSeg(seg, map) {
@@ -265,13 +499,13 @@ function readIvs(v) {
   return { ivs: Object.fromEntries(STATS.map((s, i) => [s, Number(nums[i])])) };
 }
 
-function parseSet(value, errors, dest, warnings = errors, reading) {
+function parseSet(value, errors, dest, warnings = errors, reading, tags = false) {
   const warn = text => warnings.push(text);
   const segs = String(value).split(/[|｜]/).map(s => s.trim()).filter(Boolean);
   if (!segs.length) { errors.push(note('emptyMon')); return null; }
-  let { level, rest } = takeLevel(segs[0]);
+  let { level } = takeLevel(segs[0]);
   const set = {};
-  let to = 'party', ot = null, custom = null;
+  let to = 'party', ot = null, custom = null, fields = { effect: null, owner: '' };
 
   const ivField = (v, seg) => {
     const r = readIvs(v);
@@ -280,6 +514,9 @@ function parseSet(value, errors, dest, warnings = errors, reading) {
     Object.assign(set, r);
   };
   for (const seg of segs.slice(1)) {
+
+    const field = tags ? itemField(seg) : null;
+    if (field) { fields = joinField(fields, field); continue; }
     const kv = splitSeg(seg, SET_KEYS);
     if (!kv) {
 
@@ -318,8 +555,9 @@ function parseSet(value, errors, dest, warnings = errors, reading) {
       const id = need('abilities', v, errors, reading); if (id) set.ability = id;
     } else if (k === 'item') {
       // A name-table item, else a custom item under the name as written (the same reading as item / hold lines)
-      const { emoji, rest: name } = splitEmoji(v);
-      const item = itemOf(name, emoji, v, errors, reading);
+      const { emoji, rest } = splitEmoji(v);
+      const { name, tag } = takeTag(rest, tags);
+      const item = itemOf(name, emoji, v, errors, reading, tag);
       if (item) { set.item = item.item; custom = item.custom ?? null; }
     } else if (k === 'moves') {
       const moves = v.split(/[,，、\/]/).map(s => s.trim()).filter(Boolean).map(s => need('moves', s, errors, reading)).filter(Boolean);
@@ -344,11 +582,16 @@ function parseSet(value, errors, dest, warnings = errors, reading) {
       if (s !== undefined) set.status = s; else errors.push(note('unknownStatus', { value: v }));
     }
   }
+
+  const head = readHead(segs[0], reading, { gender: set.gender, seed: String(value).trim() }, level);
+  const { rest, species } = head;
   if (!rest) { errors.push(note('noMonName', { seg: segs[0] })); return null; }
-  const species = speciesName(rest, reading);
   if (!species) { errors.push(note('unknown.species', { name: rest })); return null; }
+  level = head.level;
+  if (head.gender && !set.gender) set.gender = head.gender;
   if (level == null) { errors.push(note('noLevel', { name: rest })); return null; }
   if (level < 1 || level > MAX_LEVEL) { errors.push(note('monLevelRange', { max: MAX_LEVEL, name: rest, level })); return null; }
+  if (custom) custom = withFields(custom, fields.effect, fields.owner);
   return { set: { species, level, ...set }, to, ...(ot ? { ot } : {}), ...(custom ? { custom } : {}) };
 }
 
@@ -363,10 +606,18 @@ export function parseBattle(body, reading) {
   let fatal = false;
   const spec = { wild: null, name: null, gender: null, look: null, trainerClass: null, boss: null, place: null, time: null, team: [] };
 
-  let format = null, partnerName = null, foePartnerName = null;
+  let format = null, partnerName = null, foePartnerName = null, foePartnerLook = null, foePartnerGender = null;
   const partnerTeam = [], foePartnerTeam = [];
+  const foeLooks = readsFoeLooks(reading), colorFields = readsTrainerColors(reading), styleFields = readsMobStyles(reading);
+
+  let style = [], foePartnerStyle = null;
+
+  const colors = {}, foePartnerColors = {};
   for (const { key, value, line } of lines(body, errors)) {
-    const k = BATTLE_KEYS.get(key);
+    const read = BATTLE_KEYS.get(key);
+
+    const k = (!foeLooks && (read === 'foePartnerLook' || read === 'foePartnerGender')) || (!colorFields && COLOR_KEYS.has(read))
+      || (!styleFields && STYLE_KEYS.has(read)) ? null : read;
     if (!k) { errors.push(note('unknownKey', { line })); continue; }
     if (k === 'pokemon' || k === 'partnerPokemon' || k === 'foePartnerPokemon') {
       const r = parseSet(value, errors, false, errors, reading);
@@ -383,7 +634,7 @@ export function parseBattle(body, reading) {
       const g = GENDER.get(norm(value));
       if (g) spec.gender = g; else errors.push(note('unknownGender', { value }));
     } else if (k === 'look') {
-      const l = LOOKS.get(norm(value));
+      const l = readLook(value, styleFields);
       if (l) spec.look = l; else errors.push(note('unknownLook', { value }));
     } else if (k === 'rank') {
       const r = RANK.get(norm(value));
@@ -392,13 +643,34 @@ export function parseBattle(body, reading) {
       const b = storyNames.biomes[norm(value)];
       if (b) spec.place = b; else errors.push(note('unknownPlace', { value }));
     } else if (k === 'time') {
-      const t = readTime(value);
+      const t = readTime(value), hour = clockHourOf(value);
       if (t) spec.time = t; else errors.push(note('timeWord', { value }));
+
+      if (t && hour !== null) spec.hour = hour;
     } else if (k === 'format') {
       const f = FORMAT.get(norm(value));
-      if (f) format = f; else errors.push(note('formatWord', { value }));
+
+      if (f) format = f; else if (styleFields && key === 'style' && readStyles(value).length) style = readStyles(value);
+      else errors.push(note('formatWord', { value }));
+    } else if (k === 'outfitStyle') style = readStyles(value);
+    else if (k === 'foePartnerStyle') {
+
+      const read = readStyles(value);
+      if (read.length) foePartnerStyle = read;
     } else if (k === 'partner') partnerName = value;
     else if (k === 'foePartner') foePartnerName = value;
+    else if (k === 'foePartnerGender') {
+      const g = GENDER.get(norm(value));
+      if (g) foePartnerGender = g; else errors.push(note('unknownGender', { value }));
+    } else if (k === 'foePartnerLook') {
+      const l = readLook(value, styleFields);
+      if (l) foePartnerLook = l; else errors.push(note('unknownLook', { value }));
+    } else if (COLOR_KEYS.has(k)) {
+
+      const into = k === 'hair' || k === 'outfit' ? colors : foePartnerColors;
+      if (k === 'hair' || k === 'foePartnerHair') { const h = readHair(value); if (h) into.hair = h; }
+      else Object.assign(into, Object.fromEntries(Object.entries(readOutfit(value) ?? {}).filter(([, c]) => c)));
+    }
   }
   if (spec.wild == null) { errors.push(note('noSide')); fatal = true; }
   const n = spec.team.length;
@@ -415,7 +687,15 @@ export function parseBattle(body, reading) {
   if (double) {
     spec.double = true;
     if (partnerTeam.length) spec.partner = { name: partnerName, team: partnerTeam };
-    if (foePartner) spec.foePartner = { name: foePartnerName, team: foePartnerTeam };
+    if (foePartner) {
+      spec.foePartner = { name: foePartnerName, team: foePartnerTeam };
+
+      if (foePartnerLook) spec.foePartner.look = foePartnerLook;
+      const partnerGender = LOOK_GENDER[foePartnerLook] ?? foePartnerGender;
+      if (partnerGender) spec.foePartner.gender = partnerGender;
+      if (Object.keys(foePartnerColors).length) spec.foePartner.colors = foePartnerColors;
+      if (foePartnerStyle) spec.foePartner.style = foePartnerStyle;
+    }
   }
   if (spec.wild === true && n > (double ? WILD_DOUBLE_MAX : 1)) { errors.push(double ? note('wildTwo', { max: WILD_DOUBLE_MAX, n }) : note('wildOne', { n })); fatal = true; }
   if (spec.wild === false && n > PARTY_MAX) { errors.push(note('trainerMax', { max: PARTY_MAX, n })); fatal = true; }
@@ -428,7 +708,11 @@ export function parseBattle(body, reading) {
   // Without a rank, guess from the class (else the name)
   if (spec.boss == null) spec.boss = !spec.wild && BOSS_CLASS.test(`${spec.trainerClass ?? ''} ${spec.name ?? ''}`);
 
-  if (spec.look) spec.gender = LOOK_GENDER[spec.look];
+  if (spec.look && LOOK_GENDER[spec.look]) spec.gender = LOOK_GENDER[spec.look];
+
+  if (spec.wild === false && Object.keys(colors).length) spec.colors = colors;
+
+  if (spec.wild === false && styleFields) spec.style = style;
   return { spec: fatal ? null : spec, errors };
 }
 
@@ -465,12 +749,27 @@ function headRef(value, rest = true, reading) {
   return parts.length ? [parts[0], parts.slice(1).join(' ')] : ['', ''];
 }
 
-function itemOf(name, emoji, value, errors, reading) {
+function evolveSplit(value, reading) {
+  if (!readsFormNames(reading) || /^#/.test(value.trim())) return null;
+  const parts = value.trim().split(/\s+/).filter(Boolean);
+  for (let n = 1; n < parts.length; n++) {
+    const head = parts.slice(0, n).join(' '), rest = parts.slice(n).join(' ');
+    if (speciesName(head, reading) && speciesName(rest, reading)) return [head, rest];
+  }
+  return null;
+}
+
+function itemOf(name, emoji, value, errors, reading, effect = null, owner = '') {
   const id = lookupId('items', name, { reading });
   if (id) return { item: id };
   if (!/\p{L}/u.test(name)) { errors.push(note('noItemName', { value: value.trim() })); return null; }
-  return { item: customItemId(name), custom: { name, emoji: emoji || DEFAULT_EMOJI } };
+  return { item: customItemId(name), custom: withFields({ name, emoji: emoji || DEFAULT_EMOJI }, effect, owner) };
 }
+
+const withFields = (custom, effect, owner) => {
+  const top = topEffect(custom.effect ?? [], effect ?? []);
+  return { ...custom, ...(top ? { effect: top } : {}), ...(owner ? { owner } : {}) };
+};
 
 function atEmoji(value) {
   const parts = value.trim().split(/\s+/);
@@ -511,7 +810,7 @@ function parseOp(op, value, errors, warnings, reading) {
   const warn = text => warnings.push(text);
   switch (op) {
     case 'add': {
-      const r = parseSet(value, errors, true, warnings, reading);
+      const r = parseSet(value, errors, true, warnings, reading, readsItemTags(reading));
       return r && { op, set: r.set, to: r.to, ...(r.ot ? { ot: r.ot } : {}), ...(r.custom ? { custom: r.custom } : {}) };
     }
     case 'egg': {
@@ -550,10 +849,13 @@ function parseOp(op, value, errors, warnings, reading) {
       return who && { op, ref: who, ...mods };
     }
     case 'item': {
-      const { emoji, rest } = splitEmoji(value);
+
+      const fields = takeFields(value, readsItemTags(reading));
+      const { emoji, rest: written } = splitEmoji(fields.text);
+      const { name: rest, tag } = takeTag(written, readsItemTags(reading));
 
       const { name, n } = /^\s*(?:tm|기술\s*머신)\s*[-:.#]?\s*\d{1,3}\s*$/i.test(rest) ? { name: rest, n: 1 } : tailCount(rest, 1);
-      const item = itemOf(name, emoji, value, errors, reading);
+      const item = n > 0 ? itemOf(name, emoji, value, errors, reading, topEffect(fields.effect ?? [], tag ?? []), fields.owner) : itemOf(name, emoji, value, errors, reading);
       if (!item) return null;
       if (!Number.isSafeInteger(n)) { errors.push(note('itemCountBig', { value })); return null; }
       if (!n) { errors.push(note('itemCountZero', { value })); return null; }
@@ -570,22 +872,26 @@ function parseOp(op, value, errors, warnings, reading) {
       return who && { op, ref: who, name };
     }
     case 'hold': {
-      const [h, rest] = atEmoji(value) ?? headRef(value, false, reading);
+      const fields = takeFields(value, readsItemTags(reading));
+      const [h, rest] = atEmoji(fields.text) ?? headRef(fields.text, false, reading);
       const who = ref(h, errors);
       if (!who) return null;
       if (!rest || NONE.has(norm(rest))) return { op, ref: who, item: null };
-      const { emoji, rest: name } = splitEmoji(rest);
-      const item = itemOf(name, emoji, value, errors, reading);
+      const { emoji, rest: written } = splitEmoji(rest);
+      const { name, tag } = takeTag(written, readsItemTags(reading));
+      const item = itemOf(name, emoji, value, errors, reading, topEffect(fields.effect ?? [], tag ?? []), fields.owner);
       return item && { op, ref: who, ...item };
     }
     case 'evolve': {
-      const [h, rest] = headRef(value, true, reading);
+      const [h, rest] = evolveSplit(value, reading) ?? headRef(value, true, reading);
       if (!rest) { errors.push(note('noEvolveTo', { value })); return null; }
       const who = ref(h, errors);
       if (!who) return null;
-      const species = speciesName(rest, reading);
+
+      const species = speciesName(rest, reading, { seed: value.trim() });
       if (!species) { errors.push(note('unknown.species', { name: rest })); return null; }
-      return { op, ref: who, species };
+      const forms = sharedForms(rest, reading);
+      return { op, ref: who, species, ...(forms ? { forms } : {}) };
     }
     case 'teach': {
       const [h, rest] = headRef(value, true, reading);
@@ -640,6 +946,26 @@ export function parseEnd(body) {
   return { outcome: outcome ?? 'stop', errors };
 }
 
+const SHOP_KEYS = words({ shop: ['shop', 'kind', 'type', 'store', '상점', '가게', '종류'], name: ['name', '이름', '상호', '가게이름', '상점이름'] });
+const SHOP_KIND = words({
+  mart: ['mart', 'pokemart', 'pokémart', 'poke mart', 'pokémon mart', 'friendly shop', 'friendlyshop', 'shop', 'store', 'market', 'convenience store',
+    '프렌들리숍', '프렌들리샵', '상점', '마트', '포켓몬마트', '포케마트', '가게', '편의점'],
+  department: ['department', 'department store', 'dept', 'dept store', 'departmentstore', 'mall', 'shopping mall', '백화점', '쇼핑몰'],
+});
+
+function parseShop(body) {
+  const bare = String(body ?? '').trim();
+
+  if (bare && !/[:：]/.test(bare)) return { kind: SHOP_KIND.get(norm(bare)) ?? 'mart' };
+  let kind = 'mart', name = '';
+  for (const { key, value } of lines(body, [])) {
+    const field = SHOP_KEYS.get(key);
+    if (field === 'shop') kind = SHOP_KIND.get(norm(value)) ?? kind;
+    else if (field === 'name') name = value.trim();
+  }
+  return name ? { kind, name } : { kind };
+}
+
 const ACT_KEYS = words({ turn: ['turn', 'action', 'command', '턴', '행동', '명령'] });
 const ACT_SIDES = words({ me: ['me', 'my', 'mine', 'player', 'own', '나', '내', '내쪽', '아군', '플레이어'],
   foe: ['foe', 'opponent', 'enemy', 'opp', 'them', '상대', '적', '상대쪽'] });
@@ -651,7 +977,7 @@ const ACT_SLOTS = words({ '': ['left', '1', '왼쪽', '왼', '첫째'], 2: ['rig
 const ACT_ALLY = words({ ally: ['ally', 'partner', '아군', '동료', '짝', '옆'], self: ['self', 'itself', 'myself', '자신', '자기', '자기자신'] });
 const TARGET_RE = /\s*(?:>|→|->|@)\s*/;
 
-const nameOf = (s, reading) => ({ species: lookupId('species', s, { reading }), name: s });
+const nameOf = (s, reading) => { const forms = sharedForms(s, reading); return { species: lookupId('species', s, { reading }), name: s, ...(forms ? { forms } : {}) }; };
 
 function actTarget(raw, reading) {
   const s = String(raw ?? '').trim();

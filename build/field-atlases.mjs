@@ -55,7 +55,6 @@ export function fieldAtlases(assets) {
 
 let cache;
 
-// One line of embedded:view: export const FIELD_ATLASES_GZ_B64 = "..."
 export function fieldAtlasesModule(assets) {
   cache ??= `export const FIELD_ATLASES_GZ_B64 = ${JSON.stringify(gzipSync(JSON.stringify(fieldAtlases(assets)), { level: 9 }).toString('base64'))};`;
   return cache;

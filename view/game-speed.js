@@ -1,8 +1,7 @@
 // from pokerogue src/system/game-speed.ts @ 7d7da4a8 (AGPL-3.0-only)
+// Modified for PokeTale on 2026-11-16. See view/LICENSE-NOTE.md.
 // from pokerogue src/utils/common.ts (FixedInt, fixedInt) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-28. See view/LICENSE-NOTE.md.
 
-// Selectable speeds (the setting and the bar button cycle in this order)
 export const GAME_SPEEDS = Object.freeze([1, 1.5, 2, 3]);
 export const DEFAULT_SPEED = 1;
 

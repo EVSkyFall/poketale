@@ -1,6 +1,5 @@
 export const GUIDE_AT = 'inside';
 
-// First line of the guide
 export const GUIDE_HEAD = 'Narration guide:';
 
 export const GUIDE_CORE = [

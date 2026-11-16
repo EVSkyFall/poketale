@@ -4,10 +4,14 @@ import { DEFAULT_LANG } from './lang.js';
 import { bagText } from './bag.js';
 import { sideOf, positionOf } from './read.js';
 import { toID } from '../engine/mon.mjs';
+import { splitEmoji } from '../story/custom-items.mjs';
 
 const BY_NAME = new Map(Object.entries(BAG_ITEMS).map(([id, item]) => [`item: ${item.name}`, id]));
 
-export const BAG_KINDS = ['-story-item', '-story-pp', '-story-ball'];
+export const BAG_KINDS = ['-story-item', '-story-pp', '-story-ball', '-story-tool', '-story-toolend'];
+
+const TOOL_START = { cheer: 'own.toolCheer', taunt: 'own.toolTaunt', distract: 'own.toolDistract' };
+const TOOL_END = { taunt: 'own.toolTauntEnd', distract: 'own.toolDistractEnd' };
 
 export function createBagSteps({ battle, view, names, ledger, bag, lang = DEFAULT_LANG, affix = nameWithAffix(lang) }) {
   const say = (key, values, options = {}) => view.message(bagText(key, values, lang), options);
@@ -32,6 +36,21 @@ export function createBagSteps({ battle, view, names, ledger, bag, lang = DEFAUL
       using = { item, name: ledger.get(ident).name, ppShown: false };
       bag?.spend(item);
       await say('own.usedItem', { pokemonName: using.name, itemName: itemName(item) });
+      return;
+    }
+    case '-story-tool': {
+
+      using = null;
+      const [ident, , item, label, tag] = a;
+      const side = sideOf(ident), target = kw.trainer || affix(ledger.get(ident).name, side);
+      await say('own.usedItem', { pokemonName: target, itemName: bag ? itemName(item) : splitEmoji(label).rest });
+      if (kw.fail) await say('party-ui-handler.anyEffect');
+      else if (TOOL_START[tag]) await say(TOOL_START[tag], { pokemonNameWithAffix: target });
+      return;
+    }
+    case '-story-toolend': {
+      const [ident, , tag] = a;
+      if (TOOL_END[tag]) await say(TOOL_END[tag], { pokemonNameWithAffix: kw.trainer || affix(ledger.get(ident).name, sideOf(ident)) });
       return;
     }
     case '-story-pp': {

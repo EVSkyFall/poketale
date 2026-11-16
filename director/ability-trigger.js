@@ -1,4 +1,3 @@
-// Ability activation text shared by move and effect events.
 import { isIdent } from './read.js';
 import { toID } from '../engine/mon.mjs';
 

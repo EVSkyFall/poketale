@@ -6,8 +6,9 @@ import { mark, clearBattleMarks } from './marks.js';
 import { END_CSS, END_GUARD_MS, mountEndScreen, flyAway, shake, PLANE } from './end-screen.js';
 import { UI_VARS, CARD_FRAME, BAND_CSS, rowButtonsCss, stripX } from './ui-css.js';
 import { PHONE_CSS, isPhone, layoutOf, mountPhoneLayout, choiceCursor } from './phone.js';
+import { pushBack } from './contextmenu.js';
 import { mountScreenButtons } from './screen-buttons.js';
-import { ENTRY_CSS, mountEntry, backToChat, entryNamed, fadeScreen, STAMP_SOUND } from './entry.js';
+import { ENTRY_CSS, mountEntry, backToChat, entryNamed, entryFoes, fadeScreen, STAMP_SOUND } from './entry.js';
 import { entryPictures, entrySound } from './entry-art.js';
 import { PLAYER_NAME } from '../../story/state.mjs';
 import { mountLoading } from './loading.js';
@@ -129,17 +130,22 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
   const entry = story?.from || !startSpec ? null : (() => {
     const kind = isWild(startSpec) ? 'wild' : 'trainer', named = entryNamed(startSpec), boss = !!startSpec.boss;
     const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const pictures = entryPictures(startSpec, { fetchBytes, wild: kind === 'wild', named: !!named, image: me.image, pictureWays: extraViewOptions.pictureWays });
+
+    const foes = named ? entryFoes(startSpec).slice(0, 1) : entryFoes(startSpec), second = foes[1] ?? null;
+    const pictures = entryPictures(startSpec, { fetchBytes, wild: kind === 'wild', named: !!named, image: me.image, pictureWays: extraViewOptions.pictureWays,
+      second: second?.sprite ?? null });
     const myName = startSpec.p1?.name && startSpec.p1.name !== PLAYER_NAME ? startSpec.p1.name : say(lang, 'window.me');
     const stamp = extraViewOptions.sound ? entrySound(STAMP_SOUND, { fetchBytes, pictureWays: extraViewOptions.pictureWays }) : null;
-    return mountEntry(root, { kind, boss, named, reduced, pictures, sound: stamp, foeBlack: !!startSpec.p2?.trainerSilhouette, meBlack: me.black,
-      names: { me: myName, foe: kind === 'wild' ? '' : startSpec.p2?.name ?? '' } });
+    return mountEntry(root, { kind, boss, named, reduced, pictures, sound: stamp, foeBlack: !!startSpec.p2?.trainerSilhouette, foe2Black: !!second?.black, meBlack: me.black,
+      names: { me: myName, foe: kind === 'wild' ? '' : foes.map(f => f.name).filter(Boolean) } });
   })();
 
   const preparing = mountLoading(screenBox, { before: oops, hidden: !!entry, lang });
 
   const takeDown = mountPhoneLayout(root, layout, { press: key => padPress(key), lang,
     left: [leaveButton], right: [foldButton, sendButton, speedButton], screen: screenBox, onScreen: [saveNote] });
+
+  const popBack = pushBack(root, () => padPress('b'));
 
   function padPress(key) {
     if (closed) return;
@@ -195,7 +201,7 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
     entry?.remove();
 
     if ((mode === 'running' || mode === 'result') && !paused) await backToChat(root).catch(() => {});
-    try { await onClose(); root.remove(); takeDown(); }
+    try { await onClose(); root.remove(); takeDown(); popBack(); }
     catch (error) {
       // If hiding itself fails, keep the error and a close button to retry.
       closed = false; root.classList.remove('pkb-clear'); root.querySelector('.pkb-veil')?.remove(); showError(error);

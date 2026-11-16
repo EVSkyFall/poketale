@@ -7,17 +7,19 @@ import { SHEET_FONT } from '../../story/style.mjs';
 import { WHAT, failureText, ruleText } from '../../story/failure.mjs';
 import { say, sayer, perLang } from '../../story/screen-text.mjs';
 import { TAB_COLOR, panelSpriteUrl } from '../../story/panel-html.mjs';
-import { itemName, bagItemName, itemLabel, namesFor } from '../../story/panel.mjs';
-import { natureName, statName, moneyText } from '../../story/diary.mjs';
+import { itemName, bagItemName, itemLabel, namesFor, canHold } from '../../story/panel.mjs';
+import { natureName, statName, moneyAmount } from '../../story/diary.mjs';
 import { editMon, setAction, setBag, refillMon, draftProblems, draftPartyCount, bagDraft, canTake, DEBUG_FIELDS, typedRange, mainlineBreaks } from '../../story/import.mjs';
 import { EGG_SPRITE } from '../../engine/breeding.mjs';
-import { isCustomItem, customText, DEFAULT_EMOJI, CUSTOM_TAGS } from '../../story/custom-items.mjs';
+import { isCustomItem, customText, DEFAULT_EMOJI, CUSTOM_EFFECTS, ownerName } from '../../story/custom-items.mjs';
+import { ITEM_EFFECTS_READY } from '../../story/item-effects.mjs';
 import { learnableTms } from '../../story/item-info.mjs';
 import { STATS, MAX_LEVEL, MAX_MOVES, MAX_IV, PARTY_MAX, STATUS_IDS, displayName, toID, spriteIdOf } from '../../engine/mon.mjs';
 import { EV_STAT_MAX, EV_TOTAL_MAX } from '../../engine/rules.mjs';
 import { FRIENDSHIP_MAX } from '../../engine/friendship.mjs';
 import storyNames from '../../data/story-names.json' with { type: 'json' };
 import itemTable from '../../data/names/items.json' with { type: 'json' };
+import { pushBack } from './contextmenu.js';
 
 export const FROM_LABEL = perLang(t => Object.freeze(Object.fromEntries(['record', 'auto', 'user', 'ai', 'current'].map(from => [from, t(`import.from.${from}`)]))));
 
@@ -63,14 +65,16 @@ function pickList(entries, fallback) {
   const options = entries.map(e => ({ key: e.key, label: count.get(e.label) > 1 ? `${e.label} (${e.hint})` : e.label, hint: e.hint }));
   const byKey = new Map(options.map(o => [o.key, o.label]));
   const byText = new Map();
-  for (const o of options) for (const text of [o.label, o.hint, o.key]) if (text && !byText.has(norm(text))) byText.set(norm(text), o.key);
+  for (const o of options) for (const text of [o.label, o.hint, o.key]) if (text && !byText.has(squash(text))) byText.set(squash(text), o.key);
   return {
     options,
     label: key => byKey.get(key) ?? (key ? String(key) : ''),
-    find: text => byText.get(norm(text)) ?? fallback?.(text) ?? null,
+    find: text => byText.get(squash(text)) ?? fallback?.(text) ?? null,
   };
 }
 const norm = text => String(text ?? '').normalize('NFC').trim().toLowerCase();
+
+const squash = text => norm(text).replace(/\s+/g, '');
 const available = entry => entry.exists && (!entry.isNonstandard || entry.isNonstandard === 'Past');
 const cache = new WeakMap();
 
@@ -92,7 +96,9 @@ export function choicesFor(sim, lang) {
 
     moves: pickList(Dex.moves.all().filter((m, i, all) => available(m) && !m.isZ && !m.isMax && all.findIndex(o => o.id === m.id) === i)
       .map(m => ({ key: m.id, label: n.moves(m.id), hint: m.name }))),
-    items: pickList(items.filter(item => available(item.engine)).map(item => ({ key: item.id, label: n.item(item.id), hint: english(item) }))),
+
+    items: pickList(items.filter(item => (!item.engine.exists || available(item.engine)) && canHold(item.id, sim))
+      .map(item => ({ key: item.id, label: n.item(item.id), hint: english(item) }))),
     bag: pickList(items.map(item => ({ key: item.id, label: n.bagItem(item.id), hint: english(item) }))),
     abilities: pickList(Dex.abilities.all().filter(a => available(a) && a.id !== 'noability').map(a => ({ key: a.name, label: n.abilities(a.name), hint: a.name }))),
     natures: Dex.natures.all().map(nt => [nt.name, nt.plus ? t('import.natureStats', { nature: n.nature(nt.name), plus: stat(nt.plus), minus: stat(nt.minus) })
@@ -120,7 +126,6 @@ const choseongOf = text => [...text].map(c => {
   const n = c.charCodeAt(0) - HANGUL_FIRST;
   return n >= 0 && n < HANGUL_COUNT ? String.fromCharCode(CHOSEONG_FIRST + Math.floor(n / PER_CHOSEONG)) : c;
 }).join('');
-const squash = text => norm(text).replace(/\s+/g, '');
 
 export function matchesQuery(entry, query) {
   const q = squash(query);
@@ -371,6 +376,7 @@ const CSS = `
   .pkb-import .emo { font-family:"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif; }
   .pkb-import .emoji-in { width:4.5em; font-size:18px; text-align:center; }
   .pkb-import .tags { display:flex; flex-wrap:wrap; gap:4px 12px; }
+  .pkb-import .owner-in { width:12em; max-width:100%; }
   .pkb-import .tag { display:flex; align-items:center; gap:4px; font-size:13px; cursor:pointer; }
   .pkb-import .pick .new { display:flex; flex-direction:column; align-items:flex-start; gap:8px; margin:12px 0 0; }
   .pkb-import .pick .new p { margin:0; font-size:13px; color:#5b768b; }
@@ -453,8 +459,9 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
   const one = mode === 'create' || mode === 'edit';
   const id = `pkb-imp-${++seq}`;
 
-  let wanted = { item: null, name: '', emoji: DEFAULT_EMOJI, add: 1, isNew: false, tags: undefined };
-  const fromPick = () => bagDraft(state, { ...(wanted.isNew ? { name: wanted.name, emoji: wanted.emoji } : { item: wanted.item }), add: wanted.add, tags: wanted.tags });
+  let wanted = { item: null, name: '', emoji: DEFAULT_EMOJI, add: 1, isNew: false, effect: undefined, owner: undefined };
+  const fromPick = () => bagDraft(state, { ...(wanted.isNew ? { name: wanted.name, emoji: wanted.emoji } : { item: wanted.item }), add: wanted.add,
+    effect: wanted.effect, owner: wanted.owner });
   let start = mode === 'bag' ? fromPick() : mode === 'aiAsk' ? manual : given;
   let draft = start, busy = false, failure = '', picker = null, details = false, reading = false;
   let view = one ? start.mons[0].key : null;
@@ -754,19 +761,29 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
     title: t('import.pickBagItem'), value: wanted.isNew ? '' : wanted.item ?? '', groups: bagGroups(sim, state, lang),
     empty: q => {
       const add = el('button', { type: 'button', className: 'btn', textContent: t('import.asNew') });
-      add.onclick = () => { closePicker(); setPick({ isNew: true, item: null, name: q.trim(), tags: undefined }); body.querySelector('.new-name')?.focus(); };
+      add.onclick = () => { closePicker(); setPick({ isNew: true, item: null, name: q.trim(), effect: undefined, owner: undefined }); body.querySelector('.new-name')?.focus(); };
       return el('div', { className: 'new' }, el('p', { textContent: t('import.notGameItem', { name: q.trim() }) }), add);
     },
-    pick: item => setPick({ isNew: false, item, tags: undefined }),
+    pick: item => setPick({ isNew: false, item, effect: undefined, owner: undefined }),
   });
 
-  function tagBoxes(info) {
-    const have = info.tags ?? [];
-    return el('span', { className: 'tags' }, CUSTOM_TAGS.map(tag => {
-      const box = el('input', { type: 'checkbox', checked: have.includes(tag) });
-      box.onchange = () => setPick({ tags: CUSTOM_TAGS.filter(t2 => (t2 === tag ? box.checked : have.includes(t2))) });
-      return el('label', { className: 'tag' }, box, el('span', { textContent: t(`import.tag.${tag}`) }));
+  function effectChoice(info) {
+    const group = `${id}-effect`;
+
+    const now = ITEM_EFFECTS_READY || info.effect === 'food' ? info.effect ?? null : null;
+    return el('span', { className: 'tags' }, [null, ...(ITEM_EFFECTS_READY ? CUSTOM_EFFECTS : ['food'])].map(effect => {
+      const box = el('input', { type: 'radio', name: group, checked: now === effect });
+      box.onchange = () => { if (box.checked) setPick({ effect }); };
+      return el('label', { className: 'tag' }, box, el('span', { textContent: t(effect ? `import.tag.${effect}` : 'import.none') }));
     }));
+  }
+
+  function ownerInput(id) {
+    const shown = ownerName({ ...state, customItems: draft.customItems }, id, species => namesFor(lang, sim).species(toID(species)));
+    const input = el('input', { type: 'text', className: 'owner-in', value: shown, maxLength: NEW_ITEM_MAX });
+    input.setAttribute('aria-label', t('import.owner'));
+    input.onchange = () => setPick({ owner: input.value.trim() });
+    return input;
   }
   function drawBag() {
     const chosen = draft.item;
@@ -786,7 +803,9 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
         row(t('import.picture'), emoji, el('span', { className: 'note', textContent: t('import.pictureNote') })));
     }
     const custom = chosen ? draft.customItems[chosen] : null;
-    if (custom) rows.push(row(t('import.tags'), tagBoxes(custom), el('span', { className: 'note', textContent: t('import.tagsNote') })));
+    if (custom) rows.push(row(t('import.effect'), effectChoice(custom), el('span', { className: 'note', textContent: t('import.effectNote') })));
+
+    if (custom && ITEM_EFFECTS_READY) rows.push(row(t('import.owner'), ownerInput(chosen), el('span', { className: 'note', textContent: t('import.ownerNote') })));
     rows.push(row(t('import.amount'), numberInput(wanted.add, { min: 1, max: BAG_COUNT_MAX, label: t('import.amountToPut'), pick: n => setPick({ add: n }) }),
       chosen ? el('span', { className: 'note', textContent: t('import.bagNow', { n: draft.base.bag[chosen] }) }) : null));
     fillWith(body, el('p', { className: 'intro', textContent: t('import.bagIntroDebug') }),
@@ -806,7 +825,7 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
     fillWith(body, el('div', { className: 'q-body' },
       el('p', { className: 'intro', textContent: t('import.quick.found') }),
       party.length ? [partyHead, el('p', { className: 'q-names', textContent: party.join(' · ') })] : null, boxHead,
-      Number.isSafeInteger(money) ? el('div', { className: 'q-money' }, el('span', { textContent: t('panel.money') }), el('b', { textContent: moneyText(money.toLocaleString(lang), lang) })) : null,
+      Number.isSafeInteger(money) ? el('div', { className: 'q-money' }, el('span', { textContent: t('panel.money') }), el('b', { textContent: moneyAmount(money, lang) })) : null,
       problems ? el('p', { className: 'q-fix', textContent: t('import.quick.toFix', { n: problems }) }) : el('p', { className: 'q-fill', textContent: t('import.quick.fill') }),
       go, link,
       problems ? null : el('p', { className: 'q-note', textContent: t('import.quick.undo') }),
@@ -876,7 +895,7 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
   applyButton.onclick = apply;
 
   let closed = false;
-  async function close() { if (closed) return; closed = true; root.remove(); await onClose(); }
+  async function close() { if (closed) return; closed = true; popBack(); root.remove(); await onClose(); }
 
   function askClose() {
     if (busy) return undefined;
@@ -895,12 +914,17 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
     return undefined;
   }
   root.querySelector('.hd .x').onclick = askClose;
-  root.addEventListener('keydown', e => {
-    if (e.key !== 'Escape') return;
-    e.preventDefault(); e.stopPropagation();
+
+  function goBackOne() {
     if (busy) return;
     if (picker) closePicker();
     else if (view && mode === 'import') { view = null; draw(); } else askClose();
+  }
+  const popBack = pushBack(root, goBackOne);
+  root.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    e.preventDefault(); e.stopPropagation();
+    goBackOne();
   });
   draw();
   root.querySelector('.hd .x').focus();
