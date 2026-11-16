@@ -17,7 +17,10 @@ const FOLDED = Object.freeze({
 });
 const FOLD_SETTINGS = Object.freeze(Object.keys(FOLDED));
 
-export const RULES = Object.freeze({ startFull: Object.freeze({ old: false, now: true }), officialKo: Object.freeze({ old: false, now: true }) });
+// regionMachines: disc numbers in story text follow the region's standard (story/machine-standards.mjs); before it
+// every number meant Scarlet/Violet's disc
+export const RULES = Object.freeze({ startFull: Object.freeze({ old: false, now: true }), officialKo: Object.freeze({ old: false, now: true }),
+  regionMachines: Object.freeze({ old: false, now: true }) });
 const RULE_NAMES = Object.freeze(Object.keys(RULES));
 
 export const ruleValues = ctx => Object.fromEntries(RULE_NAMES.map(name => [name, ctx?.[name] ?? RULES[name].now]));
