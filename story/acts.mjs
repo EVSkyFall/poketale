@@ -312,7 +312,9 @@ export function changesIn(text, chat, ctx, lang) {
   const reading = index >= 0 ? rulesAt(chat)(index) : undefined;
   // A reply not saved yet reads its discs like the message it will become, in the region its own or the latest Status Window names
   const machineReading = reading ?? rulesAt(chat)(messages.length);
-  const own = statusIn({ role: index >= 0 ? messages[index]?.role : 'char', data: text });
+  // Text that is no saved message as it is, is the reply being written, as the display path takes it (pass.at); a saved
+  // user message's Status Window is not the bot's
+  const own = statusIn({ role: same >= 0 ? messages[same]?.role : 'char', data: text });
   const machineRegion = (own ?? (index >= 0 ? at?.status ?? latestStatus(chat, index) : latestStatus(chat)))?.region;
   const chatId = index >= 0 ? messageId(messages[index], index) : null;
   const held = index >= 0 ? heldChanges(chat, table ?? readTable(chat)) : new Set();
