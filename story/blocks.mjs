@@ -100,17 +100,24 @@ const DISC_NUMBER_END = new RegExp(`^(.*?)(\\s*)${KIND_WORD}\\s*[-:.#]?\\s*\\d{1
 const SIGNED_COUNT = /\s[+-]\s*\d[\d,]*$/;
 // Messages before a chat's regionMachines mark keep the TM-only test they were read with
 const LEGACY_TM_NUMBER = /^\s*(?:tm|기술\s*머신)\s*[-:.#]?\s*\d{1,3}\s*$/i;
+// With no reading at all, names are looked up the old way, which reads only a bare disc number as one (TM11, TR43)
+const BARE_DISC_NUMBER = /^\s*(?:tm|hm|tr|기술\s*머신|비전\s*머신|기술\s*레코드)\s*[-:.#]?\s*\d{1,3}\s*$/i;
+
+// A Latin kind word must stand apart from the words around it: Tri-Pass is not a TR, while TM11, TM(Surf), Surf HM and
+// Surf(파도타기)HM are discs
+const apartBefore = (kind, gap, before) => !LATIN_KIND.test(kind) || !!gap || !/[\p{L}\p{N}]$/u.test(before);
+const apartAfter = (kind, after) => !LATIN_KIND.test(kind) || !/^\p{L}/u.test(after);
 
 // A number ending an item line after a disc kind word is the disc's number, not a count, when only region tags or a
 // move come before the kind word (TM11, (Kanto) TM11, TM (Kanto) 11, 거품광선 기술머신11). A sign after a space is always
 // a count (거품광선 기술머신 -1), and so is a number after a kind word that ends some other name (고장난 기술머신 3).
 function discNumberEnds(rest, reading) {
-  const text = rest.replace(PAREN, (all, inner) => (regionIn(inner) ? ' ' : all)).trim();
-  if (SIGNED_COUNT.test(text)) return false;
+  const raw = rest.trim();
+  if (SIGNED_COUNT.test(raw)) return false;
+  const text = raw.replace(PAREN, (all, inner) => (regionIn(inner) ? ' ' : all)).trim();
   const m = DISC_NUMBER_END.exec(text);
-  if (!m) return false;
-  if (LATIN_KIND.test(m[3]) && !m[2] && /[\p{L}\p{N}]$/u.test(m[1])) return false;
-  const left = m[1].replace(PAREN, ' ').replace(/[\s\-:.#]+/g, ' ').trim();
+  if (!m || !apartBefore(m[3], m[2], m[1])) return false;
+  const left = m[1].replace(/[\s\-:.#]+/g, ' ').trim();
   return !left || !!moveNamed(m[1], reading);
 }
 
@@ -126,36 +133,43 @@ const kindOf = word => {
 function machineParts(raw, isMove) {
   const text = String(raw ?? '');
   const head = MACHINE_HEAD.exec(text);
-  if (head && head[2].trim() && (!LATIN_KIND.test(head[1]) || /^[\s\-:.#\d]/.test(head[2]))) return { kind: kindOf(head[1]), rest: head[2] };
+  if (head && head[2].trim() && apartAfter(head[1], head[2])) return { kind: kindOf(head[1]), rest: head[2] };
   const after = MACHINE_AFTER.exec(text);
-  if (after && (!LATIN_KIND.test(after[3]) || after[2]) && isMove(after[1])) return { kind: kindOf(after[3]), rest: `${after[4]} ${after[1]}` };
+  if (after && apartBefore(after[3], after[2], after[1]) && isMove(after[1])) return { kind: kindOf(after[3]), rest: `${after[4]} ${after[1]}` };
   const tail = MACHINE_TAIL.exec(text);
-  if (tail && tail[1].trim() && (!LATIN_KIND.test(tail[3]) || tail[2])) return { kind: kindOf(tail[3]), rest: tail[1] };
+  if (tail && tail[1].trim() && apartBefore(tail[3], tail[2], tail[1])) return { kind: kindOf(tail[3]), rest: tail[1] };
   return null;
+}
+
+const opensParen = c => c === '(' || c === WIDE_OPEN, closesParen = c => c === ')' || c === WIDE_CLOSE;
+
+// Where the parenthesized group that ends the text opens, or -1
+function trailingGroup(text) {
+  if (!closesParen(text.at(-1))) return -1;
+  let depth = 0;
+  for (let i = text.length - 1; i >= 0; i--) {
+    if (closesParen(text[i])) depth++;
+    else if (opensParen(text[i]) && --depth === 0) return i;
+  }
+  return -1;
 }
 
 // The bot is shown names as English(Korean) the first time; a trailing Korean gloss after English text is dropped
 function dropGloss(raw) {
   const text = String(raw ?? '').trim();
-  const opens = c => c === '(' || c === WIDE_OPEN, closes = c => c === ')' || c === WIDE_CLOSE;
-  if (!closes(text.at(-1))) return text;
-  let depth = 0;
-  for (let i = text.length - 1; i >= 0; i--) {
-    if (closes(text[i])) depth++;
-    else if (opens(text[i]) && --depth === 0) {
-      const before = text.slice(0, i);
-      return /[가-힣]/.test(text.slice(i)) && /[a-z]/i.test(before) ? before.trim() : text;
-    }
-  }
-  return text;
+  const at = trailingGroup(text);
+  if (at < 0) return text;
+  const before = text.slice(0, at);
+  return /[가-힣]/.test(text.slice(at)) && /[a-z]/i.test(before) ? before.trim() : text;
 }
 
-// A move as the bot writes it: as it is, with its Korean gloss dropped (Thunderbolt(10만볼트)), or inside one pair of
-// parentheses (TM (Thunderbolt(10만볼트)))
+// A move as the bot writes it: as it is, without a trailing gloss in either language (Thunderbolt(10만볼트), 10만볼트
+// (Thunderbolt)), since move names hold no parentheses, or inside one pair of parentheses (TM (Thunderbolt(10만볼트)))
 function moveNamed(raw, reading) {
   const text = String(raw ?? '').trim().replace(/[\s\-:.#]+$/, '');
-  const inner = OUTER_PAREN.exec(text)?.[1];
-  for (const t of new Set([text, dropGloss(text), inner, inner && dropGloss(inner)])) {
+  const bare = t => { const at = trailingGroup(t); return at > 0 ? t.slice(0, at).trim() : t; };
+  const inner = OUTER_PAREN.exec(text)?.[1]?.trim();
+  for (const t of new Set([text, bare(text), inner, inner && bare(inner)])) {
     const move = t && lookupId('moves', t, { reading });
     if (move) return move;
   }
@@ -698,7 +712,8 @@ function parseOp(op, value, errors, warnings, reading) {
     case 'item': {
       const { emoji, rest } = splitEmoji(value);
 
-      const { name, n } = (reading?.regionMachines === false ? LEGACY_TM_NUMBER.test(rest) : discNumberEnds(rest, reading)) ? { name: rest, n: 1 } : tailCount(rest, 1);
+      const discNumber = reading?.regionMachines ? discNumberEnds(rest, reading) : (reading?.regionMachines === false ? LEGACY_TM_NUMBER : BARE_DISC_NUMBER).test(rest);
+      const { name, n } = discNumber ? { name: rest, n: 1 } : tailCount(rest, 1);
       const item = itemOf(name, emoji, value, errors, reading);
       if (!item) return null;
       if (!Number.isSafeInteger(n)) { errors.push(note('itemCountBig', { value })); return null; }
