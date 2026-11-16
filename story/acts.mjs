@@ -312,7 +312,8 @@ export function changesIn(text, chat, ctx, lang) {
   const reading = index >= 0 ? rulesAt(chat)(index) : undefined;
   // A reply not saved yet reads its discs like the message it will become, in the region its own or the latest Status Window names
   const machineReading = reading ?? rulesAt(chat)(messages.length);
-  const machineRegion = (statusIn({ role: 'char', data: text }) ?? (index >= 0 ? at?.status ?? latestStatus(chat, index) : latestStatus(chat)))?.region;
+  const own = statusIn({ role: index >= 0 ? messages[index]?.role : 'char', data: text });
+  const machineRegion = (own ?? (index >= 0 ? at?.status ?? latestStatus(chat, index) : latestStatus(chat)))?.region;
   const chatId = index >= 0 ? messageId(messages[index], index) : null;
   const held = index >= 0 ? heldChanges(chat, table ?? readTable(chat)) : new Set();
   const events = [], errors = [];

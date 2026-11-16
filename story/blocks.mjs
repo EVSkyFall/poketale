@@ -64,8 +64,12 @@ export function lookupId(kind, raw, { allLetters = false, reading } = {}) {
     const ref = machineRef(raw, reading);
     if (ref !== undefined) return ref;
   }
-  if (id && Object.hasOwn(table, id)) return id;
-  return names.get(id) ?? names.get(k) ?? aliases.get(k) ?? (kind === 'items' && !reading?.regionMachines ? legacyTmId(raw, reading) : null);
+  // Messages before a chat's regionMachines mark never saw region discs: their names and ids read as they always did
+  const unseen = found => kind === 'items' && reading?.regionMachines === false && isTm(found) && parseMachineId(found).std !== DEFAULT_STANDARD;
+  if (id && Object.hasOwn(table, id) && !unseen(id)) return id;
+  const named = names.get(id) ?? names.get(k) ?? aliases.get(k);
+  if (named && !unseen(named)) return named;
+  return kind === 'items' && !reading?.regionMachines ? legacyTmId(raw, reading) : null;
 }
 
 // The reading before region standards, kept as it was for messages before a chat's regionMachines mark and for text
@@ -82,11 +86,15 @@ const MACHINE_KIND_WORDS = Object.freeze({ tm: ['tm', '기술머신'], hm: ['hm'
 const KIND_WORD = '(tm|hm|tr|기술\\s*머신|비전\\s*머신|기술\\s*레코드)';
 const MACHINE_HEAD = new RegExp(`^\\s*${KIND_WORD}(.*)$`, 'i');
 const MACHINE_TAIL = new RegExp(`^(.*?)([\\s\\-:.]*)${KIND_WORD}\\s*$`, 'i');
-const MACHINE_AFTER = new RegExp(`^(.*?\\S)\\s+${KIND_WORD}\\s*[-:.#]?\\s*(\\d{1,3})\\s*$`, 'i');
+const MACHINE_AFTER = new RegExp(`^(.*?\\S)(\\s*)${KIND_WORD}\\s*[-:.#]?\\s*(\\d{1,3})\\s*$`, 'i');
 const LATIN_KIND = /^[a-z]+$/i;
 // Parentheses, also the fullwidth ones a Japanese reply uses (built from code points so the font subset ignores them)
 const [WIDE_OPEN, WIDE_CLOSE] = [0xff08, 0xff09].map(c => String.fromCharCode(c));
 const PAREN = new RegExp(`[(${WIDE_OPEN}]([^()${WIDE_OPEN}${WIDE_CLOSE}]*)[)${WIDE_CLOSE}]`, 'g');
+// A disc number ending an item line is the disc's, not a count (TM11, (Kanto) TM11, 거품광선 기술머신11); messages before
+// a chat's regionMachines mark keep the TM-only test they were read with
+const DISC_NUMBER_END = new RegExp(`(?:(?:^|[\\s()${WIDE_OPEN}${WIDE_CLOSE}])(?:tm|hm|tr)|기술\\s*머신|비전\\s*머신|기술\\s*레코드)\\s*[-:.#]?\\s*\\d{1,3}\\s*$`, 'i');
+const LEGACY_TM_NUMBER = /^\s*(?:tm|기술\s*머신)\s*[-:.#]?\s*\d{1,3}\s*$/i;
 
 const kindOf = word => {
   const w = word.toLowerCase().replace(/\s+/g, '');
@@ -101,14 +109,15 @@ function machineParts(raw) {
   const head = MACHINE_HEAD.exec(text);
   if (head && head[2].trim() && (!LATIN_KIND.test(head[1]) || /^[\s\-:.#\d]/.test(head[2]))) return { kind: kindOf(head[1]), rest: head[2] };
   const after = MACHINE_AFTER.exec(text);
-  if (after) return { kind: kindOf(after[2]), rest: `${after[3]} ${after[1]}` };
+  if (after && (!LATIN_KIND.test(after[3]) || after[2])) return { kind: kindOf(after[3]), rest: `${after[4]} ${after[1]}` };
   const tail = MACHINE_TAIL.exec(text);
   if (tail && tail[1].trim() && (!LATIN_KIND.test(tail[3]) || tail[2])) return { kind: kindOf(tail[3]), rest: tail[1] };
   return null;
 }
 
 // The bot is shown names as English(Korean) the first time; a trailing Korean gloss after English text is dropped
-function dropGloss(text) {
+function dropGloss(raw) {
+  const text = raw.trim();
   if (!text.endsWith(')')) return text;
   let depth = 0;
   for (let i = text.length - 1; i >= 0; i--) {
@@ -141,10 +150,10 @@ const tagStandard = region => regionStandard(region) ?? DEFAULT_STANDARD;
 // a number that does not match it; a move the standard has no disc for, or a kind it has none of (HMs in Paldea), is
 // looked up in the nearest standards instead. "TM" is often said of any disc, so it takes the standard's disc of
 // whatever kind (TM Surf in Kanto is HM03); "HM" and "TR" are said on purpose and keep their kind (HM03 Surf in Paldea
-// is still an HM).
+// is still an HM, and an HM no game had is no disc).
 function machineRef(raw, reading) {
   let tagged = null;
-  const text = dropGloss(String(raw ?? '')).replace(PAREN, (all, inner) => {
+  const text = String(raw ?? '').replace(PAREN, (all, inner) => {
     const region = regionIn(inner);
     if (!region) return all;
     tagged ??= tagStandard(region);
@@ -154,15 +163,18 @@ function machineRef(raw, reading) {
   if (!parts) return undefined;
   const std = tagged ?? reading?.machineStd ?? DEFAULT_STANDARD;
   const rest = parts.rest.replace(/^[\s\-:.#]+/, '').trim();
+  // Region tags are already out, so a Korean gloss after an English move is all dropGloss can take; a Korean move
+  // in parentheses (TM (거품광선)) has no English before it and stays
+  const moveOf = t => lookupId('moves', t, { reading }) ?? lookupId('moves', dropGloss(t), { reading });
   // The whole rest first: Korean move names can start with digits (10만볼트)
-  const whole = lookupId('moves', rest, { reading });
+  const whole = moveOf(rest);
   const m = /^(\d{1,3})(?!\d)\s*[-:.]?\s*(.*)$/.exec(rest);
   const number = !whole && m ? Number(m[1]) : null;
-  const move = whole ?? (m?.[2] ? lookupId('moves', m[2].trim(), { reading }) : null);
+  const move = whole ?? (m?.[2] ? moveOf(m[2].trim()) : null);
   if (move) {
     const order = nearestStandards(std);
-    const kept = parts.kind === 'tm' ? null : order.map(s => machineByMove(s, move, parts.kind, { exact: true })).find(Boolean);
-    return kept ?? order.map(s => machineByMove(s, move, parts.kind)).find(Boolean) ?? null;
+    if (parts.kind !== 'tm') return order.map(s => machineByMove(s, move, parts.kind, { exact: true })).find(Boolean) ?? null;
+    return order.map(s => machineByMove(s, move, parts.kind)).find(Boolean) ?? null;
   }
   if (number === null) return null;
   const own = machineByNumber(std, parts.kind, number);
@@ -654,7 +666,7 @@ function parseOp(op, value, errors, warnings, reading) {
     case 'item': {
       const { emoji, rest } = splitEmoji(value);
 
-      const { name, n } = /(?:^|[\s()])(?:tm|hm|tr|기술\s*머신|비전\s*머신|기술\s*레코드)\s*[-:.#]?\s*\d{1,3}\s*$/i.test(rest) ? { name: rest, n: 1 } : tailCount(rest, 1);
+      const { name, n } = (reading?.regionMachines ? DISC_NUMBER_END : LEGACY_TM_NUMBER).test(rest) ? { name: rest, n: 1 } : tailCount(rest, 1);
       const item = itemOf(name, emoji, value, errors, reading);
       if (!item) return null;
       if (!Number.isSafeInteger(n)) { errors.push(note('itemCountBig', { value })); return null; }
