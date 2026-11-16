@@ -11,7 +11,7 @@ import { itemId, customInfo } from './custom-items.mjs';
 import { say } from './screen-text.mjs';
 import { commandsIn } from './commands.mjs';
 import { answeredLine } from './act-prompts.mjs';
-import { dropTaken, statusIn, latestStatus, compatStartRegion } from './compat.mjs';
+import { dropTaken, statusIn, latestStatus, compatWorld } from './compat.mjs';
 import { withMachineStandard } from './machine-standards.mjs';
 
 export const QUEUE_VAR = '$pkb_queue';
@@ -321,7 +321,7 @@ export function changesIn(text, chat, ctx, lang) {
   const events = [], errors = [];
   for (const [n, block] of blocks.entries()) {
     if (held.has(changeAt(index, n))) { errors.push(heldLine(lang)); continue; }
-    const { ops, errors: unread } = parseChange(block.body, withMachineStandard(machineReading, machineRegion, compatStartRegion(chat)));
+    const { ops, errors: unread } = parseChange(block.body, withMachineStandard(machineReading, machineRegion, compatWorld(chat)));
     errors.push(...unread.map(note => ruleText(note, lang)));
     if (!state) { events.push(...ops.map(op => eventOf({ op, before: null, after: null }, null))); continue; }
     const result = applyOps(state, ops, at, `${chatId}:${block.key}`, table, { trace: true });

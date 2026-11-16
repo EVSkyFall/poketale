@@ -43,10 +43,15 @@ export function machineUsedUp(id) {
 	return !MACHINE_STANDARDS[m.std].reusableTm;
 }
 
+// Pokémon Journeys (the 2019 anime) is set in the generation-8 era in every region it visits
+export const JOURNEYS_STANDARD = 'swsh';
+
 // Region ids are the ones story/compat.mjs reads from the compatible bot's Status Window (data/status-words.json).
-// startRegion is that bot's starting region (1 Kanto ... 9 Paldea): it keeps Kanto in its original era when the
-// journey starts there, and in the Johto era otherwise.
-export function regionStandard(region, startRegion = null) {
+// world is the bot's (story/compat.mjs compatWorld): its starting region (1 Kanto ... 9 Paldea) keeps Kanto in its
+// original era when the journey starts there, and in the Johto era otherwise; a Journeys story uses one standard
+// everywhere, also where no region is known. Without a world, a region names the standard printed on its discs.
+export function regionStandard(region, { startRegion = null, journeys = false } = {}) {
+	if (journeys) return JOURNEYS_STANDARD;
 	switch (region) {
 		case 'kanto': return startRegion && startRegion !== 1 ? 'gs' : 'rb';
 		case 'johto': return 'gs';
@@ -63,9 +68,9 @@ export function regionStandard(region, startRegion = null) {
 
 // Adds the standard that machine numbers written in this message are read with. Messages before a chat's
 // regionMachines mark keep the Scarlet/Violet reading they always had (story/setting-changes.mjs RULES).
-export const withMachineStandard = (reading, region, startRegion) => ({
-	...reading, startRegion: startRegion ?? null,
-	machineStd: reading?.regionMachines ? regionStandard(region, startRegion) ?? DEFAULT_STANDARD : DEFAULT_STANDARD,
+export const withMachineStandard = (reading, region, world) => ({
+	...reading,
+	machineStd: reading?.regionMachines ? regionStandard(region, world ?? undefined) ?? DEFAULT_STANDARD : DEFAULT_STANDARD,
 });
 
 const ORDER = new Map(STANDARD_IDS.map((s, i) => [s, i]));

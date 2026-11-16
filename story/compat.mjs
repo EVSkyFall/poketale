@@ -75,6 +75,14 @@ export const compatLang = chat => OUR_LANG[compatBotLang(chat)] ?? null;
 const START_REGIONS = new Map(Array.from({ length: 9 }, (_, i) => [String(i + 1), i + 1]));
 export const compatStartRegion = chat => compatVar(chat, 'yp_StartRegion', START_REGIONS);
 
+// The bot's world as disc standards need it: its starting region, and whether the story is Pokémon Journeys
+// (Kanto start, adventure 4), which the bot sets in the generation-8 era in every region
+export const COMPAT_WORLD_VARS = Object.freeze(['$yp_StartRegion', '$yp_Adventure']);
+export function compatWorld(chat) {
+  const startRegion = compatStartRegion(chat);
+  return { startRegion, journeys: startRegion === 1 && String(chat?.scriptstate?.$yp_Adventure ?? '').trim() === '4' };
+}
+
 export const COMPAT_TRAINER_GENDER_VAR = 'yp_GenericTrainerGender';
 const COMPAT_TRAINER_GENDERS = new Map([['2', 'M'], ['3', 'F']]);
 
