@@ -209,14 +209,19 @@ export class BattleAudio {
   }
 
   // A pack can hold several voices for one Pokémon (every line of a voice rip): each cry picks one at random from the
-  // pack as read so far (preloading reads it), so a slow storage read never holds a cry back. Line 0 is the plain
-  // path, which preloading has already loaded.
-  cryVoice(path) {
+  // pack as read so far (preloading reads it), so a slow storage read never holds a cry back. A moment ('appear',
+  // 'faint', 'move', 'happy') narrows the pick to the lines the game itself plays then, when the pack knows any.
+  // Line 0 is the plain path, which preloading has already loaded.
+  cryVoice(path, moment = null) {
     if (!path || !this.cries || this.silent || this.destroyed) return path;
     this.readPack().catch(() => {});
-    let count = 0;
-    try { count = this.pack?.variants?.(path.slice('cry/'.length, -'.m4a'.length)) ?? 0; } catch (error) { this.note(`Cry pack failed: ${path} (${error?.message ?? error})`); }
-    const line = count > 1 ? Math.floor(Math.random() * count) : 0;
+    let count = 0, fitting = [];
+    try {
+      const key = path.slice('cry/'.length, -'.m4a'.length);
+      count = this.pack?.variants?.(key) ?? 0;
+      if (moment) fitting = this.pack?.lines?.(key, moment) ?? [];
+    } catch (error) { this.note(`Cry pack failed: ${path} (${error?.message ?? error})`); }
+    const line = fitting.length ? fitting[Math.floor(Math.random() * fitting.length)] : count > 1 ? Math.floor(Math.random() * count) : 0;
     return line ? `${path}#${line}` : path;
   }
 
@@ -332,9 +337,9 @@ export class BattleAudio {
     });
   }
 
-  cry(mon, slow = false) { return this.play(this.cryVoice(this.cryPath(mon)), slow ? 0.85 : 1); }
+  cry(mon, slow = false, moment = null) { return this.play(this.cryVoice(this.cryPath(mon), moment), slow ? 0.85 : 1); }
 
-  faintCry(mon) { return this.play(this.cryVoice(this.cryPath(mon)), 0.85, undefined, { maxMs: 3000 }); }
+  faintCry(mon) { return this.play(this.cryVoice(this.cryPath(mon), 'faint'), 0.85, undefined, { maxMs: 3000 }); }
 
   playUi(name) {
     if (this.destroyed || !UI_SOUNDS.includes(name)) return;

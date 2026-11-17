@@ -174,6 +174,14 @@ Move animation data, by upstream `battle-anims/REUSE.toml`:
   `story/training.mjs` and `view/training.js`. No PlayNav training pictures, sounds or layouts; the
   bags and the meter are drawn in code.
 
+### 1.10 PokéPark 2 voice-line table
+
+- `data/pokepark2-voices.json`: which PokéPark 2 voice stream belongs to which Pokémon, and at which
+  moments the game plays it (greeting, hurt, attacking or angry, happy), read by hand out of the
+  game's sound-bank cue tables and the scripts that play them. Numbers only: no audio, names or text
+  of the game. PokéPark 2 belongs to Nintendo, Creatures Inc. and GAME FREAK inc. (section 4); the
+  voices themselves are the player's own files (section 2).
+
 ---
 
 ## 2. Downloaded at runtime (not in this repository, not in the plugin file)

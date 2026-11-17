@@ -1,4 +1,5 @@
 import CRIES from '../data/pokerogue-cries.json' with { type: 'json' };
+import VOICES from '../data/pokepark2-voices.json' with { type: 'json' };
 
 // A voice pack: a zip of voice lines exactly as the player downloaded it, such as the PokéPark 2 rips on The Sounds
 // Resource. Each Pokémon's lines sit in a folder named after it, at any depth; the rips of the playable characters
@@ -50,13 +51,34 @@ const TYPES = { wav: 'audio/wav', ogg: 'audio/ogg', oga: 'audio/ogg', opus: 'aud
 // PokéPark 2 files its playable characters' voices under their Japanese names.
 const CHARACTERS = { PIKA: 25, MIJU: 501, TUTA: 495, POKA: 498 };
 
+// A PokéPark 2 rip names each file after its stream in the game's sound bank, which says whose line it is even where
+// the rip files it under another Pokémon's folder, and in which moments the game plays it (data/pokepark2-voices.json).
+const STREAM = /^S_(POKE|PIKA|MIJU|TUTA|POKA)_VOICE_streamfiles(?:_(\d+)| \[(\d+)\])$/i;
+// The game's own lines for a moment first; when a pack holds none of them, the slot that means that moment for
+// nearly every Pokémon.
+const TIERS = [VOICES.moments, VOICES.slots ?? {}].map(table => new Map(Object.entries(table).map(([bank, moments]) =>
+  [bank, new Map(Object.entries(moments).map(([moment, streams]) => [moment, new Set(streams)]))])));
+
+function gameStream(file) {
+  const found = STREAM.exec(file);
+  if (!found) return null;
+  const bank = found[1].toUpperCase();
+  const bracket = found[2] === undefined ? Number(found[3]) : null;
+  const stream = bracket === null ? Number(found[2]) : bracket - 1;
+  const dex = bank === 'POKE' ? VOICES.dex[stream] : CHARACTERS[bank];
+  return dex ? { bank, stream, bracket, dex } : null;
+}
+
 // Where a file sits: the species, how surely the path names it, and the folder its lines share.
-// A correctly named folder nearest the file wins; then the game's file-name prefix; then a misspelt folder, but only
-// beside correctly named ones, so a wrapper such as "Audio" (one edit from Audino) never passes for a species.
+// The game's stream name wins (all of a bank's streams share one home); then a correctly named folder nearest the
+// file; then the game's file-name prefix; then a misspelt folder, but only beside correctly named ones, so a wrapper
+// such as "Audio" (one edit from Audino) never passes for a species.
 function locate(name, folderOf, besideSpecies) {
   const audio = AUDIO_FILE.exec(name);
   if (!audio) return null;
   const [, dir, file] = audio;
+  const stream = gameStream(file);
+  if (stream) return { dex: stream.dex, score: [-1, 0], home: `#${stream.bank}` };
   const folders = dir.split('/').slice(0, -1);
   const at = rank => {
     for (let i = folders.length - 1; i >= 0; i--) {
@@ -167,15 +189,50 @@ export async function entryBytes(bytes, entry) {
   return new Uint8Array(await new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer());
 }
 
-// variants(key) is how many voices the pack holds for that Pokémon; url(key, n) gives one of them.
+// The lines of each Pokémon that the game plays at each moment, as positions in its line list.
+// A rip numbered from 1 that lacks some of a bank's streams (the Japanese Snivy rip has 24 of 25) shifts every later
+// number down; it is told apart by its highest number.
+function momentLines(voices) {
+  const found = new Map();
+  for (const [dex, names] of voices) {
+    const streams = names.map(name => gameStream(AUDIO_FILE.exec(name)[2]));
+    const highest = new Map();
+    for (const s of streams) if (s?.bracket != null) highest.set(s.bank, Math.max(highest.get(s.bank) ?? 0, s.bracket));
+    const tiers = TIERS.map(() => new Map());
+    streams.forEach((s, line) => {
+      if (!s) return;
+      let stream = s.stream;
+      const gap = VOICES.bracketGaps?.[s.bank];
+      if (s.bracket != null && gap && highest.get(s.bank) === gap.streams - gap.missing.length) {
+        for (const missing of gap.missing) if (stream >= missing) stream++;
+      }
+      TIERS.forEach((tier, i) => {
+        for (const [moment, wanted] of tier.get(s.bank) ?? []) {
+          if (!wanted.has(stream)) continue;
+          if (!tiers[i].has(moment)) tiers[i].set(moment, []);
+          tiers[i].get(moment).push(line);
+        }
+      });
+    });
+    const lines = new Map();
+    for (const tier of tiers) for (const [moment, list] of tier) if (!lines.has(moment)) lines.set(moment, list);
+    if (lines.size) found.set(dex, lines);
+  }
+  return found;
+}
+
+// variants(key) is how many voices the pack holds for that Pokémon; url(key, n) gives one of them; lines(key, moment)
+// lists which of them the game plays at that moment ('appear', 'faint', 'move', 'happy'), empty when none is known.
 export function openCryPack(bytes) {
   const entries = readZip(bytes), urls = new Map();
   const voices = indexCries([...entries].filter(([, entry]) => entry.method === 0 || entry.method === 8).map(([name]) => name));
+  const moments = momentLines(voices);
   return {
     count: voices.size,
     species: () => voices.keys(),
     has: key => voices.has(cryDex(key)),
     variants: key => voices.get(cryDex(key))?.length ?? 0,
+    lines: (key, moment) => moments.get(cryDex(key))?.get(moment) ?? [],
     // Blob URLs are never revoked: every play clones the cached audio element and reloads its source.
     url(key, variant = 0) {
       const names = voices.get(cryDex(key));
@@ -203,6 +260,7 @@ export function combineCryPacks(packs) {
     species: () => new Set(list.flatMap(pack => [...pack.species()])).values(),
     has: key => owners(key).length > 0,
     variants: key => owners(key)[0]?.variants(key) ?? 0,
+    lines: (key, moment) => owners(key)[0]?.lines?.(key, moment) ?? [],
     async url(key, variant = 0) {
       let failure = null;
       for (const pack of owners(key)) {

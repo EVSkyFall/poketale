@@ -902,7 +902,7 @@ export default Object.freeze({
   'settings.row.sound': 'Sound',
   'settings.help.sound': 'Battle music and sound effects',
   'settings.row.cryPack': 'Cry Pack',
-  'settings.help.cryPack': 'Loads the PokéPark 2 voice zips from The Sounds Resource (the "Miscellaneous Voices" zip and the character zips) as downloaded, several at once.\nPacks higher in the list are used first, and a Pokémon with several lines says a random one each time. Pokémon in no pack keep the game cries.\nPlays only while Sound is on.',
+  'settings.help.cryPack': 'Loads the PokéPark 2 voice zips from The Sounds Resource (the "Miscellaneous Voices" zip and the character zips) as downloaded, several at once.\nPacks higher in the list are used first. A Pokémon says the line the game plays at the same moment: a greeting when it comes out, a hurt cry when it faints, a shout in a move, a happy line when pleased. Where the pack lacks that line, it says the kind of line most Pokémon use then, and a random one when even that is missing. Pokémon in no pack keep the game cries.\nPlays only while Sound is on.',
   'settings.row.moveAnims': 'Move Animations',
   'settings.help.moveAnims': 'When off, only the messages and HP changes are shown, without move animations.',
   'settings.row.silhouette': 'Opposing Trainer',

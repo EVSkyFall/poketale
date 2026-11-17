@@ -902,7 +902,7 @@ export default Object.freeze({
   'settings.row.sound': '소리',
   'settings.help.sound': '배틀 음악과 효과음',
   'settings.row.cryPack': '울음소리 팩',
-  'settings.help.cryPack': 'The Sounds Resource의 PokéPark 2 음성 .zip(‘Miscellaneous Voices’와 캐릭터별 파일)을 내려받은 그대로, 여러 개를 한 번에 불러올 수 있습니다.\n위에 있는 팩부터 쓰고, 음성이 여럿인 포켓몬은 울 때마다 그중 하나가 무작위로 나옵니다. 어느 팩에도 없는 포켓몬은 게임 울음소리로 웁니다.\n소리를 켜야 들립니다.',
+  'settings.help.cryPack': 'The Sounds Resource의 PokéPark 2 음성 .zip(‘Miscellaneous Voices’와 캐릭터별 파일)을 내려받은 그대로, 여러 개를 한 번에 불러올 수 있습니다.\n위에 있는 팩부터 씁니다. 대사는 게임이 같은 장면에서 쓰던 것으로 골라, 나올 때는 인사, 쓰러질 때는 아파하는 소리, 기술을 쓸 때는 기합, 기쁠 때는 기뻐하는 소리가 나옵니다. 그 장면 대사가 팩에 없으면 대부분의 포켓몬이 그 장면에 쓰는 종류의 대사로, 그것도 없으면 무작위로 고릅니다. 어느 팩에도 없는 포켓몬은 게임 울음소리로 웁니다.\n소리를 켜야 들립니다.',
   'settings.row.moveAnims': '기술 애니메이션',
   'settings.help.moveAnims': '끄면 기술 연출 없이 문구와 HP 변화만 나옵니다.',
   'settings.row.silhouette': '상대 트레이너',
