@@ -394,7 +394,7 @@ const healOf = (item, target) => (item.heal === 'full' ? target.maxhp : item.hea
 function useItem(sim, battle, state, choice, side = battle.sides[0]) {
 	const item = bagItem(battle, choice.item);
 	const target = side.pokemon.find(p => p.m.uid === choice.target);
-	if (!target || (target.fainted && !item.revive)) return;
+	if (!target) return;
 	const effect = itemEffect(item, choice.item);
 	const from = `[from] ${effect.fullname}`;
 	const label = Object.hasOwn(BAG_ITEMS, choice.item) ? [] : [item.name];
