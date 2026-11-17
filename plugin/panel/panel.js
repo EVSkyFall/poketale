@@ -393,7 +393,10 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
           const onRename = async name => {
             try { await queueAction(actions.nickname(mon, name), target); return true; } catch (error) { console.warn('[poke-battle] 별명', error); return false; }
           };
-          await screens.session(open => open.summary(mon, onRename, now?.state.customItems));
+          const onEvolveLock = async locked => {
+            try { await queueAction(actions.evolveLock(mon, locked), target); return true; } catch (error) { console.warn('[poke-battle] 진화 설정', error); return false; }
+          };
+          await screens.session(open => open.summary(mon, onRename, now?.state.customItems, onEvolveLock));
           return void await refresh({ force: true });
         }
         case 'levelup': return void await (place() === 'window' ? levelUpWindow(effect.uid, target, lang) : levelUpStep(effect.uid, target, lang));

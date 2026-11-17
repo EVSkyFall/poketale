@@ -19,6 +19,7 @@ export function engineMember(mon, customItems = null) {
 	if (mon.friendship !== undefined) member.friendship = mon.friendship;
 	if (mon.friendshipCarry) member.friendshipCarry = mon.friendshipCarry;
 	if (friendshipLocked(mon)) member.friendshipLocked = true;
+	if (mon.evolveLocked === true) member.evolveLocked = true;
 	if (mon.counts) member.counts = { ...mon.counts };
 	return member;
 }

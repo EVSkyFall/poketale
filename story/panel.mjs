@@ -2,7 +2,7 @@ import { BAG_ITEMS } from '../engine/bag.mjs';
 import { BALLS } from '../engine/capture.mjs';
 import { expForLevel, growthOf } from '../engine/exp.mjs';
 import { STATS, displayName, heldItemForm, spriteIdOf } from '../engine/mon.mjs';
-import { itemEvolution, tradeEvolution, tradePair, evolutionItems, spinEvolution, ABSENT_TRADE_EVOLUTION } from '../engine/evolution.mjs';
+import { itemEvolution, tradeEvolution, tradePair, evolutionItems, spinEvolution, evolveLocked, evolveTraits, ABSENT_TRADE_EVOLUTION } from '../engine/evolution.mjs';
 import { applyOps, emptyState, maxHp, movePp, toID, clone, healParty, rememberableMoves, friendshipOf, evolutionCheck, isEgg, hatched, hatchedParty, breedingOf, stateFormat,
   restsLeft, restHelps, SHORT_RESTS } from './state.mjs';
 import { EGG_SPRITE, compatHearts } from '../engine/breeding.mjs';
@@ -63,7 +63,7 @@ export function itemLabel(state, id, names, { bag = false } = {}) {
 
 const monName = (mon, sim, names) => displayName(sim.Dex, names, mon.set.species, mon.set.name);
 
-export const LOCK_FREE = new Set(['nickname', 'boxname']);
+export const LOCK_FREE = new Set(['nickname', 'boxname', 'evolvelock']);
 
 const evolutionItemCache = new WeakMap();
 
@@ -100,19 +100,21 @@ export function stoneEvolution(ctx, mon, id, party = []) {
   return itemEvolution(ctx.sim.Dex, evolving, id, now);
 }
 
+const pairMon = mon => ({ species: mon.set.species, item: mon.set.item, ...evolveTraits(mon) });
+
 export function cordEvolutions(ctx, mon, party = []) {
   const { mon: evolving, now } = evolutionCheck(ctx, mon, party);
   const trade = tradeEvolution(ctx.sim.Dex, evolving, now);
   if (!trade) return null;
   const first = { uid: mon.uid, into: trade.into, ...(trade.consumeHeld ? { consumeHeld: true } : {}) };
   const other = trade.with && hatched(party).find(m => m.uid !== mon.uid && toID(ctx.sim.Dex.species.get(m.set.species).name) === toID(trade.with));
-  const into = other && tradePair(ctx.sim.Dex, { species: mon.set.species, item: mon.set.item }, { species: other.set.species, item: other.set.item })?.[1];
+  const into = other && tradePair(ctx.sim.Dex, pairMon(mon), pairMon(other))?.[1];
   return into ? [first, { uid: other.uid, into }] : [first];
 }
 
 export function swapEvolutions(ctx, a, b) {
   if ((ctx.tradeEvolution ?? ABSENT_TRADE_EVOLUTION) !== 'level' || hatched([a, b]).length < 2) return null;
-  const into = tradePair(ctx.sim.Dex, { species: a.set.species, item: a.set.item }, { species: b.set.species, item: b.set.item });
+  const into = tradePair(ctx.sim.Dex, pairMon(a), pairMon(b));
   return into && [[a, into[0]], [b, into[1]]].filter(([, to]) => to).map(([mon, to]) => ({ uid: mon.uid, into: to }));
 }
 
@@ -196,11 +198,19 @@ export function useCheck(mon, itemId, ctx, lang, party = [], format = DEFAULT_FO
     return useful ? { ok: true } : no;
   }
   if (kind === 'candy') return mon.set.level < MAX_LEVEL ? { ok: true } : no;
-  if (kind === 'stone') { const into = stoneEvolution(ctx, mon, id, party); return into ? { ok: true, evolutions: [{ uid: mon.uid, into }] } : no; }
+  // A Pokémon that will not evolve says so when the item would otherwise evolve it
+  const refused = (kind === 'stone' || kind === 'evolve') && evolveLocked(sim.Dex, { species: mon.set.species, ...evolveTraits(mon) })
+    && { ok: false, reason: say(lang, 'panel.refusesEvolution', { mon: p(monName(mon, sim, names), '은/는') }) };
+  const freed = refused && { ...mon, evolveLocked: false, set: { ...mon.set, gigantamax: false } };
+  if (kind === 'stone') {
+    const into = stoneEvolution(ctx, mon, id, party);
+    return into ? { ok: true, evolutions: [{ uid: mon.uid, into }] } : refused && stoneEvolution(ctx, freed, id, party) ? refused : no;
+  }
   if (kind === 'evolve') {
 
-    const evolutions = (ctx.tradeEvolution ?? ABSENT_TRADE_EVOLUTION) === 'level' ? null : cordEvolutions(ctx, mon, party);
-    return evolutions ? { ok: true, evolutions } : no;
+    const cords = (ctx.tradeEvolution ?? ABSENT_TRADE_EVOLUTION) !== 'level';
+    const evolutions = cords ? cordEvolutions(ctx, mon, party) : null;
+    return evolutions ? { ok: true, evolutions } : refused && cords && cordEvolutions(ctx, freed, party) ? refused : no;
   }
   if (kind === 'tm') {
     const move = tmMove(id);
@@ -291,6 +301,7 @@ export const actions = {
   swapIn: (boxMon, partyMon) => ({ type: 'box', ops: [{ op: 'swap', a: refOf(boxMon), b: refOf(partyMon) }] }),
   release: mon => ({ type: 'release', ops: [{ op: 'release', ref: refOf(mon) }] }),
   nickname: (mon, name) => ({ type: 'nickname', ops: [{ op: 'nickname', ref: refOf(mon), name: String(name ?? '').trim() }] }),
+  evolveLock: (mon, locked) => ({ type: 'evolvelock', ops: [{ op: 'evolvelock', ref: refOf(mon), locked: locked === true }] }),
   give: (mon, item) => ({ type: 'hold', ops: [{ op: 'hold', ref: refOf(mon), item: itemId(item), fromBag: true }] }),
   take: mon => ({ type: 'hold', ops: [{ op: 'hold', ref: refOf(mon), item: '', fromBag: true }] }),
 

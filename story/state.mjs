@@ -1,7 +1,7 @@
 import { findBlocks, findTags, parseChange, parseBattle, battlesIn, hashKey, speciesName, sharedForms, pickForm, messageId, norm, stripBlocksRead } from './blocks.mjs';
 import { expForLevel, calcExpGain, growthOf as growthOfSpecies, DEFAULT_EXP_RATE, storyExpRate, STORY_EXP_PACE } from '../engine/exp.mjs';
 import { STATS, STATUS_IDS, completeSet, toID } from '../engine/mon.mjs';
-import { levelEvolution, usesHeldItem, extraEvolutions, countOf, ABSENT_TRADE_EVOLUTION, EVOLVE_FRIENDSHIP } from '../engine/evolution.mjs';
+import { levelEvolution, usesHeldItem, extraEvolutions, countOf, evolveTraits, ABSENT_TRADE_EVOLUTION, EVOLVE_FRIENDSHIP } from '../engine/evolution.mjs';
 import { engineMember } from '../engine/input.mjs';
 import { escapeRe } from './norm.mjs';
 import { BAG_ITEMS, isBall, foodHeal } from '../engine/bag.mjs';
@@ -21,7 +21,7 @@ import { opponentPicture, foePartnerPicture } from './trainer-look.mjs';
 import { readStored, isRecord } from './stored.mjs';
 import { ruleError } from './failure.mjs';
 import { surveyBattles, dropOocs } from './chat.mjs';
-import { statusIn, battleScene, COMPAT_LINE_RE, FIELD_WEATHERS } from './compat.mjs';
+import { statusIn, battleScene, COMPAT_LINE_RE, FIELD_WEATHERS, compatPartnerStart, COMPAT_PARTNER_VARS } from './compat.mjs';
 import { badgeCount, earnedBadges, readLeague, leaguePlaces, leagueAt, leagueDate, keepRecords, LEAGUE_VAR, UNOVA_ERA_VAR } from './badges.mjs';
 import { changeFriendship, moveFriendship, friendshipStep, baseFriendship, friendshipLocked, FRIEND_BALL_FRIENDSHIP, FRIENDSHIP_STEPS, FOND_FRIENDSHIP } from '../engine/friendship.mjs';
 import { entry as nameEntry, koSpellings } from '../names/index.js';
@@ -121,7 +121,7 @@ export function heldChanges(chat, table = readTable(chat)) {
   return surveyBattles(chat, table).held;
 }
 
-export const stateVars = () => [TABLE_VAR, SAVE_VAR, QUEUE_VAR, IMPORT_VAR, SETTING_CHANGES_VAR, `$${LEAGUE_VAR}`, `$${UNOVA_ERA_VAR}`];
+export const stateVars = () => [TABLE_VAR, SAVE_VAR, QUEUE_VAR, IMPORT_VAR, SETTING_CHANGES_VAR, `$${LEAGUE_VAR}`, `$${UNOVA_ERA_VAR}`, ...COMPAT_PARTNER_VARS];
 
 const BOOK_FIELDS = ['badges', 'league', 'gyms'];
 
@@ -190,6 +190,28 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
   const ctxAt = foldCtxAt(chat, ctx);
   const settingsOf = i => foldValues(ctxAt(i));
 
+  // The partner Pikachu a compatible bot's story starts with (compatPartnerStart): the first Pikachu to join before the
+  // chat's first battle will not evolve, and in Pokémon Journeys takes the Gigantamax factor. Checked right after each
+  // message's change blocks and after each import, so an edit made at the same message as the joining stays
+  const partner = compatPartnerStart(chat);
+  const firstBattle = Math.min(Infinity, ...[...survey.battles.values()].filter(b => !b.discarded).map(b => b.index));
+  const partnerAt = i => (partner && i < firstBattle && ruleValues(ctxAt(i)).partnerTraits ? partner : null);
+  const markPartner = (before, after, i) => {
+    const traits = partnerAt(i), dex = ctx?.sim?.Dex;
+    if (!traits || !dex || before === after) return after;
+    const pikachu = m => !isEgg(m) && dex.species.get(m.set.species).baseSpecies === 'Pikachu';
+    const had = [...before.party, ...before.box];
+    if (had.some(pikachu)) return after;
+    const known = new Set(had.map(m => m.uid));
+    const joined = [...after.party, ...after.box].find(m => !known.has(m.uid) && pikachu(m));
+    if (!joined) return after;
+    const next = structuredClone(after);
+    const mon = [...next.party, ...next.box].find(m => m.uid === joined.uid);
+    mon.evolveLocked = true;
+    if (traits.gigantamax && dex.species.get(mon.set.species).canGigantamax) mon.set.gigantamax = true;
+    return next;
+  };
+
   const applyImportsAt = (i, start, at, reflected, seen) => importsAt(i).reduce((cur, imp) => {
     const here = { ...at, ...ruleValues(ctxAt(i, imp.time)) };
     let next = cur;
@@ -197,7 +219,7 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
       if (!isReflected(action, reflected, seen)) next = runAction(next, action, here).state;
       reflected.add(action.id);
     }
-    return applyImport(next, imp, here);
+    return markPartner(cur, applyImport(next, imp, here), i);
   }, start);
   const importKeysAt = i => importsAt(i).map(imp => `${hashKey(JSON.stringify(imp))}:${Object.values(ruleValues(ctxAt(i, imp.time))).join(':')}`);
   const importKey = i => [...(i === 0 ? importKeysAt(-1) : []), ...importKeysAt(i)].join(',');
@@ -233,7 +255,7 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
     return { index: i, date: status?.date ?? null, party: hatchedParty(now).map(mon => ({ species: mon.set.species, ...(mon.set.name ? { name: mon.set.name } : {}) })),
       opponents: [spec.name, spec.foePartner?.name].filter(Boolean) };
   };
-  const keyOf = i => `${messageId(messages[i], i)}\u0001${messages[i]?.role}\u0001${parts[i]}\u0001${findTags(parts[i]).map(t => used(t.key)).filter(Boolean).join(',')}\u0001${heldIn(i)}\u0001${importKey(i)}\u0001${Object.values(settingsOf(i)).join('\u0001')}\u0001${leagueKey(i)}`;
+  const keyOf = i => `${messageId(messages[i], i)}\u0001${messages[i]?.role}\u0001${parts[i]}\u0001${findTags(parts[i]).map(t => used(t.key)).filter(Boolean).join(',')}\u0001${heldIn(i)}\u0001${importKey(i)}\u0001${Object.values(settingsOf(i)).join('\u0001')}\u0001${leagueKey(i)}\u0001${JSON.stringify(partnerAt(i))}`;
   let from = 0;
   while (from <= last && from < folds.length && folds[from].key === keyOf(from)) from++;
   if (from <= last) folds.length = from;
@@ -252,6 +274,7 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
   let state = from ? folds[from - 1].after : applyImportsAt(-1, inRule(ctx?.sim, emptyState(), settingsOf(-1).rule), ctxAt(-1), reflected, seen);
   if (!from) state = book(state, -1);
   for (let i = from; i <= last; i++) {
+    const entering = state;
     const name = messageId(messages[i], i);
     const here = ctxAt(i);
 
@@ -297,6 +320,7 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
       if (Object.keys(table.fills).length !== before) changed = true;
       ops.forEach((_, j) => { const key = `${name}:${event.key}:${j}`; if (Object.hasOwn(table.fills, key)) fills[key] = table.fills[key]; });
     }
+    state = markPartner(entering, state, i);
     state = book(applyImportsAt(i, state, at, reflected, seen), i);
     if (keep) folds.push({ key: keyOf(i), after: state, fills, status, win });
   }
@@ -453,7 +477,7 @@ export function evolutionCheck(ctx, mon, party = [], badges = 0) {
   const status = ctx.status ?? null;
   return {
     mon: { species: species.name, gender: mon.set.gender, item: mon.set.item, uid: mon.uid, moves: mon.set.moves, nature: mon.natureOrig ?? mon.set.nature,
-      ability: mon.set.ability, stats: { atk: stat('atk'), def: stat('def') }, counts: mon.counts },
+      ability: mon.set.ability, stats: { atk: stat('atk'), def: stat('def') }, counts: mon.counts, ...evolveTraits(mon) },
     now: { level: mon.set.level, friendship: friendshipOf(ctx, mon), timeOfDay: status?.timeOfDay ?? 'day', ...duskClock(ctx, status?.hour), weather: FIELD_WEATHERS[status?.weather] ?? null,
       region: status?.region ?? null, money: status?.money ?? null, badges, trade: ctx.tradeEvolution ?? ABSENT_TRADE_EVOLUTION,
       party: hatched(party).filter(m => m.uid !== mon.uid).map(m => m.set.species) },
@@ -592,6 +616,11 @@ function applyOp(state, op, ctx, fillKey, fill) {
       if (list !== state.box) fail('inParty', { mon: monLabel(mon) });
       if (state.party.length >= PARTY_MAX) fail('partyFull', { max: PARTY_MAX, mon: monLabel(mon) });
       state.party.push(...list.splice(index, 1));
+      return;
+    }
+    case 'evolvelock': {
+      const { mon } = findMon(state, op.ref, ctx);
+      if (op.locked === true) mon.evolveLocked = true; else delete mon.evolveLocked;
       return;
     }
     case 'nickname': {

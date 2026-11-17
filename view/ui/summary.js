@@ -34,6 +34,10 @@ const TEXT = Object.freeze({ ...SUMMARY_TEXT, ot: 'pokemon-summary.ot', type: 'p
 const QUILL = ['......oo', '.....owo', '....owwo', '...owwo.', '..owwo..', '..owo...', '.oo.....', 'o.......'];
 const QUILL_COLOR = { o: 0x484848, w: 0xf8f8f8 };
 const QUILL_HIT = 14;
+// Evolution lock, drawn like the quill: shut and gold when the Pokémon will not evolve
+const LOCK_SHUT = ['..oooo..', '.o....o.', '.o....o.', 'oooooooo', 'owwwwwwo', 'owwoowwo', 'owwwwwwo', 'oooooooo'];
+const LOCK_OPEN = ['..oooo..', '.o....o.', '.o......', 'oooooooo', 'owwwwwwo', 'owwoowwo', 'owwwwwwo', 'oooooooo'];
+const LOCK_COLOR = { shut: { o: 0x484848, w: 0xf8c020 }, open: { o: 0x484848, w: 0xf8f8f8 } };
 export const PAGES = ['profile', 'stats', 'moves'];
 
 const MEMO_RIGHT = 7 + 1224 / 6, PAGE_BOTTOM = 159, BOND_HEART_W = 7, BOND_HEART_DY = 5, BOND_SIZES = [96, 80, 66];
@@ -59,7 +63,7 @@ export function openSummary(menu) {
 export class SummaryScreen {
   constructor(scene) { this.scene = scene; }
 
-  async show({ party, index, onOpen, rename }) {
+  async show({ party, index, onOpen, rename, lock }) {
     if (this.finish || this.opening) throw new Error('Summary screen already open');
     const s = this.scene;
     if (!party?.[index]?.summary) throw new Error('No summary for this party slot');
@@ -71,6 +75,7 @@ export class SummaryScreen {
       this.party = party; this.index = index; this.page = PROFILE;
       this.moveSelect = false; this.moveCursor = 0; this.statusShown = false; this.transitioning = false;
       this.rename = typeof rename === 'function' ? rename : null; this.renaming = false;
+      this.lock = typeof lock === 'function' ? lock : null; this.locking = false;
       await fadeSwap(s, () => { this.build(); this.showMon(asset, true); });
     } catch (error) { this.clear(); throw error; } finally { this.opening = false; }
 
@@ -179,9 +184,10 @@ export class SummaryScreen {
     if (shiny) layer.add(shiny);
 
     const quill = this.rename ? this.drawQuill(layer) : null;
+    const evolveLock = this.lock && summary.traits ? this.drawLock(layer, summary.traits.locked) : null;
 
     const gender = GENDER_COLORS[mon.gender] ? addGenderMark(s, 96, -17, mon.gender, `GENDER_${mon.gender}`, { originY: 1 }).setVisible(!nameShowsGender(mon.name)) : null;
-    this.nameRefs = { name, shiny, quill, gender };
+    this.nameRefs = { name, shiny, quill, evolveLock, gender };
     this.placeQuill();
     layer.add(s.add.sprite(6, -19, 'pb', ballFrame(summary.ball)).setOrigin(0, 1));
 
@@ -271,7 +277,20 @@ export class SummaryScreen {
       if (summary.nature.mint) p.add(styledText(s, 7, 113 + 14.83, summary.nature.mint, 'WINDOW_ALT').setOrigin(0, 0));
     }
 
-    if (summary.bond) this.bondLine(p, 113 + 14.83 * (summary.nature ? (summary.nature.mint ? 2 : 1) : 0), summary.bond);
+    let y = 113 + 14.83 * (summary.nature ? (summary.nature.mint ? 2 : 1) : 0);
+    if (summary.bond) y = this.bondLine(p, y, summary.bond);
+    if (summary.traits?.text) this.memoLine(p, y, summary.traits.text);
+  }
+
+  // A memo line under the others, made smaller until it fits the page
+  memoLine(p, y, line) {
+    let text;
+    for (const fontSize of BOND_SIZES) {
+      text?.destroy();
+      text = styledText(this.scene, 7, y, line, 'WINDOW_ALT', { fontSize, wordWrap: { width: (MEMO_RIGHT - 7) * 6 } }).setOrigin(0, 0);
+      if (y + text.displayHeight <= PAGE_BOTTOM) break;
+    }
+    p.add(text);
   }
 
   bondLine(p, y, bond) {
@@ -284,6 +303,7 @@ export class SummaryScreen {
       if (y + text.displayHeight <= PAGE_BOTTOM) break;
     }
     p.add([heart, text]);
+    return y + text.displayHeight;
   }
   statsPage(container, content, mon, summary) {
     const s = this.scene, p = s.add.container(0, -159);
@@ -440,7 +460,7 @@ export class SummaryScreen {
   }
 
   async startRename() {
-    if (!this.rename || this.renaming || !this.finish || this.transitioning) return;
+    if (!this.rename || this.renaming || this.locking || !this.finish || this.transitioning) return;
     const s = this.scene, mon = this.party[this.index];
     playSelect(s);
     this.renaming = true;
@@ -477,15 +497,55 @@ export class SummaryScreen {
   }
 
   placeQuill() {
-    const { name, shiny, quill } = this.nameRefs ?? {};
-    if (!quill) return;
-    const x = (shiny ? shiny.x + shiny.width * shiny.scaleX : name.x + name.displayWidth) + 3, y = name.y + 3;
-    quill.icon.setPosition(x, y);
-    quill.hit.setPosition(x + QUILL[0].length / 2, y + QUILL.length / 2);
+    const { name, shiny, quill, evolveLock } = this.nameRefs ?? {};
+    if (!name) return;
+    let x = (shiny ? shiny.x + shiny.width * shiny.scaleX : name.x + name.displayWidth) + 3;
+    const y = name.y + 3;
+    for (const [icon, rows] of [[quill, QUILL], [evolveLock, LOCK_SHUT]]) {
+      if (!icon) continue;
+      icon.icon.setPosition(x, y);
+      icon.hit.setPosition(x + rows[0].length / 2, y + rows.length / 2);
+      x += rows[0].length + 3;
+    }
+  }
+
+  drawLock(layer, shut) {
+    const s = this.scene, icon = s.add.graphics();
+    this.paintLock(icon, shut);
+    const hit = s.add.rectangle(0, 0, QUILL_HIT, QUILL_HIT, 0, 0).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    hit.on('pointerup', this.tap(() => this.toggleLock()));
+    layer.add([icon, hit]);
+    return { icon, hit };
+  }
+
+  paintLock(icon, shut) {
+    if (!icon) return;
+    const colors = LOCK_COLOR[shut ? 'shut' : 'open'];
+    icon.clear();
+    (shut ? LOCK_SHUT : LOCK_OPEN).forEach((row, y) => [...row].forEach((cell, x) => { if (colors[cell] !== undefined) icon.fillStyle(colors[cell]).fillRect(x, y, 1, 1); }));
+  }
+
+  async toggleLock() {
+    if (!this.lock || this.locking || this.renaming || !this.finish || this.transitioning) return;
+    const s = this.scene, mon = this.party[this.index];
+    playSelect(s);
+    this.locking = true;
+    try {
+      const traits = await this.lock();
+      if (!this.container || this.party[this.index] !== mon) return;
+      if (!traits) { await this.notice(s.words('own.evolveLockFailed')); return; }
+      mon.summary.traits = traits;
+      this.paintLock(this.nameRefs?.evolveLock?.icon, traits.locked);
+      if (this.page === PROFILE) this.populate(this.pageC, PROFILE);
+    } catch (error) {
+      if (s.life.signal.aborted || !this.container) return;
+      if (!(error instanceof LoadError)) console.error(error);
+      await this.notice(s.words('own.evolveLockFailed'));
+    } finally { this.locking = false; }
   }
 
   clear() {
-    this.renameForm?.clear(); this.renaming = false;
+    this.renameForm?.clear(); this.renaming = false; this.locking = false;
     this.release();
     this.descriptionScroll?.remove(); this.descriptionScroll = null;
     this.details?.clear(); this.details = null;
