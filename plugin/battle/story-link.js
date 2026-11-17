@@ -482,7 +482,8 @@ async function diaryHtml(text, pass, at) {
   try {
     const own = acts.actsIn(text, pass?.table);
     const lang = currentLang(pass?.chat);
-    const changes = hasBlocks(text) ? acts.changesIn(text, pass?.chat, await storyCtx(), lang) : null;
+    const growing = !!pass && !pass.has(text) && pass.grows(text);
+    const changes = hasBlocks(text) ? acts.changesIn(text, pass?.chat, await storyCtx(), lang, { growing }) : null;
     const counts = t => { const meta = pass?.table?.meta?.[t.key]; return !meta?.blockKey || pass.survey.battles.get(meta.blockKey)?.committed !== 'discarded'; };
     const results = findTags(text).filter(counts).flatMap(t => resultEvents(pass?.table?.meta?.[t.key], pass?.table?.snaps?.[t.key]));
 

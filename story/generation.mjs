@@ -4,7 +4,7 @@
 import { readStored, isRecord, isUnreadable } from './stored.mjs';
 import { failed } from './failure.mjs';
 import { anchorAtEnd, importPlace } from './import.mjs';
-import { statusIn } from './compat.mjs';
+import { statusIn, compatWorld } from './compat.mjs';
 import { DEFAULT_GEN, GENS, isGen } from '../engine/rules.mjs';
 
 export const GENERATION_VAR = '$pkb_generation';
@@ -27,6 +27,21 @@ export function startGen(world) {
 export function raiseGen(auto, region) {
   const gen = regionGen(region);
   return gen && gen > auto.gen ? { gen, by: { kind: 'region', region } } : auto;
+}
+
+// What disc standards are read with (story/machine-standards.mjs regionStandard): the world generation — a hand-set one,
+// else the automatic one, also in chats kept on generation 9 — and Pokémon Journeys' single standard unless set by hand
+export const discWorld = (world, setting, auto) => (isGen(setting) ? { journeys: false, gen: setting } : { journeys: !!world?.journeys, gen: auto.gen });
+
+// The automatic generation after message upto, without a fold
+export function autoGenAt(chat, upto) {
+  const messages = chat?.message ?? [];
+  let auto = startGen(compatWorld(chat));
+  for (let i = 0; i <= Math.min(upto, messages.length - 1); i++) {
+    const window = messages[i]?.role === 'char' ? statusIn(messages[i]) : null;
+    if (window) auto = raiseGen(auto, window.region);
+  }
+  return auto;
 }
 
 // The battle generation a setting gives

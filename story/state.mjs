@@ -7,7 +7,7 @@ import { escapeRe } from './norm.mjs';
 import { BAG_ITEMS, isBall, foodHeal } from '../engine/bag.mjs';
 import { ppUpCount } from '../engine/pp.mjs';
 import { DEFAULT_FORMAT, DEFAULT_RULE, DEFAULT_GEN, formatRules, ruleFormat, formatRule, formatGen } from '../engine/rules.mjs';
-import { GENERATION_VAR, generationsAt, startGen, raiseGen, battleGen } from './generation.mjs';
+import { GENERATION_VAR, generationsAt, startGen, raiseGen, battleGen, discWorld } from './generation.mjs';
 import { waitingTrainer } from '../engine/core.mjs';
 import { HYPER_TRAIN_LEVEL, expShareOn } from './items.mjs';
 import { say } from './screen-text.mjs';
@@ -304,7 +304,7 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
         continue;
       }
       if (held.has(changeAt(i, event.n))) continue;
-      const { ops } = parseChange(event.body, withMachineStandard(here, status?.region, world));
+      const { ops } = parseChange(event.body, withMachineStandard(here, status?.region, discWorld(world, generationAt(i), auto)));
       const before = Object.keys(table.fills).length;
       state = applyOps(state, ops, at, `${name}:${event.key}`, table).state;
       if (Object.keys(table.fills).length !== before) changed = true;

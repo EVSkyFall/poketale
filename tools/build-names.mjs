@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { BAG_ITEMS, FIELD_ITEMS } from '../engine/bag.mjs';
 import { OUTSIDE_ITEMS } from '../story/items.mjs';
-import { MACHINE_STANDARDS, DEFAULT_STANDARD, machineId } from '../story/machine-standards.mjs';
+import { DEFAULT_STANDARD, machineId, standardLabels } from '../story/machine-standards.mjs';
 import { csv, englishID, machineTables, speciesWithCosmeticFormes, toID } from './sources.mjs';
 import { aiFormNames } from './ai-forms.mjs';
 import { formRegions } from './form-regions.mjs';
@@ -192,8 +192,8 @@ for (const kind of kinds) {
     if (!name.ko) missing[kind].push({ id, name: item.name, isNonstandard: null });
   }
 
-  // Disc names carry the move and the standard's region (기술머신11 거품광선 (관동) / TM11 Bubble Beam (Kanto)):
-  // the same printed number means different moves in different regions
+  // Disc names carry the move and the standard's region and generation (기술머신11 거품광선 (관동·1세대) / TM11 Bubble Beam
+  // (Kanto · Gen 1)): the same printed number means different moves in different games
   if (kind === 'items') {
     const machines = Object.entries(machineTables());
     // The word for each kind (기술머신 / 비전머신 / 기술레코드): PokeAPI shares one item per number across games, so its
@@ -204,7 +204,7 @@ for (const kind of kinds) {
       for (const lang of ['ko', 'en']) if (disc[lang]) words[lang][machine] ??= disc[lang].replace(/\s*\d+$/, '');
     }
     for (const [std, list] of machines) {
-      const [regionKo, regionEn] = MACHINE_STANDARDS[std].region;
+      const label = standardLabels(std);
       for (const { kind: machine, number, move } of list) {
         const id = machineId(machine, number, std);
         if (table[id]) throw new Error(`기술머신 id 가 Showdown 도구와 겹칩니다: ${id}`);
@@ -212,7 +212,7 @@ for (const kind of kinds) {
         const digits = String(number).padStart(std === DEFAULT_STANDARD ? 3 : 2, '0');
         const moveName = tables.moves[move];
         if (!moveName) throw new Error(`기술머신 ${std} ${machine}${number}: 기술 이름표에 없는 기술 ${move}`);
-        table[id] = { ko: `${words.ko[machine]}${digits} ${moveName.ko ?? moveName.en} (${regionKo})`, en: `${words.en[machine]}${digits} ${moveName.en} (${regionEn})`,
+        table[id] = { ko: `${words.ko[machine]}${digits} ${moveName.ko ?? moveName.en} (${label.ko})`, en: `${words.en[machine]}${digits} ${moveName.en} (${label.en})`,
           src: 'pokeapi', sim: false, bag: true, move };
       }
     }
