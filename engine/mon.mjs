@@ -43,7 +43,9 @@ export function completeSet(dex, set, rng, { levelUp, label = set.species, tera 
 	const learnset = levelUp?.[species.id];
 	if (movesUpTo && out.moves?.length && !out.moves.every(known)) {
 		const kept = out.moves.filter(known);
-		const fill = Array.isArray(learnset) ? levelUpMoves(learnset, out.level, known).filter(move => !kept.includes(move)).reverse() : [];
+		// Moves may come by name ('Thunder') where the level-up table has ids
+		const have = new Set(kept.map(toID));
+		const fill = Array.isArray(learnset) ? levelUpMoves(learnset, out.level, known).filter(move => !have.has(toID(move))).reverse() : [];
 		while (kept.length < Math.min(out.moves.length, MAX_MOVES) && fill.length) kept.push(fill.shift());
 		if (kept.length) out.moves = kept;
 	}

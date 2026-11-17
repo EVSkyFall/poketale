@@ -49,7 +49,11 @@ function applyInitialState(sim, side, team, sets) {
 
 		for (const [moveid, pp] of Object.entries(member.pp || {})) {
 			const slot = pokemon.moveSlots.find(s => s.id === sim.Dex.toID(moveid));
-			if (!slot) throw new Error(`${member.uid}: 기술 "${moveid}" 이 없습니다`);
+			if (!slot) {
+				// A foe's later move the battle generation does not have was dropped (engine/core.mjs), and its PP with it
+				if ((member.set?.moves ?? []).some(m => sim.Dex.toID(m) === sim.Dex.toID(moveid))) continue;
+				throw new Error(`${member.uid}: 기술 "${moveid}" 이 없습니다`);
+			}
 			slot.pp = Math.max(0, Math.min(slot.maxpp, pp));
 		}
 

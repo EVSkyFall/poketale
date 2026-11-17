@@ -8,6 +8,7 @@ import { createLedger } from './ledger.js';
 import { identName, teamOf } from './read.js';
 import { ownTemplate } from './own-text.js';
 import { eraBlocked } from '../engine/era-gimmicks.mjs';
+import { moveCategory } from '../engine/later-moves.mjs';
 import { evolutionChoices, evolutionFlips } from '../engine/evolution.mjs';
 import { say as screenSay } from '../story/screen-text.mjs';
 
@@ -42,7 +43,7 @@ export function learnMoveOption(battle, names, id, pp, maxpp, lang = DEFAULT_LAN
   const phrases = requireExpText(lang);
   const move = battle.dex.moves.get(id);
   return {
-    id: move.id, name: names.move(move.id), type: move.type, category: move.category, pp, maxpp,
+    id: move.id, name: names.move(move.id), type: move.type, category: moveCategory(battle, move), pp, maxpp,
     // Disabled in this generation's battles (engine/era-gimmicks.mjs): the summary marks it so it can be replaced
     ...(eraBlocked(battle.dex, battle.gen, move.id, battle.storyEraGimmicks) ? { tag: interpolate(ownTemplate('own.eraGimmickTag', lang), {}, lang) } : {}),
 
