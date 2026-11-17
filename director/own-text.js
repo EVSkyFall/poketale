@@ -75,6 +75,9 @@ const KO = {
   'own.learnMoveForgetConfirm': '정말로 {{moveName}}[[를]] 잊게 하겠습니까?',
 
   'own.mintNote': '{{itemName}}의 효과를 받고 있다.',
+  'own.friskFound': '{{pokemonNameWithAffix}}[[는]] 상대의\n{{itemName}}[[를]] 통찰했다!',
+  'own.trappedCantMove': '{{pokemonNameWithAffix}}[[는]]\n몸이 묶여서 움직일 수 없다!',
+  'own.attackMissed': '{{pokemonNameWithAffix}}의\n공격은 빗나갔다!',
 
   'own.pocket.heal': '회복', 'own.pocket.status': '상태', 'own.pocket.battle': '배틀', 'own.pocket.ball': '볼', 'own.pocket.food': '먹이',
 
@@ -156,6 +159,9 @@ const EN = {
   'own.expShare': 'The rest of your team\ngained Exp. Points!',
   'own.learnMoveForgetConfirm': 'Forget {{moveName}}?',
   'own.mintNote': 'Under the effect of the {{itemName}}.',
+  'own.friskFound': '{{pokemonNameWithAffix}} frisked its foe and\nfound one {{itemName}}!',
+  'own.trappedCantMove': '{{pokemonNameWithAffix}}\ncan’t move!',
+  'own.attackMissed': '{{pokemonNameWithAffix}}’s\nattack missed!',
 
   'own.pocket.heal': 'HP/PP', 'own.pocket.status': 'Status', 'own.pocket.battle': 'Battle', 'own.pocket.ball': 'Pok\u00e9 Balls', 'own.pocket.food': 'Food',
   'own.forfeitQuestion': 'Do you really want to run away?',

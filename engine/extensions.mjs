@@ -29,7 +29,7 @@ export const EXTENSIONS = [
 		if (seats ? seats.p2.team.some(member => member.trainer) : battle.sides.some(side => side?.pokemon.some(p => p.m.trainer))) installSeats(battle);
 	}, keys: [], copy: 'reapply' },
 
-	{ name: 'start-form', at: 'players', install: (sim, battle, { sets }) => recordStartForms(battle, sets), keys: [], copy: 'keep' },
+	{ name: 'start-form', at: 'players', install: (sim, battle, { sets }) => recordStartForms(sim, battle, sets), keys: [], copy: 'keep' },
 
 	{ name: 'waiting', at: 'players', install: (sim, battle, { sets }) => { if (sets.waiting) battle.storyWaiting = sets.waiting; }, keys: ['storyWaiting'], copy: 'strip' },
 

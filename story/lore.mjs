@@ -1,5 +1,5 @@
 import { hashKey } from './blocks.mjs';
-import { hpPercentOf, trainersOf, isEgg, stateFormat, stateGen } from './state.mjs';
+import { hpPercentOf, trainersOf, isEgg, stateFormat } from './state.mjs';
 import { createNamer, STATUS_EN, nicknamed, battleKind, ownLabel } from './ai-names.mjs';
 import { outcomeText, opponentText, partnerField, BACK_TO_BACK } from './prompts.mjs';
 import { COMPAT_VAR } from './compat.mjs';
@@ -7,6 +7,7 @@ import { customText, customInfo, ownerName } from './custom-items.mjs';
 import { TOOL_EFFECTS } from './tools.mjs';
 import { ITEM_EFFECTS_READY } from './item-effects.mjs';
 import { battleStatusLines, actRules } from './act-prompts.mjs';
+import { formatGen, DEFAULT_GEN } from '../engine/rules.mjs';
 
 const FOE_LOOK_FORMAT = 'foe partner gender: male|female\nfoe partner look: preschooler|boy|girl|young man|young woman|middle-aged man|middle-aged woman|old man|old woman';
 const LOOK_FORMAT = 'look: preschooler|boy|girl|young man|young woman|middle-aged man|middle-aged woman|old man|old woman';
@@ -299,7 +300,8 @@ export function varTexts(state, { sim, battle = null, lang = 'ko', en = null, ef
       if (battle.commands && battle.now) party.push(...battleStatusLines(battle.now, namer, spec), actRules(battle.now, { tools: battle.tools !== false }));
     }
   }
-  const era = stateGen(state);
+  // The generation battles are fought in: Champions is generation 9 whatever the story's generation
+  const era = formatGen(stateFormat(state)) ?? DEFAULT_GEN;
   (state?.party ?? []).forEach((mon, i) => {
 
     if (isEgg(mon)) { party.push(`[${ownLabel(i + 1)} | Egg]`); return; }

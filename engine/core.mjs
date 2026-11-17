@@ -116,7 +116,7 @@ function resultMon(sim, p) {
 		gender: p.m.start.gender ?? p.gender,
 		shiny: !!p.set.shiny,
 
-		teraType: p.m.noTera && !p.set.teraType ? undefined : p.teraType,
+		teraType: p.m.noTera && !(p.m.start.teraType ?? p.set.teraType) ? undefined : p.m.start.teraType ?? p.teraType,
 		terastallized: p.terastallized || '',
 
 		moves: p.baseMoveSlots.map((s, i) => ({ id: s.id, pp: s.pp, maxpp: s.maxpp, ppUps: p.ppUps[i] ?? 0 })),

@@ -1,6 +1,6 @@
-// The generation a story's battles follow. Automatic: the compatible bot's start region sets it (Pokémon Journeys is
-// generation 8 everywhere) and reaching a newer region raises it, never lowers it. A chat can also set it by hand from
-// a message on. story/state.mjs folds it per message.
+// The generation a story's battles follow. Automatic: the compatible bot's start region sets it (Pokémon Journeys
+// starts at generation 8) and reaching a region of a newer generation raises it, never lowers it. A chat can also set it
+// by hand from a message on. story/state.mjs folds it per message.
 import { readStored, isRecord, isUnreadable } from './stored.mjs';
 import { failed } from './failure.mjs';
 import { anchorAtEnd, importPlace } from './import.mjs';
