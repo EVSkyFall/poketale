@@ -52,7 +52,7 @@ function summaryView(screen, mon, env, t) {
   const party = hatchedParty(state), at = party.findIndex(m => m.uid === mon.uid);
   const hero = { spriteId: shown.spriteId, shiny: shown.shiny, dex: summary.dexNumber, name: shown.name, gender: shown.gender, species: names.species(slot.speciesId),
     level: shown.level, types: summary.types, hp: shown.hp, maxhp: shown.maxhp, hpClass: shown.hpClass, status: shown.status, fainted: shown.fainted, rename: t('panel.rename'),
-    ...(summary.traits && !env.locked ? { lock: { locked: summary.traits.locked, label: t(summary.traits.locked ? 'panel.sc.unlockEvolution' : 'panel.sc.lockEvolution') } } : {}) };
+    ...(summary.traits && !summary.traits.held && !env.locked ? { lock: { locked: summary.traits.locked, label: t(summary.traits.locked ? 'panel.sc.unlockEvolution' : 'panel.sc.lockEvolution') } } : {}) };
   const pages = SUMMARY_PAGES.map(id => ({ id, label: t(`panel.sc.page.${id}`) }));
 
   const strip = () => party.map(m => {

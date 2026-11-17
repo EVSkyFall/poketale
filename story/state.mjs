@@ -198,15 +198,20 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
   const firstStart = first ? battlesIn(messages[first.index], first.index, ctxAt(first.index)).find(b => b.key === first.key)?.start ?? 0 : 0;
   const beforeBattle = (i, start) => !first || i < first.index || (i === first.index && start < firstStart);
   const partnerAt = (i, start, time) => (partner && beforeBattle(i, start) && ruleValues(ctxAt(i, time)).partnerTraits ? partner : null);
-  const partnerKey = i => (partner ? JSON.stringify([partner, !first || i < first.index ? 0 : i === first.index ? firstStart : -1]) : '');
-  const markPartner = (before, after, traits) => {
+  const partnerKey = i => (partner ? JSON.stringify([partner, !first || i < first.index ? 'before' : i === first.index ? firstStart : 'after']) : '');
+  // `order`: what the step added, in the order it added them ({ base uid, species }: a change block's add lines, an
+  // import's new entries). The partner is the first Pikachu among them while it is still a Pikachu; without an order,
+  // the first new Pikachu found
+  const markPartner = (before, after, traits, order = null) => {
     const dex = ctx?.sim?.Dex;
     if (!traits || !dex || before === after) return after;
-    const pikachu = species => dex.species.get(species).baseSpecies === 'Pikachu';
+    const pikachu = species => !!species && dex.species.get(species).baseSpecies === 'Pikachu';
     const had = [...before.party, ...before.box];
     if (had.some(m => !isEgg(m) && pikachu(m.set.species)) || (before.dex?.caught ?? []).some(pikachu)) return after;
     const known = new Set(had.map(m => m.uid));
-    const joined = [...after.party, ...after.box].find(m => !known.has(m.uid) && !isEgg(m) && pikachu(m.set.species));
+    const fresh = [...after.party, ...after.box].filter(m => !known.has(m.uid) && !isEgg(m) && pikachu(m.set.species));
+    const first = order?.find(entry => pikachu(entry.species));
+    const joined = order ? first && fresh.find(m => m.uid === first.base || m.uid.startsWith(`${first.base}-`)) : fresh[0];
     if (!joined) return after;
     const next = structuredClone(after);
     const mon = [...next.party, ...next.box].find(m => m.uid === joined.uid);
@@ -223,7 +228,7 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
       if (!isReflected(action, reflected, seen)) next = runAction(next, action, here).state;
       reflected.add(action.id);
     }
-    return markPartner(cur, applyImport(next, imp, here), partnerAt(i, Infinity, imp.time));
+    return markPartner(cur, applyImport(next, imp, here), partnerAt(i, Infinity, imp.time), importOrder(imp));
   }, start);
   const importKeysAt = i => importsAt(i).map(imp => `${hashKey(JSON.stringify(imp))}:${Object.values(ruleValues(ctxAt(i, imp.time))).join(':')}`);
   const importKey = i => [...(i === 0 ? importKeysAt(-1) : []), ...importKeysAt(i)].join(',');
@@ -319,9 +324,9 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
       if (held.has(changeAt(i, event.n))) continue;
       const { ops } = parseChange(event.body, here);
       const before = Object.keys(table.fills).length;
-      const was = state;
-      state = applyOps(state, ops, at, `${name}:${event.key}`, table).state;
-      state = markPartner(was, state, partnerAt(i, event.start));
+      const was = state, prefix = `${name}:${event.key}`;
+      state = applyOps(state, ops, at, prefix, table).state;
+      state = markPartner(was, state, partnerAt(i, event.start), ops.flatMap((op, j) => (op.op === 'add' ? [{ base: addedUid(prefix, j), species: op.set?.species }] : [])));
       if (Object.keys(table.fills).length !== before) changed = true;
       ops.forEach((_, j) => { const key = `${name}:${event.key}:${j}`; if (Object.hasOwn(table.fills, key)) fills[key] = table.fills[key]; });
     }
@@ -334,6 +339,14 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
   return { state: keep && after === state ? clone(state) : after, table, changed, counted, reflected: new Set([...counted].flatMap(key => reflectedBy(table, key))),
     imported: new Set(importedUpto(last)), status };
 }
+
+// The uid an add line gets before uniqueUid makes it unique (applyOp 'add')
+const addedUid = (prefix, j) => `m${hashKey(`${prefix ?? 'local'}:${j}`)}`;
+const importOrder = imp => {
+  if (!Array.isArray(imp?.mons)) return null;
+  const added = imp.mons.filter(entry => entry?.action === 'add');
+  return added.every(entry => typeof entry.uid === 'string') ? added.map(entry => ({ base: entry.uid, species: entry.set?.species })) : null;
+};
 
 const heldActions = imp => (Array.isArray(imp.held) ? imp.held.filter(action => isRecord(action) && typeof action.id === 'string' && Array.isArray(action.ops)) : []);
 

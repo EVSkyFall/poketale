@@ -11,7 +11,7 @@ import { enjoymentOf, fullnessOf, gameCandidates } from '../story/amie.mjs';
 import { GAMES, LEVELS } from '../story/amie-games.mjs';
 import { FIND_ORDER, BAG_IDS, BAG_SIZES, EFFECT_BAGS, SOOTHING_BAG, bagOf, traineeOf, hungBagOf, ENERGY_MAX, effortOn } from '../story/training.mjs';
 import { foodList, puffFood } from '../story/panel.mjs';
-import { canSpin, evolutionChoices, evolutionFlips, evolveTraits } from '../engine/evolution.mjs';
+import { canSpin, evolutionChoices, evolutionFlips, evolveLocked, evolveTraits } from '../engine/evolution.mjs';
 import { friendshipOf, friendshipLine, isEgg } from '../story/state.mjs';
 import { sayer } from '../story/screen-text.mjs';
 import { withParticle } from '../story/diary.mjs';
@@ -76,11 +76,15 @@ export function outsideSummarySlot(ctx, mon) {
   });
 }
 
-// The memo line for a Pokémon's traits; the Gigantamax factor shows only for a kind that can Gigantamax
+// The memo line for a Pokémon's traits; the Gigantamax factor shows only for a kind that can Gigantamax. `held`: the
+// factor itself keeps the form (a Gigantamax Pikachu), so there is no lock to switch
 export function traitsView(ctx, species, locked, gigantamax) {
-  const gmax = gigantamax && !!ctx.sim.Dex.species.get(species).canGigantamax;
-  const key = locked && gmax ? 'traitsBoth' : locked ? 'evolveLocked' : gmax ? 'gigantamax' : null;
-  return { locked, ...(key ? { text: sayer(langOf(ctx))(`panel.sc.${key}`) } : {}) };
+  const dex = ctx.sim.Dex;
+  const held = evolveLocked(dex, { species, gigantamax });
+  const gmax = gigantamax && !!dex.species.get(species).canGigantamax;
+  const stops = locked || held;
+  const key = stops && gmax ? 'traitsBoth' : stops ? 'evolveLocked' : gmax ? 'gigantamax' : null;
+  return { locked: stops, ...(held ? { held: true } : {}), ...(key ? { text: sayer(langOf(ctx))(`panel.sc.${key}`) } : {}) };
 }
 
 export async function showOutsideSummary({ view, ctx, mon, onRename, onEvolveLock }) {
@@ -99,7 +103,7 @@ export async function showOutsideSummary({ view, ctx, mon, onRename, onEvolveLoc
     return current.shown;
   });
   let locked = mon.evolveLocked === true;
-  const lock = onEvolveLock && !isEgg(mon) && (async () => {
+  const lock = onEvolveLock && !isEgg(mon) && !slot.summary?.traits?.held && (async () => {
     const accepted = await onEvolveLock(!locked);
     if (accepted === false) return null;
     locked = !locked;

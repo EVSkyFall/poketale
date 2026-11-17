@@ -1148,6 +1148,13 @@ async function prepareBattle(press, mode, retryOf, owner) {
   const { difficulty } = settings;
   if (spec) spec = { ...spec, difficulty };
   if (from?.spec) from = { ...from, spec: { ...from.spec, difficulty } };
+  // A retry plays the saved start again: the evolution lock is taken as it is now, so the battle's end proposes no
+  // evolution for a Pokémon locked since the first try
+  if (mode === 'retry') {
+    const { state: now } = encounterBase(structuredClone(pass.chat), key, ctx, pass.table);
+    if (spec) spec = withLocksOf(now, spec);
+    if (from?.spec) from = { ...from, spec: withLocksOf(now, from.spec) };
+  }
 
   const { myPicture } = persona.look;
   const me = entryMe(myPicture, myPicture === 'image' ? await loadPicture(risuai.pluginStorage, persona.name) : null);
@@ -1204,6 +1211,18 @@ async function retryFromEnd(origin, press) {
   const took = await startBattle({ ...press, key: origin.key }, { mode: 'retry', retryOf: 'attempt', owner }).catch(error => { failure = error; return false; });
   if (!took) await hideWindow(owner).catch(() => {});
   if (failure) await onButtonError(press, failure);
+}
+
+function withLocksOf(state, spec) {
+  if (!Array.isArray(spec?.p1?.team)) return spec;
+  const mons = new Map([...state.party, ...state.box].map(mon => [mon.uid, mon]));
+  const team = spec.p1.team.map(member => {
+    const mon = mons.get(member?.uid);
+    if (!mon || (mon.evolveLocked === true) === (member.evolveLocked === true)) return member;
+    const { evolveLocked: _, ...rest } = member;
+    return mon.evolveLocked === true ? { ...rest, evolveLocked: true } : rest;
+  });
+  return { ...spec, p1: { ...spec.p1, team } };
 }
 
 function encounterBase(chat, key, ctx, table) {

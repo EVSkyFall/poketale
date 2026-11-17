@@ -186,7 +186,7 @@ export class SummaryScreen {
     if (shiny) layer.add(shiny);
 
     const quill = this.rename ? this.drawQuill(layer) : null;
-    const evolveLock = this.lock && summary.traits ? this.drawLock(layer, summary.traits.locked) : null;
+    const evolveLock = this.lock && summary.traits && !summary.traits.held ? this.drawLock(layer, summary.traits.locked) : null;
 
     const gender = GENDER_COLORS[mon.gender] ? addGenderMark(s, 96, -17, mon.gender, `GENDER_${mon.gender}`, { originY: 1 }).setVisible(!nameShowsGender(mon.name)) : null;
     this.nameRefs = { name, shiny, quill, evolveLock, gender };
@@ -287,7 +287,8 @@ export class SummaryScreen {
   bondLine(p, y, bond, traits) {
     const s = this.scene, x = 7 + BOND_HEART_W + 3;
     let lines = [];
-    for (const fontSize of BOND_SIZES) {
+    // Both lines under a nature and its mint leave room only for smaller text
+    for (const fontSize of bond && traits ? [...BOND_SIZES, 56, 48] : BOND_SIZES) {
       for (const text of lines) text.destroy();
       lines = [];
       let bottom = y;

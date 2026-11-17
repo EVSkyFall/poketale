@@ -22,7 +22,7 @@ const GMAX_KEEPS_FORM = new Set(['pikachu', 'eevee', 'meowth']);
 // A kind that can Gigantamax, now or once it evolves (a Charmander's factor shows on its Charizard)
 export const gigantamaxLine = (dex, species) => {
   const kind = dex.species.get(species);
-  return !!kind.canGigantamax || (kind.evos ?? []).some(next => gigantamaxLine(dex, next));
+  return !!kind.canGigantamax || branchesOf(dex, kind).some(next => gigantamaxLine(dex, next.name));
 };
 
 // A Pokémon that will not evolve at all, unlike one holding an Everstone: marked so (a partner Pikachu refusing its
