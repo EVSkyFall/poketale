@@ -80,7 +80,8 @@ export function itemKind(id, sim, trade = ABSENT_TRADE_EVOLUTION) {
   const key = toID(id);
   if (Object.hasOwn(BALLS, key)) return 'ball';
   const bag = BAG_ITEMS[key];
-  if (bag) return bag.heal || bag.cure || bag.revive || bag.pp ? 'medicine' : 'battle';
+  // A flute is played in battle only and stays in the bag
+  if (bag) return !bag.keep && (bag.heal || bag.cure || bag.revive || bag.pp) ? 'medicine' : 'battle';
   if (isTm(key)) return 'tm';
   if (Object.hasOwn(OUTSIDE_ITEMS, key)) return OUTSIDE_ITEMS[key].kind;
   if (key === 'rarecandy') return 'candy';
@@ -94,6 +95,8 @@ const BAG_ONLY = new Set(['ball', 'battle', 'field', 'key']);
 const NOT_HOLDABLE = new Set([...BAG_ONLY, 'tm']);
 // Key items cannot be thrown away
 const NOT_TOSSABLE = new Set(['key']);
+// Key items the battle bag holds: never tossed
+const KEY_BATTLE_ITEMS = new Set(['pokeflute']);
 
 const medicineOf = id => BAG_ITEMS[id] ?? (OUTSIDE_ITEMS[id]?.kind === 'medicine' ? OUTSIDE_ITEMS[id] : null);
 
@@ -142,6 +145,9 @@ export function itemDescription(id, sim, lang) {
   if (kind === 'ball') return t('item.ball');
   if (kind === 'battle') {
     if (bag?.boost) return t('item.boost', { stat: statName(bag.boost, lang) });
+    if (bag?.guard) return t('item.guard');
+    if (bag?.flute === 'field') return t('item.pokeFlute');
+    if (bag?.flute) return t(bag.cure ? 'item.blueFlute' : bag.confusion ? 'item.yellowFlute' : 'item.redFlute');
     return t('item.crit');
   }
   const text = lang === 'ko' ? itemText(key) : null;
@@ -461,7 +467,7 @@ export function bagMenu(id, { locked = false, sim, state, trade }, lang) {
   const r = row(lang);
   // A key item a Pokémon can hold (the Exp. Share): given, never tossed
   if (HELD_KEYS.has(id)) return [r('give', 'hold', locked || !state.party.length), r('cancel', 'cancel')];
-  if (NOT_TOSSABLE.has(kind)) return null;
+  if (NOT_TOSSABLE.has(kind) || KEY_BATTLE_ITEMS.has(id)) return null;
   if (isDexItem(state, id)) return [r('use', 'use'), r('cancel', 'cancel')];
   const list = [];
   if (USABLE.has(kind)) list.push(r('use', 'use', locked || !state.party.length));
