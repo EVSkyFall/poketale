@@ -153,8 +153,11 @@ export function breedEgg(dex, a, b, rng, { levelUp, oneSpecial = false }) {
 	const held = [a, b].map(p => toID(p.set.item));
 	const { species, gender } = hatchling(dex, eggForm(dex, line, other), held, rng);
 	const nature = inheritNature(a, b, rng);
+	const ivs = inheritIvs(a, b, rng);
+	// One Special: when both halves were passed down, the Special Attack one stands for both
+	if (oneSpecial && ivs.spa !== undefined && ivs.spd !== undefined) ivs.spd = ivs.spa;
 	const set = completeSet(dex, {
-		species: species.name, level: HATCH_LEVEL, ivs: inheritIvs(a, b, rng), ability: inheritAbility(dex, line, species, rng), shiny: rng.random(SHINY_ODDS) === 0,
+		species: species.name, level: HATCH_LEVEL, ivs, ability: inheritAbility(dex, line, species, rng), shiny: rng.random(SHINY_ODDS) === 0,
 		...(gender ? { gender } : {}), ...(nature ? { nature } : {}),
 	}, rng, { levelUp, oneSpecial });
 	const learns = levelMoves(levelUp, species), eggMoves = new Set(eggMovesOf(dex, species.name));

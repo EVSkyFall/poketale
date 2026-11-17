@@ -61,6 +61,16 @@ export function installEraGimmicks(battle, mode) {
 	if (battle.gen === 1) weatherPower(battle);
 }
 
+// Generation 1 battle code makes every Pokémon genderless; enabled, they keep the story's gender (Attract, Captivate).
+// Runs once the teams are in
+export function keepStoryGenders(battle) {
+	if (battle.storyEraGimmicks !== 'enable' || !(battle.gen < GENDER_FROM)) return;
+	for (const side of battle.sides) for (const pokemon of side?.pokemon ?? []) {
+		const gender = pokemon.m?.start?.gender;
+		if (gender === 'M' || gender === 'F') pokemon.gender = gender;
+	}
+}
+
 // Enabled in generations whose own move code starts no weather (1) or no terrain (1-2): a move that only starts one
 // starts it the way later generations do. Their upkeep, residual damage and terrain power already run there.
 function startOlderGimmicks(battle) {

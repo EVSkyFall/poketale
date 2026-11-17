@@ -735,7 +735,7 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
     toggle.setAttribute('aria-expanded', String(details));
     toggle.onclick = () => { details = !details; draw(); };
 
-    const breaks = mainlineBreaks(s, sim);
+    const breaks = mainlineBreaks(s, sim, draft.gen);
     const caps = { iv: MAX_IV, ev: EV_STAT_MAX, total: EV_TOTAL_MAX };
     const kinds = ['ivs', 'evs', 'moves', 'ability'].filter(kind => breaks[kind]);
     cap.hidden = !kinds.length;

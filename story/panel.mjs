@@ -3,13 +3,13 @@ import { BALLS } from '../engine/capture.mjs';
 import { expForLevel, growthOf } from '../engine/exp.mjs';
 import { STATS, displayName, heldItemForm, spriteIdOf } from '../engine/mon.mjs';
 import { itemEvolution, tradeEvolution, tradePair, evolutionItems, spinEvolution, ABSENT_TRADE_EVOLUTION } from '../engine/evolution.mjs';
-import { applyOps, emptyState, maxHp, movePp, toID, clone, healParty, rememberableMoves, friendshipOf, evolutionCheck, isEgg, hatched, hatchedParty, breedingOf, stateFormat,
+import { applyOps, emptyState, maxHp, movePp, toID, clone, healParty, rememberableMoves, friendshipOf, evolutionCheck, isEgg, hatched, hatchedParty, breedingOf, stateFormat, stateGen,
   restsLeft, restHelps, SHORT_RESTS } from './state.mjs';
 import { EGG_SPRITE, compatHearts } from '../engine/breeding.mjs';
 import { FRIENDSHIP_MAX, FRIENDSHIP_STEPS } from '../engine/friendship.mjs';
 import { PARTY_MAX, MAX_LEVEL, MAX_IV, EV_STAT_MAX, EV_TOTAL_MAX, BOX_SIZE, MAX_MOVES } from './rules.mjs';
 import { ruleFormat, DEFAULT_FORMAT, formatGen } from '../engine/rules.mjs';
-import { usesStatExp, statExpOf, vitaminWorks } from '../engine/stat-exp.mjs';
+import { usesStatExp, statExpOf, vitaminWorks, vitaminStats } from '../engine/stat-exp.mjs';
 import { MAX_PP_UPS } from '../engine/pp.mjs';
 import { OUTSIDE_ITEMS, VITAMIN_EVS, HYPER_TRAIN_LEVEL, isTm } from './items.mjs';
 import { itemText, tmMove, canLearnTm } from './item-info.mjs';
@@ -700,7 +700,7 @@ function wordsOf(lang, sim, state) {
   const names = namesFor(lang, sim);
   return {
     lang, names, t: (key, values) => say(lang, key, values), p: (word, pair) => withParticle(lang, word, pair),
-    mon: mon => monName(mon, sim, names), label: id => itemLabel(state, id, names),
+    mon: mon => monName(mon, sim, names), label: id => itemLabel(state, id, names), gen: stateGen(state),
   };
 }
 
@@ -836,7 +836,8 @@ function useAfter(mon, id, { sim }, w, { stat, move } = {}) {
   const { t, p, lang } = w;
   const outside = OUTSIDE_ITEMS[id] ?? {}, who = mon ? w.mon(mon) : '';
   if (outside.all) return t('panel.usedAll');
-  if (outside.vitamin) return t('panel.usedVitamin', { mon: who, stat: statName(outside.vitamin, lang) });
+  // Generations 1-2: Calcium and Zinc both raise the one Special
+  if (outside.vitamin) return t('panel.usedVitamin', { mon: who, stat: usesStatExp(w.gen) ? listOf(vitaminStats(outside.vitamin).map(s => statName(s, lang)), lang) : statName(outside.vitamin, lang) });
   if (outside.evBerry && (mon.set.evs?.[outside.evBerry] ?? 0) > 0) return t('panel.usedEvBerry', { mon: who, stat: statName(outside.evBerry, lang) });
   if (outside.exp) return t('panel.usedExp', { mon: p(who, '은/는'), n: outside.exp.toLocaleString(lang) });
   if (outside.ability) return t('panel.usedAbility', { mon: who, ability: p(w.names.ability(abilityChange(sim, mon, id)), '으로/로') });

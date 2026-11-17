@@ -320,7 +320,7 @@ export function replaceMove(battle, uid, slotIndex, moveId) {
 	refreshRequest(battle, side, pokemon);
 }
 
-// The turn's request was made before the new move came in: its disables are worked out again as Battle.nextTurn does
+// The turn's request was made before the new move came in: its disables are worked out again as Battle.endTurn does
 function redoDisables(battle, pokemon) {
 	pokemon.maybeDisabled = false;
 	pokemon.maybeLocked = false;

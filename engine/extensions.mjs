@@ -10,7 +10,7 @@ import { installField } from './field.mjs';
 import { installFriendship } from './friendship.mjs';
 import { installCounts } from './counts.mjs';
 import { allowRayquazaMega, sayQuietFailures } from './showdown-compat.mjs';
-import { installEraGimmicks } from './era-gimmicks.mjs';
+import { installEraGimmicks, keepStoryGenders } from './era-gimmicks.mjs';
 import { runLaterMoves } from './later-moves.mjs';
 
 export const EXTENSIONS = [
@@ -37,6 +37,8 @@ export const EXTENSIONS = [
 	}, keys: [], copy: 'reapply' },
 
 	{ name: 'start-form', at: 'players', install: (sim, battle, { sets }) => recordStartForms(sim, battle, sets), keys: [], copy: 'keep' },
+
+	{ name: 'era-genders', at: 'players', install: (sim, battle) => keepStoryGenders(battle), keys: [], copy: 'keep' },
 
 	{ name: 'waiting', at: 'players', install: (sim, battle, { sets }) => { if (sets.waiting) battle.storyWaiting = sets.waiting; }, keys: ['storyWaiting'], copy: 'strip' },
 

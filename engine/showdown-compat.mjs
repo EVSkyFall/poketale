@@ -89,8 +89,9 @@ export function battleFromJSON(sim, json) {
 // generation 2 Showdown records the failure (moveThisTurnResult false), so a move that works silently (Wish) is left
 // alone; generation 1 records nothing, so there a move followed by nothing failed when it changed nothing either (later
 // moves can work silently there: Baton Pass only asks for a switch, Mean Look traps without a word).
-// Generation 9 is left as it is.
-const QUIET_LINE = /^\|(t:|split\||debug\||$)/;
+// Generation 9 is left as it is. Hints are not shown in the story (generation 3 First Impression after the first turn
+// gives only a hint).
+const QUIET_LINE = /^\|(t:|split\||debug\||-hint\||$)/;
 
 // What a move can change without a line: switches it asks for, volatiles, side, slot and field conditions, HP
 const quietState = battle => JSON.stringify([
