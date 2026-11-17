@@ -61,8 +61,9 @@ export const storyExpRate = rate => Math.round(expRateValue(rate) * STORY_EXP_PA
 
 const mod4096 = (value, numerator) => Math.floor((value * numerator + 2047) / 4096);
 
-export function calcExpGain({ baseExp, level, victorLevel, shared = false, luckyEgg = false, canEvolve = false, friendly = false, multipliers = [], rate = DEFAULT_EXP_RATE }) {
-	const s = shared ? 2 : 1;
+// divisor: the share of the foe's experience this gain is (2 = half); shared is the generation 6-9 half
+export function calcExpGain({ baseExp, level, victorLevel, shared = false, divisor = null, luckyEgg = false, canEvolve = false, friendly = false, multipliers = [], rate = DEFAULT_EXP_RATE }) {
+	const s = divisor ?? (shared ? 2 : 1);
 	const base = Math.floor(baseExp * level / (5 * s));
 	let exp = Math.floor(base * ((2 * level + 10) / (level + victorLevel + 10)) ** 2.5) + 1;
 	for (const m of [...multipliers, luckyEgg ? 6144 : 4096, canEvolve ? 4915 : 4096, friendly ? 4915 : 4096, Math.round(rate * 4096)]) exp = mod4096(exp, m);
@@ -74,7 +75,7 @@ export function attachExperience(sim, battle, spec, { exp: table, levelUp }) {
 	if (!levelUp) throw new Error('경험치를 쓰려면 레벨업 기술 표(options.levelUp)도 필요합니다');
 
 	const effort = formatRules(sim, battle.format).effort && Array.isArray(table.effort);
-	const state = { sim, table, levelUp, effort, share: spec.expShare !== false, rate: spec.expRate ?? DEFAULT_EXP_RATE, faced: new Map(), awarded: new Set(), learnQueue: [],
+	const state = { sim, table, levelUp, effort, share: spec.expShare !== false, era: spec.expShareEra ?? null, rate: spec.expRate ?? DEFAULT_EXP_RATE, faced: new Map(), awarded: new Set(), learnQueue: [],
 		world: { timeOfDay: spec.timeOfDay ?? 'day', ...(Number.isInteger(spec.clockHour) ? { clockHour: spec.clockHour } : {}), weather: spec.weather ?? null, region: spec.region ?? null, money: spec.money ?? null, badges: spec.badges ?? 0,
 			trade: spec.tradeEvolution ?? ABSENT_TRADE_EVOLUTION, partner: !!spec.partner } };
 	states.set(battle, state);
@@ -140,25 +141,63 @@ function awardExperience(battle, state, foe) {
 	const row = state.table.species[speciesOf(battle, foe).num];
 	if (!row) return;
 	const faced = state.faced.get(foe) || new Set();
+	const alive = battle.sides[0].pokemon.filter(p => p.hp > 0 && !p.fainted && p.m.exp !== undefined);
+	const pieces = sharePieces(battle, state, faced, alive);
 	// EVs first, then experience (gainEffort below - on level-up the new stats include this battle's EVs)
 	if (state.effort) {
 		const yieldOf = effortYield(state.table, speciesOf(battle, foe));
-		for (const p of battle.sides[0].pokemon) if (p.hp > 0 && !p.fainted && p.m.exp !== undefined && (state.share || faced.has(p))) gainEffort(p, yieldOf);
+		for (const p of alive) if (pieces.has(p)) gainEffort(p, yieldOf);
 	}
 
-	const recipients = battle.sides[0].pokemon
-		.filter(p => p.hp > 0 && !p.fainted && p.m.exp !== undefined && p.level < MAX_LEVEL)
+	const recipients = alive.filter(p => p.level < MAX_LEVEL && pieces.has(p))
 		.map(p => ({ pokemon: p, participant: faced.has(p) }))
-		.filter(r => state.share || r.participant)
 		.sort((a, b) => b.participant - a.participant);
 	for (const r of recipients) {
-		r.gain = calcExpGain({
-			baseExp: row[0], level: foe.level, victorLevel: r.pokemon.level, shared: !r.participant,
+		r.gain = pieces.get(r.pokemon).reduce((sum, divisor) => sum + calcExpGain({
+			baseExp: row[0], level: foe.level, victorLevel: r.pokemon.level, divisor,
 			luckyEgg: r.pokemon.item === 'luckyegg', canEvolve: pastEvolutionLevel(battle, r.pokemon), friendly: friendlyExp(r.pokemon.m.friendship ?? 0), rate: state.rate,
-		});
+		}), 0);
 	}
 	for (const { pokemon, gain, participant } of recipients) gainExperience(battle, state, pokemon, gain, participant);
 }
+
+// Who gets a defeated foe's experience, as a list of shares per Pokémon (each the divisor of the foe's experience:
+// 2 = half). The settings' Exp. Share: the participants each get it all, and with sharing on the rest each get half
+// (generations 6-9). With the generation's own rule (spec.expShareEra; Bulbapedia "Exp. Share", "Experience"):
+// - generation 1, Exp. All in the bag: half split among the participants, and each party member, fainted ones
+//   counted, a share of what one participant got (the shares of fainted members are lost, as in the games)
+// - generations 2-5, Exp. Share held: half split among the participants, half among the holders; without one,
+//   the participants split it all (generation 1 likewise without Exp. All)
+// - generations 6-7: the participants each get it all, the rest half while an Exp. Share is in the bag
+// - generations 8-9: the participants each get it all, the rest half
+function sharePieces(battle, state, faced, alive) {
+	const participants = alive.filter(p => faced.has(p));
+	const out = new Map();
+	const give = (p, d) => out.set(p, [...out.get(p) ?? [], d]);
+	const era = state.era;
+	if (!era || battle.gen >= 6) {
+		const share = era ? battle.gen >= 8 || era.bag : state.share;
+		for (const p of alive) if (faced.has(p)) give(p, 1); else if (share) give(p, 2);
+		return out;
+	}
+	const P = participants.length;
+	if (battle.gen === 1) {
+		if (!era.bag) { for (const p of participants) give(p, P); return out; }
+		const N = battle.sides[0].pokemon.filter(p => p.m.exp !== undefined).length;
+		for (const p of participants) give(p, 2 * P);
+		for (const p of alive) give(p, 2 * P * N);
+		return out;
+	}
+	const holders = alive.filter(p => p.item === EXP_SHARE);
+	const H = holders.length;
+	if (!H) { for (const p of participants) give(p, P); return out; }
+	if (!P) { for (const p of holders) give(p, H); return out; }
+	for (const p of participants) give(p, 2 * P);
+	for (const p of holders) give(p, 2 * H);
+	return out;
+}
+
+const EXP_SHARE = 'expshare';
 
 function gainExperience(battle, state, pokemon, gain, participant) {
 	const growth = growthOf(state.table, speciesOf(battle, pokemon));

@@ -279,7 +279,9 @@ export function useOps(mon, itemId, { sim }, { move, stat } = {}) {
   return ops;
 }
 
-export const canHold = (id, sim, holder = null) => !NOT_HOLDABLE.has(itemKind(id, sim)) && !isDexItem(holder, id);
+// The Exp. Share is a key item, but generations 2-5 have it held (settings: Exp. Share by generation)
+const HELD_KEYS = new Set(['expshare']);
+export const canHold = (id, sim, holder = null) => (HELD_KEYS.has(id) || !NOT_HOLDABLE.has(itemKind(id, sim))) && !isDexItem(holder, id);
 
 export function holdableItems(state, sim) {
   return Object.entries(state.bag ?? {}).filter(([id, n]) => n > 0 && canHold(id, sim, state)).map(([id]) => id);
@@ -459,7 +461,7 @@ export function bagMenu(id, { locked = false, sim, state, trade }, lang) {
   if (isDexItem(state, id)) return [r('use', 'use'), r('cancel', 'cancel')];
   const list = [];
   if (USABLE.has(kind)) list.push(r('use', 'use', locked || !state.party.length));
-  if (!NOT_HOLDABLE.has(kind)) list.push(r('give', 'hold', locked || !state.party.length));
+  if (HELD_KEYS.has(id) || !NOT_HOLDABLE.has(kind)) list.push(r('give', 'hold', locked || !state.party.length));
   list.push(r('toss', 'toss', locked));
   list.push(r('cancel', 'cancel'));
   return list;

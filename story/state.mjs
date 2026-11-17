@@ -1367,7 +1367,7 @@ export function toEngineSpec(state, battle, ctx, { seed, formatid, picture, play
     },
     wild: !!battle.wild,
     boss: !battle.wild && !!battle.boss,
-    ...(expShareOn(expShare, state.bag) ? {} : { expShare: false }),
+    ...(expShare === 'era' ? { expShareEra: { bag: (state.bag?.expshare ?? 0) > 0 } } : expShareOn(expShare, state.bag) ? {} : { expShare: false }),
     ...(eraGimmickMode(eraGimmicks) === DEFAULT_ERA_GIMMICKS ? {} : { eraGimmicks: eraGimmickMode(eraGimmicks) }),
     expRate: storyExpRate(expRate),
     ...(friendshipRate === 1 ? {} : { friendshipRate }),
