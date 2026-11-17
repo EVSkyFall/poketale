@@ -27,12 +27,15 @@ export function createStoryBattle(sim, given, options = {}) {
 	installExtensions(sim, battle, 'create', context);
 
 	const rng = new sim.PRNG(given.seed);
+	// Foes (p2, p4 and the trainer waiting to come out) bring only the battle generation's moves
+	const movesUpTo = gen < 9 ? gen : null;
+	const complete = (m, foe) => completeSet(sim.Dex, m.set, rng, { levelUp: options.levelUp, label: m.uid, tera: !m.noTera, oneSpecial: hasOneSpecial(gen), movesUpTo: foe ? movesUpTo : null });
 	for (const [key, seat] of Object.entries(shape.seats)) {
-		context.sets[key] = seat.team.map(m => completeSet(sim.Dex, m.set, rng, { levelUp: options.levelUp, label: m.uid, tera: !m.noTera, oneSpecial: hasOneSpecial(gen) }));
+		context.sets[key] = seat.team.map(m => complete(m, key === 'p2' || key === 'p4'));
 		battle.setPlayer(key, { name: seat.name, team: sim.Teams.pack(context.sets[key].map(set => heldItemForm(sim.Dex, eraSet(gen, set)))) });
 	}
 
-	if (shape.waiting) context.sets.waiting = shape.waiting.team.map(m => completeSet(sim.Dex, m.set, rng, { levelUp: options.levelUp, label: m.uid, tera: !m.noTera, oneSpecial: hasOneSpecial(gen) }));
+	if (shape.waiting) context.sets.waiting = shape.waiting.team.map(m => complete(m, true));
 	installExtensions(sim, battle, 'players', context);
 	return battle;
 }
