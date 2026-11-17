@@ -52,6 +52,7 @@ export function runLaterMoves(battle) {
 	}
 	if (gen === 3) spreadGen3(battle);
 	if (gen <= 2) {
+		semiInvulnerable(battle);
 		tailwindSpeed(battle);
 		moveHitGaps(battle);
 		selfDestructIfHit(battle);
@@ -59,13 +60,18 @@ export function runLaterMoves(battle) {
 		bypassSubstitute(battle);
 		screensByCategory(battle);
 	}
-	if (gen === 2) runMoveGen2(battle);
+	if (gen === 2) {
+		runMoveGen2(battle);
+		drainSubGen2(battle);
+	}
 	if (gen === 1) {
 		basePower(battle);
 		accuracyGen1(battle);
 		ohkoGen1(battle);
 		critGen1(battle);
 		multiHitGen1(battle);
+		trappingGen1(battle);
+		asleepGen1(battle);
 		statusCuts(battle);
 		prepareHit(battle);
 		afterMove(battle);
@@ -201,6 +207,200 @@ function stealBoosts(battle) {
 	});
 }
 
+// A Pokémon up in the air or underground from the generation's own Fly or Dig (generation 1 marks both alike, with the
+// move in its twoturnmove): a later move hits it where its own generation's Fly or Dig lets it through (Twister, Sky
+// Uppercut, Hurricane, Smack Down and Thousand Arrows through Fly, Magnitude through Dig)
+const SEMI_MOVES = new Set(['fly', 'dig']);
+const semiOf = (battle, pokemon) => {
+	if (!pokemon || Array.isArray(pokemon)) return null;
+	const id = battle.gen === 1 ? (pokemon.volatiles['invulnerability'] ? pokemon.volatiles['twoturnmove']?.move : null) : [...SEMI_MOVES].find(semi => pokemon.volatiles[semi]);
+	return SEMI_MOVES.has(id) ? id : null;
+};
+function semiInvulnerable(battle) {
+	wrap(battle.actions, 'tryMoveHit', 'semi', tryMoveHit => function (target, pokemon, move, ...rest) {
+		const semi = later(battle, move) ? semiOf(battle, target) : null;
+		const own = semi ? battle.dex.forGen(move.gen).conditions.get(semi) : null;
+		if (!own?.onInvulnerability || guarded(battle, `${move.id} through ${semi}`, () => own.onInvulnerability.call(battle, target, pokemon, move)) === false) {
+			return tryMoveHit.call(this, target, pokemon, move, ...rest);
+		}
+		const kept = Object.getOwnPropertyDescriptor(battle, 'runEvent');
+		const runEvent = battle.runEvent;
+		battle.runEvent = function (id, on, ...args) {
+			return id === 'Invulnerability' && on === target ? true : runEvent.call(this, id, on, ...args);
+		};
+		let result;
+		try {
+			result = tryMoveHit.call(this, target, pokemon, move, ...rest);
+		} finally {
+			if (kept) Object.defineProperty(battle, 'runEvent', kept);
+			else delete battle.runEvent;
+		}
+		// Brought down (Smack Down, Thousand Arrows): generation 1's own Fly ends, as later Fly does
+		if (battle.gen === 1 && target.volatiles['smackdown'] && target.volatiles['invulnerability']) {
+			target.removeVolatile('invulnerability');
+			target.removeVolatile('twoturnmove');
+			battle.queue.cancelMove(target);
+		}
+		return result;
+	});
+}
+
+// Generation 1's partial trapping (Wrap) keeps the target from moving; a later move's (Whirlpool, Sand Tomb, Magma
+// Storm, Infestation, Snap Trap, Thunder Cage) traps as in its own generation: no switching out, damage at the end of
+// each turn, for its own number of turns. Its own condition is lent to the generation's data under a name of its own,
+// since generation 1's partiallytrapped is another thing; the end-of-turn damage names the move as later battles do
+const BOUND = 'laterpartiallytrapped';
+function boundCondition(battle, gen) {
+	const id = `${BOUND}${gen}`;
+	const data = battle.dex.data.Conditions;
+	if (Object.hasOwn(data, id)) return id;
+	const own = battle.dex.forGen(gen).conditions.get('partiallytrapped');
+	data[id] = {
+		name: id,
+		duration: own.duration,
+		durationCallback: own.durationCallback,
+		onStart: own.onStart,
+		onEnd: own.onEnd,
+		onTrapPokemon: own.onTrapPokemon,
+		onResidualOrder: own.onResidualOrder,
+		onResidualSubOrder: own.onResidualSubOrder,
+		onResidual(pokemon) {
+			const state = this.effectState;
+			const source = state.source;
+			if (source && (!source.isActive || source.hp <= 0 || !source.activeTurns)) {
+				delete pokemon.volatiles[id];
+				this.add('-end', pokemon, state.sourceEffect, '[partiallytrapped]', '[silent]');
+				return;
+			}
+			const shown = !pokemon.volatiles['partiallytrapped'];
+			if (shown) pokemon.volatiles['partiallytrapped'] = state;
+			try {
+				this.damage(pokemon.baseMaxhp / state.boundDivisor, pokemon, null, this.dex.conditions.get('partiallytrapped'));
+			} finally {
+				if (shown) delete pokemon.volatiles['partiallytrapped'];
+			}
+		},
+	};
+	return id;
+}
+const FREES_TRAPPED = new Set(['rapidspin', 'mortalspin']);
+function trappingGen1(battle) {
+	wrap(battle.actions, 'moveHit', 'trapping', moveHit => function (target, pokemon, move, moveData, isSecondary, isSelf, ...rest) {
+		const data = moveData || move;
+		if (data?.volatileStatus !== 'partiallytrapped' || !later(battle, move)) {
+			const result = moveHit.call(this, target, pokemon, move, moveData, isSecondary, isSelf, ...rest);
+			if (!isSecondary && !isSelf && FREES_TRAPPED.has(move?.id) && later(battle, move) && result !== false && pokemon.hp) {
+				for (const id of Object.keys(pokemon.volatiles)) if (id.startsWith(BOUND)) pokemon.removeVolatile(id);
+			}
+			return result;
+		}
+		const id = guarded(battle, `${move.id} trap`, () => boundCondition(battle, move.gen));
+		if (!id) return moveHit.call(this, target, pokemon, move, moveData, isSecondary, isSelf, ...rest);
+		data.volatileStatus = id;
+		try {
+			return moveHit.call(this, target, pokemon, move, moveData, isSecondary, isSelf, ...rest);
+		} finally {
+			data.volatileStatus = 'partiallytrapped';
+		}
+	});
+}
+
+// Generation 2's Substitute makes a draining move miss; from generation 4 a later one (Drain Punch, Horn Leech,
+// Draining Kiss) hits it and drains from the damage it took
+function drainSubGen2(battle) {
+	wrap(battle.actions, 'moveHit', 'drainsub', moveHit => function (target, pokemon, move, moveData, isSecondary, isSelf, ...rest) {
+		const sub = !isSecondary && !isSelf && target && target !== pokemon && !Array.isArray(target) ? target.volatiles['substitute'] : null;
+		const drain = move?.drain;
+		if (!sub || !drain || !(move.gen >= 4) || !later(battle, move)) return moveHit.call(this, target, pokemon, move, moveData, isSecondary, isSelf, ...rest);
+		const hp = sub.hp;
+		move.drain = undefined;
+		let result;
+		try {
+			result = moveHit.call(this, target, pokemon, move, moveData, isSecondary, isSelf, ...rest);
+		} finally {
+			move.drain = drain;
+		}
+		const dealt = target.volatiles['substitute'] === sub ? hp - sub.hp : hp;
+		if (dealt > 0 && pokemon.hp) battle.heal(Math.ceil(dealt * drain[0] / drain[1]), pokemon, target, 'drain');
+		return result;
+	});
+}
+
+// Generation 1 lets a sleeping or frozen Pokémon choose nothing but "Fight", and its sleep and freeze stop every move.
+// A later move its own generation lets it use then (Sleep Talk and Snore while asleep; Flame Wheel, Sacred Fire, Scald
+// and the other thawing moves while frozen, which thaw it first) can be chosen and used. Generation 1's sleep counter
+// still runs: the turn the Pokémon wakes up does nothing. Generation 1 has no natural thaw, and that stays
+const usableNow = (battle, pokemon, move) => later(battle, move) && (pokemon.status === 'slp' ? !!move.sleepUsable
+	: pokemon.status === 'frz' && !!move.flags?.['defrost'] && !(move.id === 'burnup' && !pokemon.hasType('Fire')));
+const canPick = (battle, pokemon) => (pokemon?.status === 'slp' || pokemon?.status === 'frz') && pokemon.moveSlots.some(slot => usableNow(battle, pokemon, battle.dex.moves.get(slot.id)));
+function withoutStatus(pokemon, run) {
+	const status = pokemon.status;
+	pokemon.status = '';
+	try {
+		return run();
+	} finally {
+		pokemon.status = status;
+	}
+}
+function asleepGen1(battle) {
+	const sides = () => {
+		for (const side of battle.sides ?? []) {
+			if (!side) continue;
+			wrap(side, 'chooseMove', 'asleep', chooseMove => function (...args) {
+				const pokemon = this.active[this.getChoiceIndex()];
+				return canPick(battle, pokemon) ? withoutStatus(pokemon, () => chooseMove.apply(this, args)) : chooseMove.apply(this, args);
+			});
+		}
+	};
+	wrap(battle, 'choose', 'asleep', choose => function (...args) {
+		sides();
+		return choose.apply(this, args);
+	});
+	wrap(battle, 'getRequests', 'asleep', getRequests => function (...args) {
+		sides();
+		const requests = getRequests.apply(this, args);
+		this.sides.forEach((side, i) => side.active.forEach((pokemon, j) => {
+			if (!requests[i]?.active?.[j] || !canPick(this, pokemon)) return;
+			const data = guarded(this, 'asleep request', () => withoutStatus(pokemon, () => pokemon.getMoveRequestData()));
+			if (data) requests[i].active[j] = data;
+		}));
+		return requests;
+	});
+	wrap(battle.actions, 'runMove', 'asleep', runMove => function (moveOrMoveName, pokemon, ...rest) {
+		const move = battle.dex.moves.get(moveOrMoveName);
+		const run = () => runMove.call(this, moveOrMoveName, pokemon, ...rest);
+		if (!pokemon || !usableNow(battle, pokemon, move)) return run();
+		const frozen = pokemon.status === 'frz';
+		if (!frozen) {
+			// Waking up: generation 1's own sleep handler spends the turn
+			if (pokemon.statusState.time <= 1) return run();
+			pokemon.statusState.time--;
+			battle.add('cant', pokemon, 'slp');
+		}
+		const kept = Object.getOwnPropertyDescriptor(battle, 'runEvent');
+		const runEvent = battle.runEvent;
+		const restore = () => {
+			if (kept) Object.defineProperty(battle, 'runEvent', kept);
+			else delete battle.runEvent;
+		};
+		battle.runEvent = function (id, on, ...args) {
+			if (id !== 'BeforeMove' || on !== pokemon) return runEvent.call(this, id, on, ...args);
+			restore();
+			const result = withoutStatus(pokemon, () => runEvent.call(this, id, on, ...args));
+			if (result && frozen && pokemon.status === 'frz') {
+				this.add('-curestatus', pokemon, 'frz', `[from] move: ${move.name}`);
+				pokemon.setStatus('');
+			}
+			return result;
+		};
+		try {
+			return run();
+		} finally {
+			restore();
+		}
+	});
+}
+
 // Generation 1 checks a semi-invulnerable target even for a move that hits a side or the field (a hazard missed a
 // flying foe); later generations do not
 const AREA_TARGETS = new Set(['foeSide', 'allySide', 'allyTeam', 'all']);
@@ -279,6 +479,12 @@ function basePower(battle) {
 			const effect = conditionFor(this, id, move, 'onSourceModifyDamage');
 			if (effect) guarded(this, `${id} damage`, () => effect.onSourceModifyDamage.call(this, power, attacker, defender, move));
 		}
+		// One up in the air or underground takes double where its own generation's Fly or Dig says so (Twister, Magnitude;
+		// generation 2 doubles the power, later ones the damage)
+		const semi = later(this, move) ? semiOf(this, defender) : null;
+		const own = semi ? this.dex.forGen(move.gen).conditions.get(semi) : null;
+		const doubles = own?.onSourceBasePower ?? own?.onSourceModifyDamage;
+		if (doubles) guarded(this, `${semi} damage`, () => doubles.call(this, power, attacker, defender, move));
 		return out;
 	});
 }

@@ -72,7 +72,8 @@ export function keepStoryGenders(battle) {
 }
 
 // Enabled in generations whose own move code starts no weather (1) or no terrain (1-2): a move that only starts one
-// starts it the way later generations do. Their upkeep, residual damage and terrain power already run there.
+// starts it the way later generations do. Their upkeep, residual damage and terrain power already run there; a stat
+// change a weather makes through a stat event (Snow's Defense in generation 1) does not.
 function startOlderGimmicks(battle) {
 	const { actions } = battle;
 	const moveHit = actions.moveHit;
