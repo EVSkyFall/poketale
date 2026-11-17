@@ -1,7 +1,7 @@
 // Moves whose whole effect is a mechanic an older generation had not introduced yet: weather, terrain, abilities, held
-// items, and effects Showdown's older battle code never runs. A battle in such a generation disables them, the way Disable
-// does, unless the story's setting enables them ('enable'), which carries the mechanic over; generation 9 has every
-// mechanic and is left as it is.
+// items and gender. A battle in such a generation disables them, the way Disable does, unless the story's setting enables
+// them ('enable'); generation 9 has every mechanic and is left as it is. (Later moves whose own code older battle code
+// skips are run whatever the setting: later-moves.mjs.)
 import { toID } from './mon.mjs';
 
 export const ERA_GIMMICK_MODES = Object.freeze(['disable', 'enable']);
@@ -9,15 +9,14 @@ export const DEFAULT_ERA_GIMMICKS = 'disable';
 
 // The generation each weather a move can start came in with
 const WEATHER_FROM = Object.freeze({ raindance: 2, sunnyday: 2, sandstorm: 2, hail: 3, snowscape: 9 });
-const TERRAIN_FROM = 6, ABILITIES_FROM = 3, HELD_ITEMS_FROM = 2;
+const TERRAIN_FROM = 6, ABILITIES_FROM = 3, HELD_ITEMS_FROM = 2, GENDER_FROM = 2;
 
 // Moves that only work on abilities (or on the Plus and Minus abilities)
 const ABILITY_MOVES = new Set(['skillswap', 'roleplay', 'worryseed', 'simplebeam', 'entrainment', 'gastroacid', 'doodle', 'gearup', 'magneticflux']);
-// Moves that fail unless a weather or terrain they need is up, with the generation it came in with
+// Moves that only work between genders (generation 1 has none)
+const GENDER_MOVES = new Set(['attract', 'captivate']);
+// Moves that fail unless a weather or terrain they need is up (Aurora Veil: hail), with the generation it came in with
 const NEEDS_FROM = Object.freeze({ auroraveil: 3, steelroller: TERRAIN_FROM });
-// Moves whose effect hooks an event Showdown's battle code of older generations never runs (played in each generation:
-// speed, critical hits, damage and move types), with the first generation where it works
-const ENGINE_FROM = Object.freeze({ tailwind: 3, laserfocus: 2, auroraveil: 2, electrify: 4, iondeluge: 4 });
 // Moves that only work with a held item: throwing, swapping, giving, restoring or eating one, or hitting a target's
 const HELD_ITEM_MOVES = new Set(['fling', 'naturalgift', 'trick', 'switcheroo', 'bestow', 'recycle', 'teatime', 'poltergeist', 'corrosivegas',
 	'stuffcheeks', 'magicroom', 'belch']);
@@ -40,7 +39,8 @@ export function eraMissing(dex, gen, moveId) {
 	}
 	if (gen < ABILITIES_FROM && ABILITY_MOVES.has(move.id)) return true;
 	if (gen < HELD_ITEMS_FROM && HELD_ITEM_MOVES.has(move.id)) return true;
-	if (gen < (NEEDS_FROM[move.id] ?? 0) || gen < (ENGINE_FROM[move.id] ?? 0)) return true;
+	if (gen < GENDER_FROM && GENDER_MOVES.has(move.id)) return true;
+	if (gen < (NEEDS_FROM[move.id] ?? 0)) return true;
 	return false;
 }
 
@@ -59,7 +59,6 @@ export function installEraGimmicks(battle, mode) {
 	}
 	if (battle.gen <= 2) startOlderGimmicks(battle);
 	if (battle.gen === 1) weatherPower(battle);
-	carryEffects(battle);
 }
 
 // Enabled in generations whose own move code starts no weather (1) or no terrain (1-2): a move that only starts one
@@ -91,43 +90,4 @@ function weatherPower(battle) {
 		if ((rain && move.type === 'Water') || (sun && move.type === 'Fire')) return this.chainModify(1.5);
 		if ((rain && (move.type === 'Fire' || move.id === 'solarbeam')) || (sun && move.type === 'Water')) return this.chainModify(0.5);
 	});
-}
-
-// Enabled: the effects of ENGINE_FROM done where the generation's own code skips them
-function carryEffects(battle) {
-	const gen = battle.gen;
-	if (gen < ENGINE_FROM.tailwind) tailwindSpeed(battle);
-	// Moves still run ModifyMove there: Laser Focus's sure critical hit, Electrify's and Ion Deluge's Electric type
-	if (gen < ENGINE_FROM.laserfocus || gen < ENGINE_FROM.electrify) {
-		battle.onEvent('ModifyMove', battle.format, function (move, pokemon) {
-			if (gen < ENGINE_FROM.laserfocus && pokemon.volatiles['laserfocus'] && move.category !== 'Status') move.willCrit = true;
-			if (gen < ENGINE_FROM.electrify && move.id !== 'struggle'
-				&& (pokemon.volatiles['electrify'] || (move.type === 'Normal' && this.field.pseudoWeather['iondeluge']))) move.type = 'Electric';
-		});
-	}
-	// Generation 1 damage has no final modifier step: Aurora Veil halves the power of hits that are not critical,
-	// unless Reflect or Light Screen already covers the hit
-	if (gen < ENGINE_FROM.auroraveil) {
-		battle.onEvent('BasePower', battle.format, function (basePower, attacker, defender, move) {
-			if (!defender?.side.sideConditions['auroraveil'] || defender.getMoveHitData(move).crit) return;
-			if (defender.volatiles[move.category === 'Physical' ? 'reflect' : 'lightscreen']) return;
-			return this.chainModify(0.5);
-		});
-	}
-}
-
-// Generations 1-2 work out speed without Tailwind's doubling; the turn order gets it, as Pokemon.getActionSpeed would
-function tailwindSpeed(battle) {
-	const getActionSpeed = battle.getActionSpeed;
-	if (getActionSpeed.eraGimmicks) return;
-	const wrapped = function (action) {
-		getActionSpeed.call(this, action);
-		const pokemon = action.pokemon;
-		if (!pokemon?.side.sideConditions['tailwind'] || typeof action.speed !== 'number') return;
-		const speed = pokemon.getStat('spe', false, false) * 2;
-		if (action.choice === 'move' && action.fractionalPriority < 0) { action.speed = -speed; return; }
-		action.speed = this.trunc(this.field.getPseudoWeather('trickroom') ? 10000 - speed : speed, 13);
-	};
-	wrapped.eraGimmicks = true;
-	battle.getActionSpeed = wrapped;
 }
