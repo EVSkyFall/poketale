@@ -15,9 +15,9 @@ export const POCKETS = [
 
   { id: 'heal', items: ['potion', 'superpotion', 'hyperpotion', 'maxpotion', 'fullrestore', 'revive', 'maxrevive',
     'freshwater', 'sodapop', 'lemonade', 'moomoomilk', 'sweetheart', 'energypowder', 'energyroot', 'revivalherb', 'ether', 'maxether', 'elixir', 'maxelixir'] },
-  { id: 'status', items: ['antidote', 'burnheal', 'iceheal', 'awakening', 'paralyzeheal', 'fullheal', 'healpowder',
+  { id: 'status', items: ['antidote', 'burnheal', 'iceheal', 'awakening', 'paralyzeheal', 'fullheal', 'healpowder', 'pokeflute', 'blueflute', 'yellowflute', 'redflute',
     'lavacookie', 'oldgateau', 'casteliacone', 'lumiosegalette', 'shaloursable', 'ragecandybar', 'bigmalasada', 'pewtercrunchies'] },
-  { id: 'battle', items: ['xattack', 'xdefense', 'xspatk', 'xspdef', 'xspeed', 'xaccuracy', 'direhit'] },
+  { id: 'battle', items: ['xattack', 'xdefense', 'xspatk', 'xspdef', 'xspeed', 'xaccuracy', 'direhit', 'guardspec'] },
   { id: 'ball', items: Object.keys(BALLS) },
   { id: 'food', items: [] },
 ];
@@ -61,7 +61,7 @@ export function createBag({ sim, battle, names, spec, wild, lang = DEFAULT_LANG 
     if (isBall(id)) return 'enemy';
     const item = bagItem(battle, id);
     if (item.tool) return item.tool === 'cheer' ? 'party' : 'enemy';
-    return item.boost || item.crit ? 'active' : 'party';
+    return item.boost || item.crit || item.guard || item.flute === 'field' ? 'active' : 'party';
   };
 
   const left = (id, taken) => (isTool(id) ? Math.min(counts.get(id), 1) : counts.get(id)) - (taken?.get(id) ?? 0);

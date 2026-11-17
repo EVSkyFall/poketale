@@ -80,6 +80,8 @@ const KO = {
   'own.attackMissed': '{{pokemonNameWithAffix}}의\n공격은 빗나갔다!',
   'own.eraGimmickDisabled': '{{moveName}}[[는]] 이 세대에는 없는 기믹이라\n쓸 수 없다!',
   'own.eraGimmickTag': '[비활성화]',
+  'own.playedFlute': '{{itemName}}[[를]] 불었다!',
+  'own.fluteNoEffect': '아름다운 음색이 울려 퍼졌다!',
 
   'own.pocket.heal': '회복', 'own.pocket.status': '상태', 'own.pocket.battle': '배틀', 'own.pocket.ball': '볼', 'own.pocket.food': '먹이',
 
@@ -166,6 +168,8 @@ const EN = {
   'own.attackMissed': '{{pokemonNameWithAffix}}’s\nattack missed!',
   'own.eraGimmickDisabled': '{{moveName}} needs a gimmick this\ngeneration doesn’t have yet!',
   'own.eraGimmickTag': '[Disabled]',
+  'own.playedFlute': 'Played the {{itemName}}!',
+  'own.fluteNoEffect': 'Now, that’s a catchy tune!',
 
   'own.pocket.heal': 'HP/PP', 'own.pocket.status': 'Status', 'own.pocket.battle': 'Battle', 'own.pocket.ball': 'Pok\u00e9 Balls', 'own.pocket.food': 'Food',
   'own.forfeitQuestion': 'Do you really want to run away?',

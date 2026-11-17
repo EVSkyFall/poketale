@@ -80,7 +80,8 @@ export function itemKind(id, sim, trade = ABSENT_TRADE_EVOLUTION) {
   const key = toID(id);
   if (Object.hasOwn(BALLS, key)) return 'ball';
   const bag = BAG_ITEMS[key];
-  if (bag) return bag.heal || bag.cure || bag.revive || bag.pp ? 'medicine' : 'battle';
+  // A flute is played in battle only and stays in the bag
+  if (bag) return !bag.keep && (bag.heal || bag.cure || bag.revive || bag.pp) ? 'medicine' : 'battle';
   if (isTm(key)) return 'tm';
   if (Object.hasOwn(OUTSIDE_ITEMS, key)) return OUTSIDE_ITEMS[key].kind;
   if (key === 'rarecandy') return 'candy';

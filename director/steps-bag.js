@@ -8,7 +8,7 @@ import { splitEmoji } from '../story/custom-items.mjs';
 
 const BY_NAME = new Map(Object.entries(BAG_ITEMS).map(([id, item]) => [`item: ${item.name}`, id]));
 
-export const BAG_KINDS = ['-story-item', '-story-pp', '-story-ball', '-story-tool', '-story-toolend'];
+export const BAG_KINDS = ['-story-item', '-story-pp', '-story-ball', '-story-tool', '-story-toolend', '-story-flute'];
 
 const TOOL_START = { cheer: 'own.toolCheer', taunt: 'own.toolTaunt', distract: 'own.toolDistract' };
 const TOOL_END = { taunt: 'own.toolTauntEnd', distract: 'own.toolDistractEnd' };
@@ -34,10 +34,12 @@ export function createBagSteps({ battle, view, names, ledger, bag, lang = DEFAUL
         return;
       }
       using = { item, name: ledger.get(ident).name, ppShown: false };
-      bag?.spend(item);
-      await say('own.usedItem', { pokemonName: using.name, itemName: itemName(item) });
+      const flute = BAG_ITEMS[item]?.flute;
+      if (!BAG_ITEMS[item]?.keep) bag?.spend(item);
+      await say(flute ? 'own.playedFlute' : 'own.usedItem', { pokemonName: using.name, itemName: itemName(item) });
       return;
     }
+    case '-story-flute': await say('own.fluteNoEffect'); return;
     case '-story-tool': {
 
       using = null;
