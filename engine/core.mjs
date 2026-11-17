@@ -101,7 +101,8 @@ function resultMon(sim, p) {
 		hp: p.hp,
 		maxhp: p.maxhp,
 		fainted: p.fainted,
-		status: p.fainted ? 'fnt' : p.status || '',
+		// Generations 1-2 keep bad poison only inside the battle; still active at the end, it leaves as plain poison
+		status: p.fainted ? 'fnt' : (p.status === 'tox' && p.battle.gen <= 2 ? 'psn' : p.status) || '',
 		active: p.isActive,
 
 		...(p.isActive ? { position: p.position + Math.floor(p.side.n / 2) * p.side.active.length } : {}),

@@ -492,7 +492,7 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
     const from = kw.from ? effectOf(kw.from) : null, itemName = names.item(id(a[1]));
     // Generations 4-5 Frisk names the item but not the foe holding it
     if (!isIdent(a[0])) {
-      if (from?.id === 'frisk' && typeof kw.of === 'string') await say('own.friskFound', { ...nv(kw.of), itemName });
+      if (from?.id === 'frisk' && isIdent(kw.of)) await say('own.friskFound', { ...nv(kw.of), itemName });
       else warn(`-item:${from?.id ?? ''}`);
       return true;
     }

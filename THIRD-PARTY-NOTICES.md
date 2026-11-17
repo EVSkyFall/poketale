@@ -29,7 +29,7 @@ Upstream revisions used for the build:
 - Copyright (c) 2011-2026 Guangcong Luo and other contributors http://pokemonshowdown.com/
 - License: MIT (text in [Appendix A](#a1-pokémon-showdown)); upstream file `LICENSE`.
 - What is included: the battle simulator (`dist/sim/`, `dist/lib/`) and its data tables
-  (`dist/data/`, including the `champions` mod chain), adapted for the browser at build time by
+  (`dist/data/`, including the `champions` and `gen1`-`gen8` mod chains), adapted for the browser at build time by
   `build/showdown.mjs` (file-system access replaced by static imports, server-only formats,
   random-team generation and text files left out, some fields unused by battles dropped from the
   data tables). The list of trainer sprite names in `server/chat-commands/avatars.tsx` is read
