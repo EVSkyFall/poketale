@@ -496,6 +496,8 @@ export default Object.freeze({
   'panel.sc.friendship.high': 'It seems quite attached to its Trainer.',
   'panel.sc.friendship.lowest': "It doesn't seem to like its Trainer very much...",
   'panel.sc.evolveLocked': "It won't evolve.",
+  'panel.sc.lockEvolution': 'Keep from evolving',
+  'panel.sc.unlockEvolution': 'Let it evolve again',
   'panel.sc.gigantamax': 'It can Gigantamax.',
   'panel.sc.traitsBoth': "It won't evolve, and it can Gigantamax.",
   'panel.sc.mode.stats': 'Stats',

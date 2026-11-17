@@ -16,8 +16,14 @@ const EVERSTONE_IGNORED = new Set(['kadabra']);
 
 export const everstoneStops = (dex, mon) => holdsEverstone(mon.item) && !EVERSTONE_IGNORED.has(dex.species.get(mon.species).id);
 
-// Sword/Shield: a Pikachu or Eevee with the Gigantamax factor cannot evolve
-const GMAX_KEEPS_FORM = new Set(['pikachu', 'eevee']);
+// Sword/Shield: a Pikachu, Eevee or Meowth with the Gigantamax factor cannot evolve
+const GMAX_KEEPS_FORM = new Set(['pikachu', 'eevee', 'meowth']);
+
+// A kind that can Gigantamax, now or once it evolves (a Charmander's factor shows on its Charizard)
+export const gigantamaxLine = (dex, species) => {
+  const kind = dex.species.get(species);
+  return !!kind.canGigantamax || (kind.evos ?? []).some(next => gigantamaxLine(dex, next));
+};
 
 // A Pokémon that will not evolve at all, unlike one holding an Everstone: marked so (a partner Pikachu refusing its
 // Thunder Stone), or keeping its Gigantamax factor

@@ -38,6 +38,8 @@ const QUILL_HIT = 14;
 const LOCK_SHUT = ['..oooo..', '.o....o.', '.o....o.', 'oooooooo', 'owwwwwwo', 'owwoowwo', 'owwwwwwo', 'oooooooo'];
 const LOCK_OPEN = ['..oooo..', '.o....o.', '.o......', 'oooooooo', 'owwwwwwo', 'owwoowwo', 'owwwwwwo', 'oooooooo'];
 const LOCK_COLOR = { shut: { o: 0x484848, w: 0xf8c020 }, open: { o: 0x484848, w: 0xf8f8f8 } };
+// On the level line left of the gender mark: a long name never pushes it under the page beside
+const LOCK_X = 84, LOCK_Y = -26;
 export const PAGES = ['profile', 'stats', 'moves'];
 
 const MEMO_RIGHT = 7 + 1224 / 6, PAGE_BOTTOM = 159, BOND_HEART_W = 7, BOND_HEART_DY = 5, BOND_SIZES = [96, 80, 66];
@@ -277,33 +279,28 @@ export class SummaryScreen {
       if (summary.nature.mint) p.add(styledText(s, 7, 113 + 14.83, summary.nature.mint, 'WINDOW_ALT').setOrigin(0, 0));
     }
 
-    let y = 113 + 14.83 * (summary.nature ? (summary.nature.mint ? 2 : 1) : 0);
-    if (summary.bond) y = this.bondLine(p, y, summary.bond);
-    if (summary.traits?.text) this.memoLine(p, y, summary.traits.text);
+    const y = 113 + 14.83 * (summary.nature ? (summary.nature.mint ? 2 : 1) : 0);
+    if (summary.bond || summary.traits?.text) this.bondLine(p, y, summary.bond, summary.traits?.text);
   }
 
-  // A memo line under the others, made smaller until it fits the page
-  memoLine(p, y, line) {
-    let text;
+  // The bond line (after its heart) and the traits line under it, made smaller together until both fit the page
+  bondLine(p, y, bond, traits) {
+    const s = this.scene, x = 7 + BOND_HEART_W + 3;
+    let lines = [];
     for (const fontSize of BOND_SIZES) {
-      text?.destroy();
-      text = styledText(this.scene, 7, y, line, 'WINDOW_ALT', { fontSize, wordWrap: { width: (MEMO_RIGHT - 7) * 6 } }).setOrigin(0, 0);
-      if (y + text.displayHeight <= PAGE_BOTTOM) break;
+      for (const text of lines) text.destroy();
+      lines = [];
+      let bottom = y;
+      for (const [left, line] of [[x, bond?.text], [7, traits]]) {
+        if (!line) continue;
+        const text = styledText(s, left, bottom, line, 'WINDOW_ALT', { fontSize, wordWrap: { width: (MEMO_RIGHT - left) * 6 } }).setOrigin(0, 0);
+        lines.push(text);
+        bottom += text.displayHeight;
+      }
+      if (bottom <= PAGE_BOTTOM) break;
     }
-    p.add(text);
-  }
-
-  bondLine(p, y, bond) {
-    const s = this.scene, heart = s.add.image(7, y + BOND_HEART_DY, artTexture(s, bond.band === 'lowest' ? 'heartCold' : 'heart')).setOrigin(0, 0);
-    const x = 7 + BOND_HEART_W + 3;
-    let text;
-    for (const fontSize of BOND_SIZES) {
-      text?.destroy();
-      text = styledText(s, x, y, bond.text, 'WINDOW_ALT', { fontSize, wordWrap: { width: (MEMO_RIGHT - x) * 6 } }).setOrigin(0, 0);
-      if (y + text.displayHeight <= PAGE_BOTTOM) break;
-    }
-    p.add([heart, text]);
-    return y + text.displayHeight;
+    if (bond) p.add(s.add.image(7, y + BOND_HEART_DY, artTexture(s, bond.band === 'lowest' ? 'heartCold' : 'heart')).setOrigin(0, 0));
+    p.add(lines);
   }
   statsPage(container, content, mon, summary) {
     const s = this.scene, p = s.add.container(0, -159);
@@ -497,22 +494,17 @@ export class SummaryScreen {
   }
 
   placeQuill() {
-    const { name, shiny, quill, evolveLock } = this.nameRefs ?? {};
-    if (!name) return;
-    let x = (shiny ? shiny.x + shiny.width * shiny.scaleX : name.x + name.displayWidth) + 3;
-    const y = name.y + 3;
-    for (const [icon, rows] of [[quill, QUILL], [evolveLock, LOCK_SHUT]]) {
-      if (!icon) continue;
-      icon.icon.setPosition(x, y);
-      icon.hit.setPosition(x + rows[0].length / 2, y + rows.length / 2);
-      x += rows[0].length + 3;
-    }
+    const { name, shiny, quill } = this.nameRefs ?? {};
+    if (!quill) return;
+    const x = (shiny ? shiny.x + shiny.width * shiny.scaleX : name.x + name.displayWidth) + 3, y = name.y + 3;
+    quill.icon.setPosition(x, y);
+    quill.hit.setPosition(x + QUILL[0].length / 2, y + QUILL.length / 2);
   }
 
   drawLock(layer, shut) {
-    const s = this.scene, icon = s.add.graphics();
+    const s = this.scene, icon = s.add.graphics().setPosition(LOCK_X, LOCK_Y);
     this.paintLock(icon, shut);
-    const hit = s.add.rectangle(0, 0, QUILL_HIT, QUILL_HIT, 0, 0).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    const hit = s.add.rectangle(LOCK_X + LOCK_SHUT[0].length / 2, LOCK_Y + LOCK_SHUT.length / 2, QUILL_HIT, QUILL_HIT, 0, 0).setOrigin(0.5).setInteractive({ useHandCursor: true });
     hit.on('pointerup', this.tap(() => this.toggleLock()));
     layer.add([icon, hit]);
     return { icon, hit };

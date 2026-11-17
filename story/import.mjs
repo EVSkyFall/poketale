@@ -6,7 +6,7 @@ import { dropOocs } from './chat.mjs';
 import { COMPAT_LINES, COMPAT_LINE_RE, COMPAT_FIELD_SEP, compatHead, compatFold, dropTaken } from './compat.mjs';
 import { readStored, isRecord, isUnreadable } from './stored.mjs';
 import { ruleNote, ruleError, refusal, failed } from './failure.mjs';
-import { clone, fillSet, rngFor, newMon, uniqueUid, hpFromPercent, hpPercentOf, markDex, toID, maxHp, healParty, friendshipOf, isEgg, tidyBreeding, stateFormat } from './state.mjs';
+import { clone, fillSet, rngFor, newMon, uniqueUid, hpFromPercent, hpPercentOf, markDex, toID, maxHp, healParty, friendshipOf, isEgg, tidyBreeding, stateFormat, dropHeldEvolution } from './state.mjs';
 import { FRIENDSHIP_MAX, friendshipLocked } from '../engine/friendship.mjs';
 import { STATS, STATUS_IDS } from '../engine/mon.mjs';
 import { evTotal } from './training.mjs';
@@ -735,6 +735,7 @@ export function applyImport(state, imp, ctx) {
     if (entry.gigantamax !== undefined && !isEgg(mon)) {
       if (entry.gigantamax === true) mon.set.gigantamax = true; else delete mon.set.gigantamax;
     }
+    if (!isEgg(mon)) dropHeldEvolution(sim.Dex, mon);
     if (entry.eggCycles !== undefined && isEgg(mon)) mon.egg.cycles = entry.eggCycles;
     if (!isEgg(mon)) markDex(next, sim, mon.set.species, true);
     if (entry.place !== 'box') partyOrder.push(mon.uid);

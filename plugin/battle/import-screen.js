@@ -17,6 +17,7 @@ import { learnableTms } from '../../story/item-info.mjs';
 import { STATS, MAX_LEVEL, MAX_MOVES, MAX_IV, PARTY_MAX, STATUS_IDS, displayName, toID, spriteIdOf } from '../../engine/mon.mjs';
 import { EV_STAT_MAX, EV_TOTAL_MAX } from '../../engine/rules.mjs';
 import { FRIENDSHIP_MAX } from '../../engine/friendship.mjs';
+import { gigantamaxLine } from '../../engine/evolution.mjs';
 import storyNames from '../../data/story-names.json' with { type: 'json' };
 import itemTable from '../../data/names/items.json' with { type: 'json' };
 import { pushBack } from './contextmenu.js';
@@ -730,8 +731,8 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
 
     const group = g => el('fieldset', {}, el('legend', { textContent: g.label }),
       g.fields.filter(f => !(DEBUG_FIELDS.includes(f) || TRAIT_FIELDS.includes(f)) || m[f] !== undefined)
-        // The Gigantamax factor is offered for a kind that can Gigantamax, or kept visible while it is on
-        .filter(f => f !== 'gigantamax' || m.gigantamax || !!sim.Dex.species.get(s.species).canGigantamax)
+        // The Gigantamax factor is offered for a kind that can Gigantamax now or once evolved, or kept visible while it is on
+        .filter(f => f !== 'gigantamax' || m.gigantamax || gigantamaxLine(sim.Dex, s.species))
         .map(f => fieldRow(m, f, controls[f](), notes[f] ?? null)));
 
     const toggle = el('button', { type: 'button', className: 'more-btn' },

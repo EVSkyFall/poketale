@@ -496,6 +496,8 @@ export default Object.freeze({
   'panel.sc.friendship.high': '트레이너를 꽤 따르고 있는 것 같다.',
   'panel.sc.friendship.lowest': '트레이너를 별로 좋아하지 않는 것 같다...',
   'panel.sc.evolveLocked': '진화하지 않는다.',
+  'panel.sc.lockEvolution': '진화하지 않게 하기',
+  'panel.sc.unlockEvolution': '다시 진화할 수 있게 하기',
   'panel.sc.gigantamax': '거다이맥스할 수 있다.',
   'panel.sc.traitsBoth': '진화하지 않고, 거다이맥스할 수 있다.',
   'panel.sc.mode.stats': '능력치',

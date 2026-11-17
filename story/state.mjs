@@ -1,7 +1,7 @@
 import { findBlocks, findTags, parseChange, parseBattle, battlesIn, hashKey, speciesName, sharedForms, pickForm, messageId, norm, stripBlocksRead } from './blocks.mjs';
 import { expForLevel, calcExpGain, growthOf as growthOfSpecies, DEFAULT_EXP_RATE, storyExpRate, STORY_EXP_PACE } from '../engine/exp.mjs';
 import { STATS, STATUS_IDS, completeSet, toID } from '../engine/mon.mjs';
-import { levelEvolution, usesHeldItem, extraEvolutions, countOf, evolveTraits, ABSENT_TRADE_EVOLUTION, EVOLVE_FRIENDSHIP } from '../engine/evolution.mjs';
+import { levelEvolution, usesHeldItem, extraEvolutions, countOf, evolveLocked, evolveTraits, ABSENT_TRADE_EVOLUTION, EVOLVE_FRIENDSHIP } from '../engine/evolution.mjs';
 import { engineMember } from '../engine/input.mjs';
 import { escapeRe } from './norm.mjs';
 import { BAG_ITEMS, isBall, foodHeal } from '../engine/bag.mjs';
@@ -190,25 +190,29 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
   const ctxAt = foldCtxAt(chat, ctx);
   const settingsOf = i => foldValues(ctxAt(i));
 
-  // The partner Pikachu a compatible bot's story starts with (compatPartnerStart): the first Pikachu to join before the
-  // chat's first battle will not evolve, and in Pokémon Journeys takes the Gigantamax factor. Checked right after each
-  // message's change blocks and after each import, so an edit made at the same message as the joining stays
+  // The partner Pikachu a compatible bot's story starts with (compatPartnerStart): the first Pikachu ever to join
+  // before the chat's first battle will not evolve, and in Pokémon Journeys takes the Gigantamax factor. Checked after
+  // each change block and each import, so an edit made at the same message as the joining stays
   const partner = compatPartnerStart(chat);
-  const firstBattle = Math.min(Infinity, ...[...survey.battles.values()].filter(b => !b.discarded).map(b => b.index));
-  const partnerAt = i => (partner && i < firstBattle && ruleValues(ctxAt(i)).partnerTraits ? partner : null);
-  const markPartner = (before, after, i) => {
-    const traits = partnerAt(i), dex = ctx?.sim?.Dex;
+  const first = [...survey.battles.values()].filter(b => !b.discarded).sort((a, b) => a.at - b.at)[0] ?? null;
+  const firstStart = first ? battlesIn(messages[first.index], first.index, ctxAt(first.index)).find(b => b.key === first.key)?.start ?? 0 : 0;
+  const beforeBattle = (i, start) => !first || i < first.index || (i === first.index && start < firstStart);
+  const partnerAt = (i, start, time) => (partner && beforeBattle(i, start) && ruleValues(ctxAt(i, time)).partnerTraits ? partner : null);
+  const partnerKey = i => (partner ? JSON.stringify([partner, !first || i < first.index ? 0 : i === first.index ? firstStart : -1]) : '');
+  const markPartner = (before, after, traits) => {
+    const dex = ctx?.sim?.Dex;
     if (!traits || !dex || before === after) return after;
-    const pikachu = m => !isEgg(m) && dex.species.get(m.set.species).baseSpecies === 'Pikachu';
+    const pikachu = species => dex.species.get(species).baseSpecies === 'Pikachu';
     const had = [...before.party, ...before.box];
-    if (had.some(pikachu)) return after;
+    if (had.some(m => !isEgg(m) && pikachu(m.set.species)) || (before.dex?.caught ?? []).some(pikachu)) return after;
     const known = new Set(had.map(m => m.uid));
-    const joined = [...after.party, ...after.box].find(m => !known.has(m.uid) && pikachu(m));
+    const joined = [...after.party, ...after.box].find(m => !known.has(m.uid) && !isEgg(m) && pikachu(m.set.species));
     if (!joined) return after;
     const next = structuredClone(after);
     const mon = [...next.party, ...next.box].find(m => m.uid === joined.uid);
     mon.evolveLocked = true;
     if (traits.gigantamax && dex.species.get(mon.set.species).canGigantamax) mon.set.gigantamax = true;
+    dropHeldEvolution(dex, mon);
     return next;
   };
 
@@ -219,7 +223,7 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
       if (!isReflected(action, reflected, seen)) next = runAction(next, action, here).state;
       reflected.add(action.id);
     }
-    return markPartner(cur, applyImport(next, imp, here), i);
+    return markPartner(cur, applyImport(next, imp, here), partnerAt(i, Infinity, imp.time));
   }, start);
   const importKeysAt = i => importsAt(i).map(imp => `${hashKey(JSON.stringify(imp))}:${Object.values(ruleValues(ctxAt(i, imp.time))).join(':')}`);
   const importKey = i => [...(i === 0 ? importKeysAt(-1) : []), ...importKeysAt(i)].join(',');
@@ -255,7 +259,7 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
     return { index: i, date: status?.date ?? null, party: hatchedParty(now).map(mon => ({ species: mon.set.species, ...(mon.set.name ? { name: mon.set.name } : {}) })),
       opponents: [spec.name, spec.foePartner?.name].filter(Boolean) };
   };
-  const keyOf = i => `${messageId(messages[i], i)}\u0001${messages[i]?.role}\u0001${parts[i]}\u0001${findTags(parts[i]).map(t => used(t.key)).filter(Boolean).join(',')}\u0001${heldIn(i)}\u0001${importKey(i)}\u0001${Object.values(settingsOf(i)).join('\u0001')}\u0001${leagueKey(i)}\u0001${JSON.stringify(partnerAt(i))}`;
+  const keyOf = i => `${messageId(messages[i], i)}\u0001${messages[i]?.role}\u0001${parts[i]}\u0001${findTags(parts[i]).map(t => used(t.key)).filter(Boolean).join(',')}\u0001${heldIn(i)}\u0001${importKey(i)}\u0001${Object.values(settingsOf(i)).join('\u0001')}\u0001${leagueKey(i)}\u0001${partnerKey(i)}`;
   let from = 0;
   while (from <= last && from < folds.length && folds[from].key === keyOf(from)) from++;
   if (from <= last) folds.length = from;
@@ -274,7 +278,6 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
   let state = from ? folds[from - 1].after : applyImportsAt(-1, inRule(ctx?.sim, emptyState(), settingsOf(-1).rule), ctxAt(-1), reflected, seen);
   if (!from) state = book(state, -1);
   for (let i = from; i <= last; i++) {
-    const entering = state;
     const name = messageId(messages[i], i);
     const here = ctxAt(i);
 
@@ -316,11 +319,12 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
       if (held.has(changeAt(i, event.n))) continue;
       const { ops } = parseChange(event.body, here);
       const before = Object.keys(table.fills).length;
+      const was = state;
       state = applyOps(state, ops, at, `${name}:${event.key}`, table).state;
+      state = markPartner(was, state, partnerAt(i, event.start));
       if (Object.keys(table.fills).length !== before) changed = true;
       ops.forEach((_, j) => { const key = `${name}:${event.key}:${j}`; if (Object.hasOwn(table.fills, key)) fills[key] = table.fills[key]; });
     }
-    state = markPartner(entering, state, i);
     state = book(applyImportsAt(i, state, at, reflected, seen), i);
     if (keep) folds.push({ key: keyOf(i), after: state, fills, status, win });
   }
@@ -621,6 +625,7 @@ function applyOp(state, op, ctx, fillKey, fill) {
     case 'evolvelock': {
       const { mon } = findMon(state, op.ref, ctx);
       if (op.locked === true) mon.evolveLocked = true; else delete mon.evolveLocked;
+      dropHeldEvolution(ctx.sim.Dex, mon);
       return;
     }
     case 'nickname': {
@@ -914,6 +919,13 @@ function keepHpGain(sim, mon, oldMax, formatid) {
 
 function settlePending(mon) {
   if (!mon.pending.moves.length && !mon.pending.evolve) mon.pending.levels = 0;
+}
+
+// A Pokémon that will not evolve lets go of an evolution still waiting for it
+export function dropHeldEvolution(dex, mon) {
+  if (!mon.pending?.evolve || !evolveLocked(dex, { species: mon.set.species, ...evolveTraits(mon) })) return;
+  mon.pending.evolve = null;
+  settlePending(mon);
 }
 
 export function maxPp(sim, moveId, ppUps = 0, formatid) {
@@ -1217,6 +1229,7 @@ export function applyBattleResult(before, result, ctx, { battle = null, outcome 
       mon.pending.moves = mon.pending.moves.filter(id => !mon.set.moves.includes(id));
     } else if (evolution && evolution.evolved === undefined) {
       mon.pending.evolve = evolution.to;
+      dropHeldEvolution(sim.Dex, mon);
     }
   }
   for (const { uid, move } of result.learnQueue ?? []) {
