@@ -351,7 +351,9 @@ export function actsIn(text, table) {
 
 export const heldLine = lang => say(lang, 'notice.held');
 
-export function changesIn(text, chat, ctx, lang) {
+// growing: the text is the reply streaming into the last message (the display path's pass.grows), whose saved text can
+// lag behind what is shown; it stands at that message even when an earlier message has the same change blocks
+export function changesIn(text, chat, ctx, lang, { growing = false } = {}) {
   if (!hasBlocks(text)) return null;
   const messages = chat?.message ?? [];
   const readAt = rulesAt(chat);
@@ -359,7 +361,7 @@ export function changesIn(text, chat, ctx, lang) {
   const textKeys = new Map();
   const keysOf = reading => { const edges = readsBlockEdges(reading); if (!textKeys.has(edges)) textKeys.set(edges, changeKeys(text, reading)); return textKeys.get(edges); };
   const same = messages.findLastIndex(m => String(m?.data ?? '') === String(text));
-  const index = same >= 0 ? same : messages.findLastIndex((m, i) => {
+  const index = same >= 0 ? same : growing && messages.length ? messages.length - 1 : messages.findLastIndex((m, i) => {
     const keys = keysOf(readAt(i));
     if (!keys.length) return false;
     const own = changeKeys(m?.data ?? '', readAt(i));
@@ -373,16 +375,15 @@ export function changesIn(text, chat, ctx, lang) {
   const at = ctx && { ...(index >= 0 ? foldCtxAt(chat, ctx)(index) : ctx), status: statusIn(messages[index]) ?? status };
 
   const reading = index >= 0 ? readAt(index) : undefined;
-  // A reply not saved yet reads its discs like the message it will become, in the region its own or the latest Status Window names
+  // A reply after the last message reads its discs like the message it will become, in the region its own or the latest
+  // Status Window names
   const machineReading = reading ?? readAt(messages.length);
-  // Text that is no saved message as it is, is the reply being written, as the display path takes it (pass.at); a saved
-  // user message's Status Window is not the bot's
-  const ownStatus = statusIn({ role: same >= 0 ? messages[same]?.role : 'char', data: text });
-  const machineRegion = (ownStatus ?? (same >= 0 ? at?.status ?? latestStatus(chat, same) : latestStatus(chat)))?.region;
-  // The world the discs belong to is the one where the text stands: a saved message's own, else the end of the chat for the
-  // reply being written, even when an earlier message with the same change blocks gave the state and reading above
-  const place = same >= 0 ? same : messages.length;
-  const world = discWorld(compatWorld(chat), generationsAt(chat)(place), raiseGen(autoGenAt(chat, place === same ? same : messages.length - 1), machineRegion));
+  // A saved user message's Status Window is not the bot's
+  const ownStatus = statusIn({ role: index >= 0 ? messages[index]?.role : 'char', data: text });
+  const machineRegion = (ownStatus ?? (index >= 0 ? at?.status ?? latestStatus(chat, index) : latestStatus(chat)))?.region;
+  // The discs belong to the generation where the text stands, as the fold reads them there
+  const world = discWorld(compatWorld(chat), generationsAt(chat)(index >= 0 ? index : messages.length),
+    raiseGen(autoGenAt(chat, index >= 0 ? index : messages.length - 1), machineRegion));
   const chatId = index >= 0 ? messageId(messages[index], index) : null;
   const held = index >= 0 ? heldChanges(chat, table ?? readTable(chat)) : new Set();
   const events = [], errors = [];
