@@ -91,8 +91,14 @@ export function formatRules(sim, format = DEFAULT_FORMAT) {
 
 		engineSet: set => {
 			const own = champions ? { ...set, evs: NO_EVS } : set;
-			// Generations 1-2 battles have no natures and keep even IVs only (Showdown): stats outside them are reckoned so too
-			return self.gen <= 2 ? { ...own, nature: '', ivs: Object.fromEntries(Object.entries(own.ivs ?? {}).map(([s, v]) => [s, v & 30])) } : own;
+			if (self.gen > 2) return own;
+			// Generations 1-2 have no natures, keep even IVs only (Showdown) and have one Special: its IV and its EVs (stat
+			// experience) count for both special stats. Battles and stats outside them are reckoned so; the saved set
+			// keeps both, so EVs gained for Sp. Def stay Sp. Def's
+			const ivs = Object.fromEntries(Object.entries(own.ivs ?? {}).map(([s, v]) => [s, v & 30]));
+			if (ivs.spa !== undefined) ivs.spd = ivs.spa;
+			const evs = own.evs && own.evs.spa !== undefined ? { ...own.evs, spd: own.evs.spa } : own.evs;
+			return { ...own, nature: '', ivs, ...(evs ? { evs } : {}) };
 		},
 
 		maxPp(moveId, ups = 0) {
@@ -114,10 +120,10 @@ export function formatRules(sim, format = DEFAULT_FORMAT) {
 
 export function applyFormatRules(sim, battle) {
 	const rules = formatRules(sim, battle.format);
-	if (rules.effort || wrapped.has(battle)) return rules;
+	if ((rules.effort && rules.dex.gen > 2) || wrapped.has(battle)) return rules;
 	const statModify = battle.statModify;
 	battle.statModify = function (baseStats, set, statName) {
-		return statModify.call(this, baseStats, { ...set, evs: NO_EVS }, statName);
+		return statModify.call(this, baseStats, rules.engineSet(set), statName);
 	};
 	wrapped.add(battle);
 	return rules;
