@@ -32,7 +32,10 @@ export function runLaterMoves(battle) {
 	revivingRequests(battle);
 	if (gen <= 3) {
 		modifyMove(battle);
+		modifyTarget(battle);
 		hitTargets(battle);
+		hitCount(battle);
+		stealBoosts(battle);
 	}
 	if (gen <= 2) {
 		tailwindSpeed(battle);
@@ -46,7 +49,72 @@ export function runLaterMoves(battle) {
 		afterMove(battle);
 		runMoveGen1(battle);
 		boostFlags(battle);
+		areaMoves(battle);
 	}
+}
+
+// Generations 1-3 never let a move pick its target again: Metal Burst and Comeuppance hit the Pokémon that last hurt
+// the user (double battles)
+function modifyTarget(battle) {
+	wrap(battle.actions, 'useMoveInner', 'modifyTarget', useMoveInner => function (moveOrMoveName, pokemon, options, ...rest) {
+		const move = battle.dex.moves.get(moveOrMoveName);
+		if (options?.target && later(battle, move) && move.onModifyTarget) {
+			const relay = { target: options.target };
+			guarded(battle, `${move.id} target`, () => battle.singleEvent('ModifyTarget', move, null, pokemon, options.target, move, relay));
+			if (relay.target && relay.target !== options.target) options = { ...options, target: relay.target };
+		}
+		return useMoveInner.call(this, moveOrMoveName, pokemon, options, ...rest);
+	});
+}
+
+// Generations 1-3 have no later hit loop, which counts the hits each Pokémon takes from any move (Rage Fist)
+function hitCount(battle) {
+	wrap(battle.actions, 'tryMoveHit', 'hitCount', tryMoveHit => function (target, pokemon, move, ...rest) {
+		const result = tryMoveHit.call(this, target, pokemon, move, ...rest);
+		if (typeof result === 'number' && target && target !== pokemon && move.category !== 'Status') target.timesAttacked += move.hit > 0 ? move.hit : 1;
+		return result;
+	});
+}
+
+// ... and steals the target's raised stats before a move that takes them hits (Spectral Thief). The stages come off
+// through the generation's own boostBy (generation 1 works its stats out again from it)
+function stealBoosts(battle) {
+	wrap(battle.actions, 'moveHit', 'steal', moveHit => function (target, pokemon, move, moveData, isSecondary, isSelf, ...rest) {
+		const foe = Array.isArray(target) ? target[0] : target;
+		if (!isSecondary && !isSelf && move?.stealsBoosts && !move.laterStole && foe && foe !== pokemon && later(battle, move)) {
+			move.laterStole = true;
+			guarded(battle, `${move.id} steal`, () => {
+				const boosts = Object.fromEntries(Object.entries(foe.boosts).filter(([, stage]) => stage > 0));
+				if (!Object.keys(boosts).length) return;
+				battle.attrLastMove('[still]');
+				battle.add('-clearpositiveboost', foe, pokemon, `move: ${move.name}`);
+				battle.boost(boosts, pokemon, pokemon);
+				foe.boostBy(Object.fromEntries(Object.entries(boosts).map(([stat, stage]) => [stat, -stage])));
+				if (move.id === 'spectralthief') battle.addMove('-anim', pokemon, 'Spectral Thief', foe);
+			});
+		}
+		return moveHit.call(this, target, pokemon, move, moveData, isSecondary, isSelf, ...rest);
+	});
+}
+
+// Generation 1 checks a semi-invulnerable target even for a move that hits a side or the field (a hazard missed a
+// flying foe); later generations do not
+const AREA_TARGETS = new Set(['foeSide', 'allySide', 'allyTeam', 'all']);
+function areaMoves(battle) {
+	wrap(battle.actions, 'tryMoveHit', 'area', tryMoveHit => function (target, pokemon, move, ...rest) {
+		if (!AREA_TARGETS.has(move.target) || !later(battle, move)) return tryMoveHit.call(this, target, pokemon, move, ...rest);
+		const own = Object.getOwnPropertyDescriptor(battle, 'runEvent');
+		const runEvent = battle.runEvent;
+		battle.runEvent = function (id, ...args) {
+			return id === 'Invulnerability' ? true : runEvent.call(this, id, ...args);
+		};
+		try {
+			return tryMoveHit.call(this, target, pokemon, move, ...rest);
+		} finally {
+			if (own) Object.defineProperty(battle, 'runEvent', own);
+			else delete battle.runEvent;
+		}
+	});
 }
 
 // Revival Blessing works in every generation's battle code, but only generation 9's request marks the slot that must
