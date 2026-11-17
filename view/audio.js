@@ -97,6 +97,7 @@ export class BattleAudio {
     this.assets = assets; this.parent = parent; this.sounds = new Map(); this.active = new Set();
     this.diagnostics = [];
     this.silent = options.sound === false;
+    this.cries = typeof options.cries === 'function' ? options.cries : null;
     this.wild = options.wild ?? true;
     const chosen = battleMusic(options);
     this.battleBgm = chosen.key;
@@ -129,7 +130,8 @@ export class BattleAudio {
     audio.crossOrigin = 'anonymous'; audio.preload = 'auto'; audio.loop = loop;
     audio.volume = loop ? BGM_VOLUME : 0.6;
     const url = this.assets.url(`audio/${path}`), route = this.assets.route;
-    const ways = route ? route.order(url) : ['direct'];
+    // A player's cry pack goes first; a missing entry or a codec the browser lacks falls through to the game cry.
+    const ways = [...(this.cries && path.startsWith('cry/') ? ['pack'] : []), ...(route ? route.order(url) : ['direct'])];
     let finished = false, sourcedNow;
     const sourced = new Promise(resolve => { sourcedNow = resolve; });
     const ready = new Promise(resolve => {
@@ -142,10 +144,19 @@ export class BattleAudio {
       const left = [...ways];
       let triedDirect = false;
       const next = () => {
+        if (this.destroyed) return;
         const way = left.shift();
         if (!way) {
           if (!finished) { this.diagnostics.push(`Audio unavailable: ${path}`); done(); }
           sourcedNow(); return;
+        }
+        if (way === 'pack') {
+          this.packUrl(path).then(src => {
+            if (this.destroyed) return;
+            if (!src) { next(); return; }
+            audio.src = src; sourcedNow(); audio.load();
+          }, error => { this.note(`Cry pack failed: ${path} (${error?.message ?? error})`); next(); });
+          return;
         }
         if (way === 'direct') { triedDirect = true; audio.src = url; sourcedNow(); audio.load(); return; }
         route.objectUrl(url, () => audioType(url)).then(src => {
@@ -154,7 +165,8 @@ export class BattleAudio {
           audio.src = src; sourcedNow(); audio.load();
         }, error => { this.note(`Audio via host failed: ${path} (${error?.message ?? error})`); if (!this.destroyed) next(); });
       };
-      const timer = setTimeout(() => { this.diagnostics.push(`Audio load timeout: ${path}`); done(); }, 15000);
+      // The timer ends the wait, not the loading: a source that arrives or fails later still moves on to the next way.
+      const timer = setTimeout(() => { this.diagnostics.push(`Audio load timeout: ${path}`); const fallback = audio.onerror; done(); audio.onerror = fallback; }, 15000);
       audio.onloadeddata = done;
       audio.onerror = next;
       this.assets.life.signal.addEventListener('abort', done, { once: true });
@@ -179,6 +191,11 @@ export class BattleAudio {
   cryPath(mon) {
     const key = Object.hasOwn(CRIES, mon?.spriteId ?? '') ? CRIES[mon.spriteId] : null;
     return key ? `cry/${key}.m4a` : null;
+  }
+
+  async packUrl(path) {
+    const pack = await this.cries();
+    return pack ? pack.url(path.slice('cry/'.length, -'.m4a'.length)) : null;
   }
 
   music(key) {

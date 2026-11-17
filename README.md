@@ -12,6 +12,8 @@ After installing this file once, future versions can be installed with RisuAI's 
 
 Images and sounds are loaded at runtime from PokeRogue assets and PokéAPI Pokémon and badge sprites on `raw.githubusercontent.com`, and from `play.pokemonshowdown.com`. The plugin has no server of its own.
 
+A Cobblemon cry resource pack (a Minecraft resource-pack `.zip`) can be loaded in the settings as downloaded, without unpacking it. Pokémon found in the pack's `assets/<namespace>/sounds/pokemon/<species>/` folders use its cries instead of the game cries; the others keep the game cries. The pack is kept in RisuAI's plugin storage. PokéTale neither includes nor downloads any pack.
+
 ## Build
 
 Requirements: Node.js 24 or later, npm and Git. On Windows, run from the project root:
