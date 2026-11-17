@@ -43,7 +43,7 @@ import { importAiMessages, readAiParty, aiFailedFound } from '../../story/import
 import { readSettingChanges, recordSettingChange, settingsBehind, rulesAt } from '../../story/setting-changes.mjs';
 import { readBattlesOff, battlesOff, setBattlesOff } from '../../story/battles-off.mjs';
 import { loadPicture, savePicture, adoptOldPicture, entryMe } from './my-picture.js';
-import { cryPackSource, loadCryPackInfo, setCryPack } from './cry-pack-store.js';
+import { addCryPacks, cryPackSource, loadCryPacks, removeCryPack } from './cry-pack-store.js';
 import { storyCss, sheetCss, SHEET_CLASS } from '../../story/style.mjs';
 import { cardBounds } from '../../story/named.mjs';
 import { opponentPictureWithGender, foePartnerPicture, partnerPicture } from '../../story/trainer-look.mjs';
@@ -2067,14 +2067,14 @@ export async function openSettings() {
   try {
 
     const preparing = mountPreparing({ lang: await openLang() });
-    let pass, bot = null, persona, picture = null, cryPack = null, imports = null, chatBattles = null;
+    let pass, bot = null, persona, picture = null, cryPacks = [], imports = null, chatBattles = null;
     try {
       await showWindow(owner, { full: true });
 
       ({ settings, status: settingsStatus } = await loadSettings(risuai.pluginStorage));
       ({ name: persona } = await personaLook());
       if (persona) picture = await loadPicture(risuai.pluginStorage, persona);
-      cryPack = await loadCryPackInfo(risuai.pluginStorage);
+      cryPacks = await loadCryPacks(risuai.pluginStorage);
       pass = await readPass();
       if (pass) bot = { name: (await characterAt(pass.charIndex, pass.chat, { fresh: true }))?.name ?? '', compat: compatStatus.get(pass.target?.chaId) ?? '' };
       if (pass) imports = importsOf(pass.chat);
@@ -2082,10 +2082,11 @@ export async function openSettings() {
     } finally { preparing.remove(); }
     const unreadable = isUnreadable(settingsStatus);
     const lang = currentLang(pass?.chat);
-    app = mountSettings({ settings, bot, persona, notice: unreadable ? settingsUnreadable(lang) : '', picture, cryPack, imports, battlesOff: chatBattles, lang,
+    app = mountSettings({ settings, bot, persona, notice: unreadable ? settingsUnreadable(lang) : '', picture, cryPacks, imports, battlesOff: chatBattles, lang,
       inUse: { lang },
       onPicture: next => savePicture(risuai.pluginStorage, persona, next),
-      onCryPack: file => setCryPack(risuai.pluginStorage, file),
+      onCryPackAdd: files => addCryPacks(risuai.pluginStorage, files),
+      onCryPackRemove: id => removeCryPack(risuai.pluginStorage, id),
       onPermission: askPermission,
       onChange: next => changeInWindow(pass?.target, next),
       onImport: () => openImport(pass.target, next => app.setImports(next)),

@@ -198,10 +198,11 @@ into `dist/poke-battle.js`, and this project does not relicense them.
   These images are not covered by the PokéAPI data license (section 1.7); they belong to their
   respective owners (Nintendo, Creatures Inc., GAME FREAK inc.). The Alola trial pictures are the Z-Crystal item icons of the Pokémon Showdown item sheet above.
 
-Not downloaded by PokéTale either: a **cry pack chosen by the player** in the settings (a Cobblemon
-cry resource pack). It is read from the player's own file and kept in RisuAI's plugin storage. Its
-audio and its license belong to the pack's authors and the respective rights holders; this project
-does not distribute, link to or relicense any pack.
+Not downloaded by PokéTale either: the **voice packs chosen by the player** in the settings (voice
+rips such as the PokéPark 2 voices on The Sounds Resource). They are read from the player's own
+files and kept in RisuAI's plugin storage. Their audio belongs to the respective rights holders
+(Nintendo, Creatures Inc., GAME FREAK inc.); this project does not distribute, link to or relicense
+any of it.
 
 ---
 

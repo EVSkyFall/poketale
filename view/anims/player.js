@@ -128,7 +128,7 @@ export class AnimationPlayer {
     const eventAt = event => {
       if (event.eventType === 'AnimTimedSoundEvent') {
         if (!sound) return;
-        const path = event.resourceName ? `battle_anims/${event.resourceName}` : scene.audio.cryPath(user.mon);
+        const path = event.resourceName ? `battle_anims/${event.resourceName}` : scene.audio.cryVoice(scene.audio.cryPath(user.mon));
         sounds.push(scene.audio.play(path, Math.max(0.01, (event.pitch ?? 100) / 100), (event.volume ?? 100) / 100).then(()=>null,e=>e));
       } else if (event.eventType === 'AnimTimedAddBgEvent') {
         if (bg) { scene.tweens.killTweensOf(bg); bg.destroy(); }

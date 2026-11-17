@@ -1,8 +1,8 @@
 import CRIES from '../data/pokerogue-cries.json' with { type: 'json' };
 
-// A Cobblemon cry resource pack: the Minecraft resource-pack zip exactly as the player downloaded it.
-// Packs agree only on the folder layout, assets/<namespace>/sounds/pokemon/<species>/<file>.ogg; their
-// sounds.json often lists a different set of files, so the folder names decide the species.
+// A voice pack: a zip of voice lines exactly as the player downloaded it, such as the PokéPark 2 rips on The Sounds
+// Resource. Each Pokémon's lines sit in a folder named after it, at any depth; the rips of the playable characters
+// are not filed that way and carry the game's file-name prefixes instead.
 
 const NAME_DEX = new Map();
 for (const [id, key] of Object.entries(CRIES)) if (!id.includes('-') && /^\d+$/.test(key)) NAME_DEX.set(id, Number(key));
@@ -19,55 +19,87 @@ for (const [id, key] of Object.entries(CRIES)) {
 
 export const cryDex = key => CRY_DEX.get(key) ?? null;
 
-const toId = text => text.toLowerCase().replace(/[^a-z0-9]/g, '');
+const toId = text => text.normalize('NFKD').replace(/♀/g, 'f').replace(/♂/g, 'm').toLowerCase().replace(/[^a-z0-9]/g, '');
+const NAMES = [...NAME_DEX].map(([id, dex]) => [toId(id), dex]);
+const ID_DEX = new Map(NAMES);
 
-// The folder rank prefers an exact species name, then a name with a form tail ("deoxys-normal",
-// "basculin-red-striped"), then a bare number ("pokemon_32").
-export function folderDex(folder) {
-  const exact = NAME_DEX.get(toId(folder));
-  if (exact) return { dex: exact, rank: 0 };
-  const parts = folder.split(/[-_ .]+/);
-  for (let keep = parts.length - 1; keep >= 1; keep--) {
-    const dex = NAME_DEX.get(toId(parts.slice(0, keep).join('')));
-    if (dex) return { dex, rank: parts.length - keep };
-  }
-  const number = /^(?:pokemon[-_ ]?)?0*(\d+)$/i.exec(folder);
-  const dex = number ? Number(number[1]) : null;
-  return KNOWN_DEX.has(dex) ? { dex, rank: 100 } : null;
-}
-
-const fileRank = (folder, file) => {
-  const name = file.toLowerCase();
-  if (name === 'cry') return 0;
-  if (name === `${folder.toLowerCase()}_cry`) return 1;
-  return name.includes('cry') ? 2 : 3;
+// One substitution, insertion, deletion or swap of neighbours ("Crophish", "Keckleon" in the PokéPark 2 rip).
+const oneEditApart = (a, b) => {
+  if (Math.abs(a.length - b.length) > 1) return false;
+  let i = 0;
+  while (i < a.length && a[i] === b[i]) i++;
+  if (a.length > b.length) return a.slice(i + 1) === b.slice(i);
+  if (a.length < b.length) return a.slice(i) === b.slice(i + 1);
+  return a.slice(i + 1) === b.slice(i + 1) || (a[i] === b[i + 1] && a[i + 1] === b[i] && a.slice(i + 2) === b.slice(i + 2));
 };
 
-const PACK_FILE = /(?:^|\/)assets\/[^/]+\/sounds\/pokemon\/([^/]+)\/((?:[^/]+\/)*)([^/]+)\.ogg$/i;
+// A folder named after a species, perhaps after its dex number ("025_Pikachu") (rank 0), or a misspelt name one edit
+// away from exactly one species (rank 200).
+export function folderDex(folder) {
+  const id = toId(folder);
+  if (!id) return null;
+  const exact = ID_DEX.get(id) ?? ID_DEX.get(id.replace(/^\d+/, ''));
+  if (exact) return { dex: exact, rank: 0 };
+  const near = new Set(NAMES.filter(([name]) => oneEditApart(id, name)).map(([, dex]) => dex));
+  return near.size === 1 ? { dex: [...near][0], rank: 200 } : null;
+}
 
-const better = (a, b) => {
+const AUDIO_FILE = /^(.*?)([^/]+)\.(wav|ogg|oga|opus|mp3|m4a|aac|flac)$/i;
+const TYPES = { wav: 'audio/wav', ogg: 'audio/ogg', oga: 'audio/ogg', opus: 'audio/ogg', mp3: 'audio/mpeg', m4a: 'audio/mp4', aac: 'audio/aac', flac: 'audio/flac' };
+
+// PokéPark 2 files its playable characters' voices under their Japanese names.
+const CHARACTERS = { PIKA: 25, MIJU: 501, TUTA: 495, POKA: 498 };
+
+// Where a file sits: the species, how surely the path names it, and the folder its lines share.
+// A correctly named folder nearest the file wins; then the game's file-name prefix; then a misspelt folder, but only
+// beside correctly named ones, so a wrapper such as "Audio" (one edit from Audino) never passes for a species.
+function locate(name, folderOf, besideSpecies) {
+  const audio = AUDIO_FILE.exec(name);
+  if (!audio) return null;
+  const [, dir, file] = audio;
+  const folders = dir.split('/').slice(0, -1);
+  const at = rank => {
+    for (let i = folders.length - 1; i >= 0; i--) {
+      const found = folderOf(folders[i]);
+      if (found?.rank === rank && (rank === 0 || besideSpecies.has(folders.slice(0, i).join('/')))) return { found, i };
+    }
+    return null;
+  };
+  const named = at(0);
+  if (named) return { dex: named.found.dex, score: [0, folders.length - named.i - 1], home: folders.slice(0, named.i + 1).join('/') };
+  const character = CHARACTERS[/^S_([A-Z]+)_VOICE/i.exec(file)?.[1]?.toUpperCase()];
+  if (character) return { dex: character, score: [1, 0], home: dir };
+  const misspelt = at(200);
+  return misspelt ? { dex: misspelt.found.dex, score: [2, folders.length - misspelt.i - 1], home: folders.slice(0, misspelt.i + 1).join('/') } : null;
+}
+
+const before = (a, b) => {
   for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] < b[i];
   return false;
 };
 
+// A species gets every file that ties for the best place: all of its lines.
 // Files in subfolders of a species folder are forms or other events, so they only fill a gap.
 // macOS zips carry "._" resource-fork stubs (and a __MACOSX copy) beside every file.
 export function indexCries(names) {
-  const best = new Map();
-  for (const name of names) {
-    if (/(?:^|\/)__MACOSX\//i.test(name)) continue;
-    const match = PACK_FILE.exec(name);
-    if (!match) continue;
-    const [, folder, sub, file] = match;
-    if (file.startsWith('._')) continue;
-    const found = folderDex(folder);
-    if (!found) continue;
-    const depth = sub ? sub.split('/').length - 1 : 0;
-    const score = [found.rank, depth, fileRank(folder, file), folder.length, file.length, name];
-    const held = best.get(found.dex);
-    if (!held || better(score, held.score)) best.set(found.dex, { score, name });
+  const files = [...names].filter(name => !/(?:^|\/)__MACOSX\//i.test(name) && !name.split('/').at(-1).startsWith('._') && AUDIO_FILE.test(name));
+  const seen = new Map();
+  const folderOf = folder => { if (!seen.has(folder)) seen.set(folder, folderDex(folder)); return seen.get(folder); };
+  const besideSpecies = new Set();
+  for (const name of files) {
+    const folders = name.split('/').slice(0, -1);
+    folders.forEach((folder, i) => { if (folderOf(folder)?.rank === 0) besideSpecies.add(folders.slice(0, i).join('/')); });
   }
-  return new Map([...best].map(([dex, { name }]) => [dex, name]));
+  const best = new Map();
+  for (const name of files) {
+    const place = locate(name, folderOf, besideSpecies);
+    if (!place) continue;
+    const key = [...place.score, place.home.length, place.home];
+    const held = best.get(place.dex);
+    if (held && held.home === place.home && place.score.every((value, i) => value === held.score[i])) held.names.push(name);
+    else if (!held || before(key, held.key)) best.set(place.dex, { key, home: place.home, score: place.score, names: [name] });
+  }
+  return new Map([...best].map(([dex, { names: found }]) => [dex, found.sort()]));
 }
 
 const u16 = (b, o) => (b[o] | b[o + 1] << 8) >>> 0;
@@ -135,21 +167,52 @@ export async function entryBytes(bytes, entry) {
   return new Uint8Array(await new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer());
 }
 
+// variants(key) is how many voices the pack holds for that Pokémon; url(key, n) gives one of them.
 export function openCryPack(bytes) {
   const entries = readZip(bytes), urls = new Map();
   const voices = indexCries([...entries].filter(([, entry]) => entry.method === 0 || entry.method === 8).map(([name]) => name));
   return {
     count: voices.size,
+    species: () => voices.keys(),
     has: key => voices.has(cryDex(key)),
+    variants: key => voices.get(cryDex(key))?.length ?? 0,
     // Blob URLs are never revoked: every play clones the cached audio element and reloads its source.
-    url(key) {
-      const name = voices.get(cryDex(key));
-      if (!name) return Promise.resolve(null);
+    url(key, variant = 0) {
+      const names = voices.get(cryDex(key));
+      if (!names) return Promise.resolve(null);
+      const line = Number.isFinite(variant) ? Math.trunc(variant) : 0;
+      const name = names[((line % names.length) + names.length) % names.length];
       if (!urls.has(name)) {
-        urls.set(name, entryBytes(bytes, entries.get(name)).then(data => URL.createObjectURL(new Blob([data], { type: 'audio/ogg' })),
+        const type = TYPES[name.split('.').at(-1).toLowerCase()] ?? '';
+        urls.set(name, entryBytes(bytes, entries.get(name)).then(data => URL.createObjectURL(new Blob([data], { type })),
           error => { urls.delete(name); throw error; }));
       }
       return urls.get(name);
+    },
+  };
+}
+
+// Several packs play as one: the first pack that has a Pokémon gives its voices, and a pack that fails to
+// give one hands over to the next pack that has it.
+export function combineCryPacks(packs) {
+  const list = packs.filter(pack => pack?.count);
+  if (!list.length) return null;
+  const owners = key => list.filter(pack => pack.has(key));
+  return {
+    count: new Set(list.flatMap(pack => [...pack.species()])).size,
+    species: () => new Set(list.flatMap(pack => [...pack.species()])).values(),
+    has: key => owners(key).length > 0,
+    variants: key => owners(key)[0]?.variants(key) ?? 0,
+    async url(key, variant = 0) {
+      let failure = null;
+      for (const pack of owners(key)) {
+        try {
+          const url = await pack.url(key, variant);
+          if (url) return url;
+        } catch (error) { failure ??= error; }
+      }
+      if (failure) throw failure;
+      return null;
     },
   };
 }

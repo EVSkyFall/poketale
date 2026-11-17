@@ -12,7 +12,7 @@ After installing this file once, future versions can be installed with RisuAI's 
 
 Images and sounds are loaded at runtime from PokeRogue assets and PokéAPI Pokémon and badge sprites on `raw.githubusercontent.com`, and from `play.pokemonshowdown.com`. The plugin has no server of its own.
 
-A Cobblemon cry resource pack (a Minecraft resource-pack `.zip`) can be loaded in the settings as downloaded, without unpacking it. Pokémon found in the pack's `assets/<namespace>/sounds/pokemon/<species>/` folders use its cries instead of the game cries; the others keep the game cries. The pack is kept in RisuAI's plugin storage. PokéTale neither includes nor downloads any pack.
+Pokémon can say their names in the PokéPark 2 voices: load the voice zips from The Sounds Resource in the settings as downloaded, without unpacking them. The "Miscellaneous Voices" zip files each Pokémon's lines in a folder named after it; the per-character zips are recognised by the game's file names. Several zips can be loaded; the one higher in the list is used first, a Pokémon with several lines says a random one each time, and Pokémon in no zip keep the game cries. The zips are kept in RisuAI's plugin storage. PokéTale neither includes nor downloads any of them.
 
 ## Build
 

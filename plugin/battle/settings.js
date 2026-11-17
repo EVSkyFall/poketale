@@ -316,8 +316,9 @@ export function importSummary({ time, count, names = [] }, lang) {
   return `${when} · ${what}`;
 }
 
-export function mountSettings({ parent = document.body, settings, bot = null, persona = null, notice = '', picture = null, cryPack = null, imports = null, battlesOff = null, inUse = {}, lang,
-  onChange = () => {}, onPicture = async () => {}, onCryPack = async () => ({ info: null, saved: true }), onPermission = async () => false, onImport = async () => {}, onCancelImport = async () => imports,
+export function mountSettings({ parent = document.body, settings, bot = null, persona = null, notice = '', picture = null, cryPacks = [], imports = null, battlesOff = null, inUse = {}, lang,
+  onChange = () => {}, onPicture = async () => {}, onCryPackAdd = async () => ({ packs: cryPacks, results: [] }), onCryPackRemove = async () => ({ packs: cryPacks, saved: true }),
+  onPermission = async () => false, onImport = async () => {}, onCancelImport = async () => imports,
   onBattlesOff = async () => battlesOff, onClose = () => {} }) {
   const t = sayer(lang);
   const NEEDS_CHAT = t('settings.needsChat');
@@ -379,13 +380,20 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     .pkb-settings .pic .preview { flex:none; width:44px; height:52px; display:flex; align-items:center; justify-content:center; overflow:hidden;
       border:1.5px solid #8fb0c8; border-radius:7px; background:#dbe8f2; }
     .pkb-settings .pic .preview img { display:block; max-width:100%; max-height:100%; }
-    .pkb-settings .pic .btns, .pkb-settings .cry .btns { display:flex; flex-wrap:wrap; gap:6px; }
+    .pkb-settings .pic .btns { display:flex; flex-wrap:wrap; gap:6px; }
     .pkb-settings .pic:not(.locked) .btn:disabled, .pkb-settings .cry .btn:disabled { opacity:.45; }
     ${noteRule('.pkb-settings .pic .fail, .pkb-settings .cry .fail', 'error')}
     .pkb-settings .pic .fail, .pkb-settings .cry .fail { flex-basis:100%; margin:0 0 3px; font-size:12px; }
-    .pkb-settings .pic .fail[hidden], .pkb-settings .cry .fail[hidden] { display:none; }
-    .pkb-settings .cry .state { flex:1 1 140px; min-width:0; font-size:13px; color:#23435f; overflow-wrap:anywhere; }
+    .pkb-settings .pic .fail[hidden], .pkb-settings .cry .fails[hidden] { display:none; }
+    .pkb-settings .cry .fails { flex-basis:100%; display:flex; flex-direction:column; gap:6px; }
+    /* Cry packs: one line per pack, the one used first on top; the load button under the remove buttons */
+    .pkb-settings .cry .packs { flex-basis:100%; min-width:0; margin:0; padding:0; list-style:none; }
+    .pkb-settings .cry .pack { display:flex; align-items:center; gap:8px; padding:5px 0; border-bottom:1.5px dashed #c3d4e1; }
+    .pkb-settings .cry .pack:first-child { padding-top:0; }
+    .pkb-settings .cry .pack > span, .pkb-settings .cry .state { flex:1 1 140px; min-width:0; font-size:13px; color:#23435f; overflow-wrap:anywhere; }
     .pkb-settings .cry .state.dim { color:#6d879b; }
+    .pkb-settings .cry .state[hidden] { display:none; }
+    .pkb-settings .cry > .btn { margin-left:auto; }
     /* Bot name field */
     .pkb-settings .add { grid-column:2 / 4; display:flex; gap:6px; margin-top:4px; }
     .pkb-settings .add input { flex:1; min-width:0; font:inherit; font-size:13px; padding:6px 8px; border:2px solid var(--navy); border-radius:7px; background:#fff; color:#23435f; }
@@ -556,56 +564,80 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
   }
 
   const cry = document.createElement('div'); cry.className = 'cry';
+  const cryList = document.createElement('ul'); cryList.className = 'packs';
   const cryState = document.createElement('span'); cryState.className = 'state'; cryState.setAttribute('role', 'status');
-  const cryInput = Object.assign(document.createElement('input'), { type: 'file', accept: '.zip,application/zip,application/x-zip-compressed', hidden: true });
-  const cryFail = document.createElement('p'); cryFail.className = 'fail'; cryFail.setAttribute('role', 'alert'); cryFail.hidden = true;
-  let pack = cryPack, cryBusy = false;
+  const cryInput = Object.assign(document.createElement('input'), { type: 'file', accept: '.zip,application/zip,application/x-zip-compressed', multiple: true, hidden: true });
+  const cryFails = document.createElement('div'); cryFails.className = 'fails'; cryFails.setAttribute('role', 'alert'); cryFails.hidden = true;
+  let packs = cryPacks ?? [], cryBusy = false;
+  const cryRemoveButtons = [];
+  const showCryFails = lines => {
+    cryFails.replaceChildren(...lines.map(text => Object.assign(document.createElement('p'), { className: 'fail', textContent: text })));
+    cryFails.hidden = !lines.length;
+  };
 
-  // Focus is loose when it fell out of the window (the file picker can leave it on the page) or sits on this field's buttons, which get disabled or hidden.
+  // Focus is loose when it fell out of the window (the file picker can leave it on the page) or sits on this field's buttons, which get disabled or redrawn.
   const looseFocus = () => !root.contains(document.activeElement) || cry.contains(document.activeElement);
-  const setCryPack = async file => {
+  // `removing` is the id of the pack being removed, null while adding. `run` returns the fail lines to show.
+  const changeCryPacks = async (removing, run) => {
     if (cryBusy) return;
     const closeButton = root.querySelector('.hd .x');
     const held = cry.contains(document.activeElement) ? document.activeElement : null;
+    const at = packs.findIndex(pack => pack.id === removing);
     // Focus waits on the close button while busy so keys (Escape included) keep reaching the window.
     if (looseFocus()) closeButton.focus();
-    cryBusy = true; cryFail.hidden = true; drawCryPack();
-    try {
-      const { info, saved, error } = await onCryPack(file);
-      pack = info;
-      if (!saved) {
-        cryFail.textContent = `${failureText(file ? WHAT.cryPackSave : WHAT.cryPackRemove, error, lang)}\n${t(file ? 'settings.cryPackSessionOnly' : 'settings.cryPackMayReturn')}`;
-        cryFail.hidden = false;
-      }
-    } catch (error) {
+    cryBusy = true; showCryFails([]); drawCryPacks();
+    try { showCryFails(await run()); } catch (error) {
       console.warn('[poke-battle] 울음소리 팩을 바꾸지 못함', error);
-      cryFail.textContent = failureText(file ? WHAT.cryPack : WHAT.cryPackRemove, error, lang); cryFail.hidden = false;
+      const name = packs.find(pack => pack.id === removing)?.name;
+      showCryFails([`${name ? `${name}: ` : ''}${failureText(removing === null ? WHAT.cryPack : WHAT.cryPackRemove, error, lang)}`]);
     } finally {
-      cryBusy = false; drawCryPack();
+      cryBusy = false; drawCryPacks();
       if (looseFocus() || document.activeElement === closeButton) {
-        const back = held && !held.hidden ? held : pack ? cryChangeButton : cryLoadButton;
+        // A redrawn remove button replaces the one that had focus: the same pack's, else the one that moved into its place.
+        const still = packs.findIndex(pack => pack.id === removing);
+        const back = held?.isConnected ? held : removing === null ? cryLoadButton
+          : cryRemoveButtons[still >= 0 ? still : Math.min(at, cryRemoveButtons.length - 1)] ?? cryLoadButton;
         back.focus();
         // A button on a hidden tab cannot take focus.
         if (document.activeElement !== back) closeButton.focus();
       }
     }
   };
+  const addCryPacks = files => changeCryPacks(null, async () => {
+    const { packs: next, results } = await onCryPackAdd(files);
+    packs = next ?? packs;
+    return results.flatMap(({ name, info, saved, error }) => (!info ? [`${name}: ${failureText(WHAT.cryPack, error, lang)}`]
+      : saved === false ? [`${name}: ${failureText(WHAT.cryPackSave, error, lang)}\n${t('settings.cryPackSessionOnly')}`] : []));
+  });
+  const removeCryPack = id => changeCryPacks(id, async () => {
+    const name = packs.find(pack => pack.id === id)?.name ?? '';
+    const { packs: next, saved, error } = await onCryPackRemove(id);
+    packs = next ?? packs;
+    return saved === false ? [`${name}: ${failureText(WHAT.cryPackRemove, error, lang)}\n${t('settings.cryPackMayReturn')}`] : [];
+  });
   const cryLoadButton = button(t('settings.cryPackLoad'), () => cryInput.click());
-  const cryChangeButton = button(t('settings.change'), () => cryInput.click());
-  const cryRemoveButton = button(t('settings.remove'), () => setCryPack(null));
   cryInput.onchange = () => {
-    const [file] = cryInput.files; cryInput.value = '';
-    if (file) setCryPack(file);
+    const files = [...cryInput.files]; cryInput.value = '';
+    if (files.length) addCryPacks(files);
   };
-  const cryButtons = document.createElement('div'); cryButtons.className = 'btns';
-  cryButtons.append(cryLoadButton, cryChangeButton, cryRemoveButton);
-  cry.append(cryState, cryButtons, cryInput, cryFail);
-  function drawCryPack() {
-    cryState.textContent = cryBusy ? t('settings.cryPackBusy') : pack ? t('settings.cryPackLoaded', { name: pack.name, count: pack.count }) : t('settings.cryPackNone');
-    cryState.classList.toggle('dim', cryBusy || !pack);
-    cryLoadButton.hidden = !!pack;
-    cryChangeButton.hidden = cryRemoveButton.hidden = !pack;
-    cryLoadButton.disabled = cryChangeButton.disabled = cryRemoveButton.disabled = cryBusy;
+  cry.append(cryList, cryState, cryLoadButton, cryInput, cryFails);
+  function drawCryPacks() {
+    cryRemoveButtons.length = 0;
+    cryList.replaceChildren(...packs.map(pack => {
+      const item = document.createElement('li'); item.className = 'pack';
+      const what = document.createElement('span'); what.textContent = t('settings.cryPackLoaded', { name: pack.name, count: pack.count });
+      const remove = button(t('settings.remove'), () => removeCryPack(pack.id));
+      remove.setAttribute('aria-label', t('settings.cryPackRemove', { name: pack.name }));
+      remove.disabled = cryBusy;
+      cryRemoveButtons.push(remove);
+      item.append(what, remove);
+      return item;
+    }));
+    cryList.hidden = !packs.length;
+    cryState.textContent = cryBusy ? t('settings.cryPackBusy') : packs.length ? '' : t('settings.cryPackNone');
+    cryState.hidden = !cryBusy && packs.length > 0;
+    cryState.classList.toggle('dim', cryBusy || !packs.length);
+    cryLoadButton.disabled = cryBusy;
   }
 
   const enabledNow = () => !!bot?.name && botEnabled(current, bot.name);
@@ -807,7 +839,7 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     pick(pages.get(id).querySelector('.row'));
   }
   drawPicture();
-  drawCryPack();
+  drawCryPacks();
   drawBots();
   drawImports();
   drawBattles();
