@@ -365,10 +365,14 @@ export function statusMoneyAt(chat, upto = Infinity) {
 
 const SHELTERED = new Set(['cave', 'ice_cave', 'fairy_cave', 'seabed', 'laboratory', 'factory', 'dojo', 'power_plant', 'temple', 'abyss', 'space']);
 
-export function battleScene(battle, status) {
+// The field a generation knows: no weather in generation 1, snow is hail in generations 3-8 and absent before, and
+// terrains start in generation 6
+const eraWeather = (weather, gen) => (gen <= 1 ? null : weather === 'snowscape' && gen < 9 ? (gen >= 3 ? 'hail' : null) : weather);
+
+export function battleScene(battle, status, gen = 9) {
   const place = battle?.place ?? status?.place ?? 'plains';
   const timeOfDay = battle?.time ?? status?.timeOfDay ?? 'day';
   const hour = (battle?.time ? battle.hour : status?.hour) ?? null;
   const field = SHELTERED.has(place) ? 'none' : status?.weather ?? 'none';
-  return { place, time: dayOrNight(timeOfDay), timeOfDay, hour, weather: FIELD_WEATHERS[field], terrain: FIELD_TERRAINS[field] ?? null };
+  return { place, time: dayOrNight(timeOfDay), timeOfDay, hour, weather: eraWeather(FIELD_WEATHERS[field], gen), terrain: gen >= 6 ? FIELD_TERRAINS[field] ?? null : null };
 }

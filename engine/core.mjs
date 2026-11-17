@@ -1,4 +1,5 @@
-import { DEFAULT_FORMAT, doublesFormat, multiFormat } from './rules.mjs';
+import { DEFAULT_FORMAT, doublesFormat, multiFormat, hasDoubles, formatRules } from './rules.mjs';
+import { eraSet } from './era.mjs';
 import { installExtensions, extensionResults } from './extensions.mjs';
 import { completeSet, heldItemForm } from './mon.mjs';
 import { checkSpec } from './input.mjs';
@@ -6,7 +7,7 @@ import { startsFainted } from './initial-state.mjs';
 import { countsResult } from './counts.mjs';
 
 // Format defaults and HP, PP and EV rules live in engine/rules.mjs
-export { DEFAULT_FORMAT, MAINLINE_FORMAT, CHAMPIONS_FORMAT, doublesFormat, multiFormat } from './rules.mjs';
+export { DEFAULT_FORMAT, MAINLINE_FORMAT, CHAMPIONS_FORMAT, doublesFormat, multiFormat, hasDoubles } from './rules.mjs';
 export { winnerSide } from './winner.mjs';
 
 export function createStoryBattle(sim, given, options = {}) {
@@ -15,6 +16,7 @@ export function createStoryBattle(sim, given, options = {}) {
 	const shape = battleShape(given);
 
 	const format = given.formatid || DEFAULT_FORMAT;
+	const { gen } = formatRules(sim, format).dex;
 	const battle = new sim.Battle({
 		formatid: shape.kind === 'multi' ? multiFormat(sim, format) : shape.kind === 'double' ? doublesFormat(format) : format,
 		seed: given.seed,
@@ -27,7 +29,7 @@ export function createStoryBattle(sim, given, options = {}) {
 	const rng = new sim.PRNG(given.seed);
 	for (const [key, seat] of Object.entries(shape.seats)) {
 		context.sets[key] = seat.team.map(m => completeSet(sim.Dex, m.set, rng, { levelUp: options.levelUp, label: m.uid, tera: !m.noTera }));
-		battle.setPlayer(key, { name: seat.name, team: sim.Teams.pack(context.sets[key].map(set => heldItemForm(sim.Dex, set))) });
+		battle.setPlayer(key, { name: seat.name, team: sim.Teams.pack(context.sets[key].map(set => eraSet(gen, heldItemForm(sim.Dex, set)))) });
 	}
 
 	if (shape.waiting) context.sets.waiting = shape.waiting.team.map(m => completeSet(sim.Dex, m.set, rng, { levelUp: options.levelUp, label: m.uid, tera: !m.noTera }));
@@ -39,9 +41,11 @@ const able = team => team.filter(member => !startsFainted(member)).length;
 
 export function battleShape(spec) {
 	if ((spec.partner || spec.foePartner) && !spec.double) throw new Error('태그배틀(partner)·상대 둘(foePartner)은 더블배틀(double)에서만 됩니다');
+	// Generations 1 and 2 have only single battles: no ally, and two opposing trainers come out one after the other
+	const double = spec.double && hasDoubles(spec.formatid || DEFAULT_FORMAT);
 	const foes = spec.foePartner ? able(spec.p2.team) + able(spec.foePartner.team) : able(spec.p2.team);
 	const merged = () => (spec.foePartner ? { ...spec.p2, team: [...spec.p2.team, ...spec.foePartner.team.map(member => ({ ...member, trainer: spec.foePartner.name }))] } : spec.p2);
-	if (spec.double && spec.partner && able(spec.partner.team) && foes >= 2) {
+	if (double && spec.partner && able(spec.partner.team) && foes >= 2) {
 		const partner = { ...spec.partner, team: spec.partner.team.map(member => ({ ...member, partner: spec.partner.name })) };
 		if (spec.foePartner) return { kind: 'multi', seats: { p1: spec.p1, p2: spec.p2, p3: partner, p4: spec.foePartner } };
 		const order = [...spec.p2.team.filter(member => !startsFainted(member)), ...spec.p2.team.filter(startsFainted)];
@@ -50,7 +54,7 @@ export function battleShape(spec) {
 			.map(member => ({ ...member, teamSlot: spec.p2.team.indexOf(member), ...(n ? { split: true } : {}) })) });
 		return { kind: 'multi', seats: { p1: spec.p1, p2: half(0), p3: partner, p4: half(1) } };
 	}
-	const kind = spec.double && able(spec.p1.team) >= 2 && foes >= 2 ? 'double' : 'single';
+	const kind = double && able(spec.p1.team) >= 2 && foes >= 2 ? 'double' : 'single';
 	if (kind === 'single' && spec.foePartner && able(spec.p2.team) && able(spec.foePartner.team)) return { kind, seats: { p1: spec.p1, p2: spec.p2 }, waiting: spec.foePartner };
 	return { kind, seats: { p1: spec.p1, p2: merged() } };
 }
@@ -102,14 +106,14 @@ function resultMon(sim, p) {
 
 		...(p.isActive ? { position: p.position + Math.floor(p.side.n / 2) * p.side.active.length } : {}),
 		item: p.item || '',
-		originalItem: sim.Dex.toID(p.set.item) || '',
+		originalItem: sim.Dex.toID(p.m.start.item ?? p.set.item) || '',
 		ability: sim.Dex.toID(p.m.start.ability),
 
-		nature: p.set.nature,
+		nature: p.m.start.nature ?? p.set.nature,
 		ivs: { ...p.set.ivs },
 
 		evs: { ...p.set.evs },
-		gender: p.gender,
+		gender: p.m.start.gender ?? p.gender,
 		shiny: !!p.set.shiny,
 
 		teraType: p.m.noTera && !p.set.teraType ? undefined : p.teraType,

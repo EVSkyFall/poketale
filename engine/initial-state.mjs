@@ -17,7 +17,8 @@ export function recordStartForms(battle, sets) {
 	for (const side of battle.sides) {
 		for (const pokemon of side.pokemon) {
 			const set = sets[side.id][side.team.indexOf(pokemon.set)];
-			pokemon.m.start = { species: battle.dex.species.get(set.species).name, ability: set.ability };
+			// The whole set as it started, before an older generation switched parts of it off (engine/era.mjs)
+			pokemon.m.start = { species: battle.dex.species.get(set.species).name, ability: set.ability, nature: set.nature, item: set.item, gender: set.gender };
 		}
 	}
 }

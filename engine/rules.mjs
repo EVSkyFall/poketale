@@ -7,20 +7,34 @@ export const CHAMPIONS_FORMAT = 'gen9championscustomgame@@@!Team Preview,Level C
 
 export const DEFAULT_FORMAT = MAINLINE_FORMAT;
 
+export const DEFAULT_GEN = 9;
+export const GENS = Object.freeze(Array.from({ length: DEFAULT_GEN }, (_, i) => i + 1));
+export const isGen = value => GENS.includes(value);
+
+// Main-series rules of a generation. Generations 1-4 have no team preview to switch off
+export const mainlineFormat = (gen = DEFAULT_GEN) => (gen === DEFAULT_GEN ? MAINLINE_FORMAT : gen <= 4 ? `gen${gen}customgame` : `gen${gen}customgame@@@!Team Preview`);
+
 const RULE_FORMATS = Object.freeze({ mainline: MAINLINE_FORMAT, champions: CHAMPIONS_FORMAT });
 export const RULE_IDS = Object.freeze(Object.keys(RULE_FORMATS));
 export const DEFAULT_RULE = 'mainline';
-export const ruleFormat = (rule = DEFAULT_RULE) => RULE_FORMATS[rule];
+// Champions is generation 9 only, whatever the story's generation
+export const ruleFormat = (rule = DEFAULT_RULE, gen = DEFAULT_GEN) => (rule === 'mainline' && isGen(gen) ? mainlineFormat(gen) : RULE_FORMATS[rule]);
 
 export function formatRule(format) {
-	const rule = RULE_IDS.find(id => RULE_FORMATS[id] === format);
+	const rule = RULE_IDS.find(id => RULE_FORMATS[id] === format) ?? (GENS.some(gen => mainlineFormat(gen) === format) ? 'mainline' : null);
 	if (!rule) throw new Error(`No rule for the format ${format}`);
 	return rule;
 }
 
+// The generation of a main-series format; null for Champions, which keeps no generation of its own
+export const formatGen = format => GENS.find(gen => mainlineFormat(gen) === format) ?? null;
+
+// Generations 1 and 2 have no double battles
+export const hasDoubles = format => Number(/^gen(\d)/.exec(String(format))?.[1] ?? DEFAULT_GEN) >= 3;
+
 export function doublesFormat(format) {
 	const [id, rules] = String(format).split('@@@');
-	const doubles = id.replace(/^gen9(champions)?customgame$/, 'gen9$1doublescustomgame');
+	const doubles = hasDoubles(id) ? id.replace(/^gen(\d)(champions)?customgame$/,'gen$1$2doublescustomgame') : id;
 	if (doubles === id) throw new Error(`No double-battle format for ${format}`);
 	return rules === undefined ? doubles : `${doubles}@@@${rules}`;
 }

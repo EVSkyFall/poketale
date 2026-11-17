@@ -278,10 +278,13 @@ export function getLearnQueue(battle) {
 	return (states.get(battle)?.learnQueue || []).map(q => ({ uid: q.pokemon.m.uid, move: q.move, level: q.level }));
 }
 
+// Evolution looks at the Pokémon as saved: an older generation's battle may have switched off its gender, item or nature
+const savedGender = pokemon => pokemon.m.start?.gender ?? pokemon.gender;
+
 function pastEvolutionLevel(battle, pokemon) {
 	return speciesOf(battle, pokemon).evos.some(id => {
 		const t = battle.dex.species.get(id);
-		return !t.evoType && t.evoLevel && t.evoLevel <= pokemon.level && genderAllows(pokemon.gender, t);
+		return !t.evoType && t.evoLevel && t.evoLevel <= pokemon.level && genderAllows(savedGender(pokemon), t);
 	});
 }
 
@@ -290,8 +293,8 @@ function conditionText(t) {
 }
 
 function evolvingMon(battle, pokemon) {
-	return { species: pokemon.m.cloak ?? speciesOf(battle, pokemon).name, gender: pokemon.gender, item: toID(pokemon.set.item), uid: pokemon.m.uid,
-		moves: pokemon.baseMoveSlots.map(s => s.id), nature: pokemon.m.natureOrig ?? pokemon.set.nature, ability: pokemon.m.start.ability,
+	return { species: pokemon.m.cloak ?? speciesOf(battle, pokemon).name, gender: savedGender(pokemon), item: toID(pokemon.m.start?.item ?? pokemon.set.item), uid: pokemon.m.uid,
+		moves: pokemon.baseMoveSlots.map(s => s.id), nature: pokemon.m.natureOrig ?? pokemon.m.start?.nature ?? pokemon.set.nature, ability: pokemon.m.start.ability,
 		stats: { atk: pokemon.storedStats.atk, def: pokemon.storedStats.def }, counts: pokemon.m.counts };
 }
 
@@ -311,7 +314,7 @@ export function getEvolutions(battle) {
 		const to = byLevel ?? battleEvolution(battle.dex, mon, { ...now, won });
 		if (to) list.push(entry(to, byLevel ? { level: pokemon.level } : {}));
 		else if (leveled && !everstoneStops(battle.dex, mon)) {
-			for (const t of species.evos.map(id => battle.dex.species.get(id)).filter(t => genderAllows(pokemon.gender, t))) {
+			for (const t of species.evos.map(id => battle.dex.species.get(id)).filter(t => genderAllows(savedGender(pokemon), t))) {
 				if ((t.evoType || t.evoCondition || t.evoRegion || !t.evoLevel) && !(t.evoLevel > pokemon.level)) list.push(entry(t.name, { unsupported: conditionText(t) }));
 			}
 		}

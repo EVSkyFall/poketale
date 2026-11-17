@@ -6,7 +6,8 @@ import { engineMember } from '../engine/input.mjs';
 import { escapeRe } from './norm.mjs';
 import { BAG_ITEMS, isBall, foodHeal } from '../engine/bag.mjs';
 import { ppUpCount } from '../engine/pp.mjs';
-import { DEFAULT_FORMAT, DEFAULT_RULE, formatRules, ruleFormat, formatRule } from '../engine/rules.mjs';
+import { DEFAULT_FORMAT, DEFAULT_RULE, DEFAULT_GEN, formatRules, ruleFormat, formatRule, formatGen } from '../engine/rules.mjs';
+import { GENERATION_VAR, generationsAt, startGen, raiseGen, battleGen } from './generation.mjs';
 import { waitingTrainer } from '../engine/core.mjs';
 import { HYPER_TRAIN_LEVEL, expShareOn } from './items.mjs';
 import { say } from './screen-text.mjs';
@@ -122,7 +123,7 @@ export function heldChanges(chat, table = readTable(chat)) {
   return surveyBattles(chat, table).held;
 }
 
-export const stateVars = () => [TABLE_VAR, SAVE_VAR, QUEUE_VAR, IMPORT_VAR, SETTING_CHANGES_VAR, `$${LEAGUE_VAR}`, `$${UNOVA_ERA_VAR}`, ...COMPAT_WORLD_VARS];
+export const stateVars = () => [TABLE_VAR, SAVE_VAR, QUEUE_VAR, IMPORT_VAR, SETTING_CHANGES_VAR, GENERATION_VAR, `$${LEAGUE_VAR}`, `$${UNOVA_ERA_VAR}`, ...COMPAT_WORLD_VARS];
 
 const BOOK_FIELDS = ['badges', 'league', 'gyms'];
 
@@ -191,6 +192,9 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
   const ctxAt = foldCtxAt(chat, ctx);
   const world = compatWorld(chat);
   const settingsOf = i => foldValues(ctxAt(i));
+  // The battle generation at each message: the chat's setting, and the automatic one carried through the fold
+  const generationAt = generationsAt(chat);
+  const genAt = (i, auto) => battleGen(generationAt(i), auto);
 
   const applyImportsAt = (i, start, at, reflected, seen) => importsAt(i).reduce((cur, imp) => {
     const here = { ...at, ...ruleValues(ctxAt(i, imp.time)) };
@@ -235,7 +239,7 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
     return { index: i, date: status?.date ?? null, party: hatchedParty(now).map(mon => ({ species: mon.set.species, ...(mon.set.name ? { name: mon.set.name } : {}) })),
       opponents: [spec.name, spec.foePartner?.name].filter(Boolean) };
   };
-  const keyOf = i => `${messageId(messages[i], i)}\u0001${messages[i]?.role}\u0001${parts[i]}\u0001${findTags(parts[i]).map(t => used(t.key)).filter(Boolean).join(',')}\u0001${heldIn(i)}\u0001${importKey(i)}\u0001${Object.values(settingsOf(i)).join('\u0001')}\u0001${leagueKey(i)}\u0001${world.startRegion}\u0001${world.journeys}`;
+  const keyOf = i => `${messageId(messages[i], i)}\u0001${messages[i]?.role}\u0001${parts[i]}\u0001${findTags(parts[i]).map(t => used(t.key)).filter(Boolean).join(',')}\u0001${heldIn(i)}\u0001${importKey(i)}\u0001${Object.values(settingsOf(i)).join('\u0001')}\u0001${leagueKey(i)}\u0001${world.startRegion}\u0001${world.journeys}\u0001${generationAt(i)}`;
   let from = 0;
   while (from <= last && from < folds.length && folds[from].key === keyOf(from)) from++;
   if (from <= last) folds.length = from;
@@ -246,22 +250,25 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
 
   let status = from ? folds[from - 1].status : null;
   let win = from ? folds[from - 1].win : null;
+  let auto = from ? folds[from - 1].auto ?? startGen(world) : startGen(world);
 
   const seen = new Set(parts.slice(0, from).flatMap(text => findTags(text).map(t => t.key)).filter(used));
   const reflected = new Set([...seen].flatMap(key => reflectedBy(table, key)));
   const importedUpto = n => [...imports].filter(([at]) => at <= n).flatMap(([, list]) => list.flatMap(imp => heldActions(imp).map(action => action.id)));
   if (from) for (const id of importedUpto(from - 1)) reflected.add(id);
-  let state = from ? folds[from - 1].after : applyImportsAt(-1, inRule(ctx?.sim, emptyState(), settingsOf(-1).rule), ctxAt(-1), reflected, seen);
+  let state = from ? folds[from - 1].after : applyImportsAt(-1, inRule(ctx?.sim, emptyState(), settingsOf(-1).rule, genAt(-1, auto)), ctxAt(-1), reflected, seen);
   if (!from) state = book(state, -1);
   for (let i = from; i <= last; i++) {
     const name = messageId(messages[i], i);
     const here = ctxAt(i);
+    const window = messages[i]?.role === 'char' ? statusIn(messages[i]) : null;
+    if (window) auto = raiseGen(auto, window.region);
 
-    state = inRule(ctx?.sim, state, here.rule);
+    state = inRule(ctx?.sim, state, here.rule, genAt(i, auto));
     if (league) state = { ...state, badges: leagueAt(league, places, i) };
 
     if (messages[i]?.role === 'char') {
-      status = statusIn(messages[i]) ?? status;
+      status = window ?? status;
       state = storyMention(state, parts[i], here);
       state = storyTick(state, name, here).state;
       state = refillEnergy(afterMessage(state));
@@ -281,7 +288,7 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
         for (const action of (acted?.v === 2 ? acted.actions : storyEnd?.actions) ?? []) if (!isReflected(action, reflected, seen)) state = runAction(state, action, at).state;
         for (const id of reflectedBy(table, event.key)) reflected.add(id);
         if (acted?.v === 2) continue;
-        if (!storyEnd) state = inRule(ctx?.sim, withBook(clone(table.snaps[event.key]), state), here.rule);
+        if (!storyEnd) state = inRule(ctx?.sim, withBook(clone(table.snaps[event.key]), state), here.rule, genAt(i, auto));
         else {
           if (storyEnd.engine) state = applyBattles(state, [...storyEnd.engine.before ?? [], storyEnd.engine], at);
           if (storyEnd.who) {
@@ -300,13 +307,13 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
       ops.forEach((_, j) => { const key = `${name}:${event.key}:${j}`; if (Object.hasOwn(table.fills, key)) fills[key] = table.fills[key]; });
     }
     state = book(applyImportsAt(i, state, at, reflected, seen), i);
-    if (keep) folds.push({ key: keyOf(i), after: state, fills, status, win });
+    if (keep) folds.push({ key: keyOf(i), after: state, fills, status, win, auto });
   }
 
-  const after = inRule(ctx?.sim, state, settingsOf(last + 1).rule);
+  const after = inRule(ctx?.sim, state, settingsOf(last + 1).rule, genAt(last + 1, auto));
   const counted = new Set(parts.slice(0, last + 1).flatMap(text => findTags(text).map(t => t.key)).filter(used));
   return { state: keep && after === state ? clone(state) : after, table, changed, counted, reflected: new Set([...counted].flatMap(key => reflectedBy(table, key))),
-    imported: new Set(importedUpto(last)), status };
+    imported: new Set(importedUpto(last)), status, generation: { gen: stateGen(after), setting: generationAt(last + 1), auto } };
 }
 
 const heldActions = imp => (Array.isArray(imp.held) ? imp.held.filter(action => isRecord(action) && typeof action.id === 'string' && Array.isArray(action.ops)) : []);
@@ -1287,7 +1294,7 @@ export function nextStageSpec(spec, result, state, ctx, { seed }) {
   if (!waiting || outcomeOf(result) !== 'win') return null;
   const { log, screen, ...ended } = result;
   const before = [...battlesBefore(spec), battleRecord(spec, ended)];
-  const now = inRule(ctx.sim, applyBattles(state, before, ctx), formatRule(spec.formatid));
+  const now = inRule(ctx.sim, applyBattles(state, before, ctx), formatRule(spec.formatid), formatGen(spec.formatid) ?? stateGen(state));
   const { foePartner, double, partner, ...same } = spec;
   return { ...same, seed: [...seed], p1: { ...spec.p1, team: playerTeam(now) }, p2: waiting,
     ...(spec.bag ? { bag: { ...otherBag(spec.bag), ...battleBag(now, toolsIn(spec)), caughtSpecies: [...now.dex.caught] } } : {}), teraOrb: hasTeraOrb(now), before };
@@ -1318,7 +1325,7 @@ export function toEngineSpec(state, battle, ctx, { seed, formatid, picture, play
   if (!hatchedParty(state).length) fail('noParty');
   if (!hatchedParty(state).some(m => m.hp !== 0)) fail('allFainted');
   const { sim } = ctx;
-  const { place, time, timeOfDay, hour, weather, terrain } = battleScene(battle, status);
+  const { place, time, timeOfDay, hour, weather, terrain } = battleScene(battle, status, formatGen(formatid || stateFormat(state)) ?? DEFAULT_GEN);
   const friendshipRate = ctx.friendshipRate ?? 1;
   const { sprite, silhouette } = opponentPicture(battle, picture);
   const bgm = bossBgm({ wild: battle.wild, boss: battle.boss, sprite, name: battle.name, trainerClass: battle.trainerClass });
@@ -1490,7 +1497,9 @@ export function hpFromPercent(sim, set, percent, keepAlive = false, formatid) {
 
 export const ruleOf = state => state?.rule ?? DEFAULT_RULE;
 
-export const stateFormat = state => ruleFormat(ruleOf(state));
+export const stateGen = state => state?.gen ?? DEFAULT_GEN;
+
+export const stateFormat = state => ruleFormat(ruleOf(state), stateGen(state));
 
 function shareOf(hp, was, max) {
   if (hp >= was) return null;
@@ -1498,16 +1507,19 @@ function shareOf(hp, was, max) {
   return Math.max(1, Math.min(max - 1, Math.round(hp * max / was)));
 }
 
-export function inRule(sim, state, rule = DEFAULT_RULE) {
-  if (ruleOf(state) === rule) return state;
-  const from = stateFormat(state), to = ruleFormat(rule);
+// A state moves to other rules or another generation keeping its sets; only HP (kept as a share) and PP (dropped
+// when at or over the new maximum) follow
+export function inRule(sim, state, rule = DEFAULT_RULE, gen = DEFAULT_GEN) {
+  if (ruleOf(state) === rule && stateGen(state) === gen) return state;
+  const from = stateFormat(state), to = ruleFormat(rule, gen);
   const next = clone(state);
-  for (const mon of [...next.party, ...next.box]) {
+  for (const mon of from === to ? [] : [...next.party, ...next.box]) {
     if (isEgg(mon)) continue;
     if (mon.hp) mon.hp = shareOf(mon.hp, maxHp(sim, mon.set, from), maxHp(sim, mon.set, to));
     for (const id of Object.keys(mon.pp ?? {})) if (mon.pp[id] >= maxPp(sim, id, ppUpsOf(mon, id), to)) delete mon.pp[id];
   }
   if (rule === DEFAULT_RULE) delete next.rule; else next.rule = rule;
+  if (gen === DEFAULT_GEN) delete next.gen; else next.gen = gen;
   return next;
 }
 

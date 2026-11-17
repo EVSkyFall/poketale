@@ -88,7 +88,7 @@ function withUids(state, op, ctx) {
 }
 
 export function pendingState(chat, ctx, { uptoIndex, survey } = {}) {
-  const { state, table, changed, counted, reflected, imported, status } = computeState(chat, ctx, { uptoIndex, survey });
+  const { state, table, changed, counted, reflected, imported, status, generation } = computeState(chat, ctx, { uptoIndex, survey });
   const at = { ...ctx, status };
   const added = readQueue(chat).actions.filter(action => !isReflected(action, reflected, counted));
   let cur = state;
@@ -100,7 +100,7 @@ export function pendingState(chat, ctx, { uptoIndex, survey } = {}) {
     errors.push(...result.errors);
     if (!result.errors.length) holds.push(action);
   }
-  return { state: cur, table, errors, changed, added, holds, status, imported };
+  return { state: cur, table, errors, changed, added, holds, status, imported, generation };
 }
 
 const actionRecord = ({ id, type, at, item, ops, in: holder }) => ({ id, type, at, ...(item ? { item } : {}), ops, ...(holder ? { in: holder } : {}) });

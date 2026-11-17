@@ -15,6 +15,7 @@ import { itemText, tmMove, canLearnTm } from './item-info.mjs';
 import { parseMachineId, machineUsedUp, machineOrder } from './machine-standards.mjs';
 import { withParticle, statName, natureName, listOf, boxLabel } from './diary.mjs';
 import { say } from './screen-text.mjs';
+import { GENERATION_SETTINGS } from './generation.mjs';
 import { battleNamesIn } from '../plugin/battle/names.js';
 import bagIcons from '../data/bag-icons.json' with { type: 'json' };
 import { CUSTOM_PREFIX, isCustomItem, customInfo, itemId, isDexItem, ownerName } from './custom-items.mjs';
@@ -36,6 +37,7 @@ export const MAP_READY = false;
 
 export const TRAVEL_SUBS = Object.freeze(['trip', 'map', 'dex', 'badge']);
 
+// The trip page is there for every chat once the battle generation is known; the bot's journey only for compatible bots
 const travelSubs = ({ trip, badges }) => TRAVEL_SUBS.filter(sub => (sub === 'trip' ? trip : sub === 'map' ? MAP_READY : sub === 'badge' ? badges : true));
 
 const travelSub = (ui, subs) => (subs.includes(ui.sub) ? ui.sub : subs.includes('trip') ? 'trip' : 'dex');
@@ -547,7 +549,22 @@ export function foodList(state, sim, lang) {
   return [...free, ...prizes, ...items];
 }
 
-export function panelModel({ state, ctx, lang, locked = false, resume = false, debug = false, offer = null, travel = null, compat = !!travel, dexHome = null,
+const START_REGION_IDS = Object.freeze(['kanto', 'johto', 'hoenn', 'sinnoh', 'unova', 'kalos', 'alola', 'galar', 'paldea']);
+
+// The journey tab's battle generation: what it is now, why, and the choices (auto, 1-9)
+export function generationView(generation, lang) {
+  if (!generation) return null;
+  const { gen, setting, auto } = generation;
+  const t = (key, values) => say(lang, key, values);
+  const region = id => t(`region.${id}`);
+  const by = auto?.by ?? { kind: 'none' };
+  const why = setting === 'legacy' ? t('panel.gen.why.legacy') : setting !== 'auto' ? t('panel.gen.why.manual')
+    : by.kind === 'journeys' ? t('panel.gen.why.journeys') : by.kind === 'start' ? t('panel.gen.why.start', { region: region(START_REGION_IDS[by.region - 1]) })
+      : by.kind === 'region' ? t('panel.gen.why.region', { region: region(by.region) }) : t('panel.gen.why.none');
+  return { now: t('panel.gen.now', { gen }), why, choices: GENERATION_SETTINGS.map(value => ({ value, label: value === 'auto' ? t('panel.gen.auto') : String(value), on: value === setting })) };
+}
+
+export function panelModel({ state, ctx, lang, locked = false, resume = false, debug = false, offer = null, travel = null, generation = null, compat = !!travel, dexHome = null,
   dexRegions = [], dexMentions = [], ui, screen = null, money = state.money === null ? null : state.money ?? 0 }) {
   const { sim } = ctx;
   const party = Array.from({ length: PARTY_MAX }, (_, i) => (state.party[i] ? slotView(state.party[i], ctx, state, lang) : null));
@@ -559,10 +576,10 @@ export function panelModel({ state, ctx, lang, locked = false, resume = false, d
   });
   const tabs = TABS;
   const tab = tabs.includes(ui.tab) ? ui.tab : 'party';
-  const subs = travelSubs({ trip: !!(compat && travel), badges: !!(compat || debug) }), sub = travelSub(ui, subs);
+  const subs = travelSubs({ trip: !!(compat && travel) || !!generation, badges: !!(compat || debug) }), sub = travelSub(ui, subs);
   const alerts = { party: state.party.some(m => pendingCount(m) > 0), box: false, bag: false };
   return {
-    lang, open: !!ui.open, tab, tabs, travel: compat ? travel : null, compat: !!compat, subs, sub, locked, resume: !!resume, screen,
+    lang, open: !!ui.open, tab, tabs, travel: compat ? travel : null, generation: generationView(generation, lang), compat: !!compat, subs, sub, locked, resume: !!resume, screen,
     dex: tab === 'travel' && sub === 'dex' && !screen ? dexView({ state, sim, lang, names: namesFor(lang, sim), ui, home: dexHome, regions: dexRegions, mentions: dexMentions }) : null,
     alerts,
     party, box: { index, count, name: boxName(state, index, lang), cells },
@@ -762,6 +779,7 @@ function reduceRaw(ui, hit, env) {
     case 'rebreed': return locked || !state.breeding || hatchedParty(state).length < 2 ? same : { ui: { ...calm(ui), pairHidden: false, select: breedPick(null, w) }, effect: null };
     case 'unbreed': return locked || !state.breeding ? same : { ui: { ...calm(ui), pairHidden: false }, effect: { kind: 'queue', action: actions.unbreed() } };
     case 'later': return locked ? same : { ui: calm(ui), effect: { kind: 'importLater' } };
+    case 'genSet': return locked || !GENERATION_SETTINGS.includes(hit.value) ? same : { ui: calm(ui), effect: { kind: 'generation', value: hit.value } };
     case 'botSet': return locked ? same : { ui: calm(ui), effect: { kind: 'botTravel', change: { key: hit.key, on: !!hit.on } } };
     case 'guideClear': return locked ? same : { ui: calm(ui), effect: { kind: 'botTravel', change: { clear: 'guide' } } };
 
