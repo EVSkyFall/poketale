@@ -329,7 +329,7 @@ export function chooseBagParts(battle, parts) {
 	return { ok: true };
 }
 
-const isEnemyItem = item => !!item && !item.revive && !item.pp && !item.boost && !item.crit && !!(item.heal || item.cure);
+const isEnemyItem = item => !!item && !item.revive && !item.pp && !item.boost && !item.crit && !item.flute && !!(item.heal || item.cure);
 
 export function checkEnemyItem(battle, choice) {
 	if (battle.ended) return fail('ended');
@@ -422,8 +422,12 @@ function useItem(sim, battle, state, choice, side = battle.sides[0]) {
 		battle.add('-end', target, 'Attract', from);
 	}
 	if (item.guard) {
-		if (battle.gen <= 2) target.addVolatile('mist', target, effect);
-		else target.side.addSideCondition('mist', target, effect);
+		const added = battle.gen <= 2 ? target.addVolatile('mist', target, effect) : target.side.addSideCondition('mist', target, effect);
+		// Already up (both slots of a double battle chose it this turn): it fails and stays in the bag
+		if (!added) {
+			battle.add('-fail', target);
+			return;
+		}
 	}
 
 	// A flute stays in the bag
