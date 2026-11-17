@@ -10,7 +10,7 @@ import { toID, koSpellings, readsOfficial } from '../names/index.js';
 import { DEFAULT_EMOJI, CUSTOM_EFFECTS, customItemId, splitEmoji, topEffect } from './custom-items.mjs';
 import { ruleNote } from './failure.mjs';
 import { readTime, clockHourOf, regionIn } from './compat.mjs';
-import { DEFAULT_STANDARD, regionStandard, parseMachineId, isMachineId as isTm, tagGen } from './machine-standards.mjs';
+import { DEFAULT_STANDARD, regionStandard, parseMachineId, isMachineId as isTm, tagGen, standardLabels, regionOnlyLabels } from './machine-standards.mjs';
 import { machineByMove, machineByNumber, hasMachineKind, nearestStandards, lookupStandards } from './item-info.mjs';
 import { norm } from './norm.mjs';
 import { readHair, readOutfit } from './trainer-colors.mjs';
@@ -38,6 +38,12 @@ function buildReverse(kind, official) {
     // Scarlet/Violet discs were named TM011 / 기술머신011 before discs carried their move and region
     const disc = kind === 'items' && parseMachineId(id);
     if (disc && disc.std === DEFAULT_STANDARD) for (const old of ['TM', '기술머신']) legacy.set(norm(`${old}${String(disc.number).padStart(3, '0')}`), id);
+    // A region's original discs were named with the region alone before names carried the generation
+    const regionOnly = disc && regionOnlyLabels(disc.std);
+    if (regionOnly) {
+      const labels = standardLabels(disc.std);
+      for (const lang of ['ko', 'en']) if (r[lang]?.includes(`(${labels[lang]})`)) alias(norm(r[lang].replace(`(${labels[lang]})`, `(${regionOnly[lang]})`)), id);
+    }
     if (kind === 'items') for (const other of ITEM_ALIASES[id] ?? []) alias(norm(other), id);
     const [ko, ...before] = koSpellings(r, { officialKo: official });
     if (!ko) continue;
@@ -281,7 +287,8 @@ function moveNamed(raw, reading) {
   return null;
 }
 
-// A disc's full name (TM11 Bubble Beam (Kanto) / 기술머신11 거품광선 (관동)) or a region disc's id written as it is (tm011rb)
+// A disc's full name (TM11 Bubble Beam (Kanto · Gen 1) / 기술머신11 거품광선 (관동·1세대)) or a region disc's id written as it is
+// (tm011rb). A name from before names carried the generation (관동) is read by machineRef as the region's original disc
 function discNamed(raw, names) {
   for (const text of new Set([String(raw ?? ''), dropGloss(String(raw ?? ''))])) {
     const id = toID(text), named = names.get(id) ?? names.get(norm(text));

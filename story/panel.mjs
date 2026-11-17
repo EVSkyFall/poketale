@@ -55,7 +55,7 @@ export function namesFor(lang, sim) {
 
 export const itemName = (id, names) => names.item(toID(id));
 
-// Disc names already carry their move (기술머신11 거품광선 (관동))
+// Disc names already carry their move (기술머신11 거품광선 (관동·1세대))
 export const bagItemName = (id, names) => itemName(toID(id), names);
 
 export function itemLabel(state, id, names, { bag = false } = {}) {

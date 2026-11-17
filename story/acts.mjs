@@ -378,14 +378,17 @@ export function changesIn(text, chat, ctx, lang) {
   // Text that is no saved message as it is, is the reply being written, as the display path takes it (pass.at); a saved
   // user message's Status Window is not the bot's
   const ownStatus = statusIn({ role: same >= 0 ? messages[same]?.role : 'char', data: text });
-  const machineRegion = (ownStatus ?? (index >= 0 ? at?.status ?? latestStatus(chat, index) : latestStatus(chat)))?.region;
+  const machineRegion = (ownStatus ?? (same >= 0 ? at?.status ?? latestStatus(chat, same) : latestStatus(chat)))?.region;
+  // The world the discs belong to is the one where the text stands: a saved message's own, else the end of the chat for the
+  // reply being written, even when an earlier message with the same change blocks gave the state and reading above
+  const place = same >= 0 ? same : messages.length;
+  const world = discWorld(compatWorld(chat), generationsAt(chat)(place), raiseGen(autoGenAt(chat, place === same ? same : messages.length - 1), machineRegion));
   const chatId = index >= 0 ? messageId(messages[index], index) : null;
   const held = index >= 0 ? heldChanges(chat, table ?? readTable(chat)) : new Set();
   const events = [], errors = [];
   for (const [n, block] of blocks.entries()) {
     if (held.has(changeAt(index, n))) { errors.push(heldLine(lang)); continue; }
-    const { ops, errors: unread } = parseChange(block.body, withMachineStandard(machineReading, machineRegion, discWorld(compatWorld(chat), generationsAt(chat)(index >= 0 ? index : messages.length),
-      raiseGen(autoGenAt(chat, index >= 0 ? index : messages.length - 1), machineRegion))));
+    const { ops, errors: unread } = parseChange(block.body, withMachineStandard(machineReading, machineRegion, world));
     errors.push(...unread.map(note => ruleText(note, lang)));
     if (!state) { events.push(...ops.map(op => eventOf({ op, before: null, after: null }, null))); continue; }
     const result = applyOps(state, ops, at, `${chatId}:${block.key}`, table, { trace: true });

@@ -75,7 +75,6 @@ export const machineByNumber = (std, kind, number) => (indexOf(std).has(`${kind}
 
 export const hasMachineKind = (std, kind) => slotsOf(std).some(([k]) => k === kind);
 
-// The standard itself, then the others nearest to it in generation (later first on a tie)
 // Where a disc named with its move is looked for: its standard, the region's other games (nearest generation first),
 // then every other standard by distance
 export function lookupStandards(std, region) {
@@ -84,8 +83,10 @@ export function lookupStandards(std, region) {
   return [std, ...home, ...near.filter(s => !home.includes(s))];
 }
 
+// The standard itself, then the others nearest to it in generation (later first on a tie; Ruby/Sapphire and
+// FireRed/LeafGreen share generation 3, and either one still comes first for itself)
 export function nearestStandards(std) {
   const gen = MACHINE_STANDARDS[std]?.gen ?? MACHINE_STANDARDS[DEFAULT_STANDARD].gen;
-  const distance = s => Math.abs(MACHINE_STANDARDS[s].gen - gen);
+  const distance = s => (s === std ? -1 : Math.abs(MACHINE_STANDARDS[s].gen - gen));
   return [...STANDARD_IDS].sort((a, b) => distance(a) - distance(b) || MACHINE_STANDARDS[b].gen - MACHINE_STANDARDS[a].gen);
 }

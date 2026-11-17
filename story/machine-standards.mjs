@@ -59,6 +59,11 @@ const REGION_GAMES = Object.freeze({
 });
 export const regionGames = region => REGION_GAMES[region] ?? [];
 
+// Each region's original game. Its discs were named with the region alone ("(관동)", "(Kanto)") before names carried
+// the generation, and those names still read as them; a remake never had such a name
+const ORIGINALS = new Set(Object.values(REGION_GAMES).map(games => games[0]));
+export const regionOnlyLabels = std => (ORIGINALS.has(std) ? { ko: MACHINE_STANDARDS[std].region[0], en: MACHINE_STANDARDS[std].region[1] } : null);
+
 // world is { journeys, gen } (story/generation.mjs discWorld): gen is the story's world generation. A region's discs
 // are those of its latest game of that generation or earlier (Kanto in a generation-3 world is FireRed/LeafGreen), of
 // its first game before that; a Pokémon Journeys story uses one standard everywhere, also where no region is known.
