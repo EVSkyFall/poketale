@@ -41,7 +41,7 @@ import { mountImportScreen } from './import-screen.js';
 import { makeDraft, importOffer, importOfferAi, importTurn, handBack, commitImport, commitDebugHeal, commitDebugBadges, readImports, cancelImport, inForce, newMonDraft, currentMonDraft, friendshipLockDraft } from '../../story/import.mjs';
 import { importAiMessages, readAiParty, aiFailedFound } from '../../story/import-ai.mjs';
 import { readSettingChanges, recordSettingChange, settingsBehind, rulesAt } from '../../story/setting-changes.mjs';
-import { generationUnrecorded, recordGenerationStart, recordGenerationChange } from '../../story/generation.mjs';
+import { generationUnrecorded, recordGenerationStart, recordGenerationChange, readGeneration } from '../../story/generation.mjs';
 import { readBattlesOff, battlesOff, setBattlesOff } from '../../story/battles-off.mjs';
 import { loadPicture, savePicture, adoptOldPicture, entryMe } from './my-picture.js';
 import { storyCss, sheetCss, SHEET_CLASS } from '../../story/style.mjs';
@@ -101,7 +101,8 @@ const idOf = target => `${target.chaId}:${target.chatId ?? `#${target.charIndex}
 
 const textKey = chat => JSON.stringify((chat?.message ?? []).map(m => [m?.chatId ?? null, String(m?.data ?? '')]));
 
-const unreadableChat = chat => [tableStatus(chat), saveStatus(chat), acts.queueStatus(chat), readImports(chat).status, readSettingChanges(chat).status, readBattlesOff(chat).status].some(isUnreadable);
+const unreadableChat = chat => [tableStatus(chat), saveStatus(chat), acts.queueStatus(chat), readImports(chat).status, readSettingChanges(chat).status, readBattlesOff(chat).status,
+  readGeneration(chat).status].some(isUnreadable);
 
 function makePass(charIndex, chatIndex, chat, character, seq) {
   const target = targetOf(charIndex, chatIndex, chat, character);
@@ -1950,7 +1951,7 @@ export async function writeGeneration(value, target) {
   const wrote = await writeChat(target, (chat, found) => {
     if (battleIn({ id: idOf(found.target), chat }).key) throw failed('inBattle');
     return recordGenerationChange(chat, value);
-  }, { missing: true });
+  }, { vars: true, missing: true });
   if (wrote === HELD) throw failed('writeBlocked');
 }
 

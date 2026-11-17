@@ -348,6 +348,8 @@ export default Object.freeze({
   'panel.travel.generation': 'Battle generation',
   'panel.gen.now': 'Gen {{gen}}',
   'panel.gen.auto': 'Auto',
+  'panel.gen.champions': 'Gen 9 Champions',
+  'panel.gen.why.champions': 'Champions rules are on in the settings',
   'panel.gen.why.start': 'started in {{region}}',
   'panel.gen.why.region': 'reached {{region}}',
   'panel.gen.why.journeys': 'Pokémon Journeys',

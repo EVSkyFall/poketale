@@ -66,6 +66,9 @@ export function stepInBattle(battle, pokemon, kind) {
 
 export const isCarry = value => Number.isFinite(value) && value >= 0 && value < 1;
 
+// A close bond's battle perks (enduring, curing, evading, critical hits) are a generation 6 system (Pokémon-Amie)
+const PERKS_FROM = 6;
+
 export function installFriendship(sim, battle, spec, { exp: table } = {}) {
 	const members = new Map(spec.p1.team.map(m => [m.uid, m]));
 	const state = { rate: spec.friendshipRate ?? 1, out: new Set() };
@@ -99,6 +102,8 @@ export function installFriendship(sim, battle, spec, { exp: table } = {}) {
 		const foeLevel = Math.max(0, ...target.foes(true).map(foe => foe.level));
 		stepInBattle(battle, target, foeLevel - target.level >= FAINT_LEVEL_GAP ? 'faintHigh' : 'faint');
 	});
+
+	if (battle.gen < PERKS_FROM) return state;
 
 	battle.onEvent('Damage', battle.format, PRIORITY.damage, function (damage, target, source, effect) {
 		const value = friendshipOf(battle, target);

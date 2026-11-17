@@ -1,5 +1,5 @@
 import { hashKey } from './blocks.mjs';
-import { hpPercentOf, trainersOf, isEgg, stateFormat } from './state.mjs';
+import { hpPercentOf, trainersOf, isEgg, stateFormat, stateGen } from './state.mjs';
 import { createNamer, STATUS_EN, nicknamed, battleKind, ownLabel } from './ai-names.mjs';
 import { outcomeText, opponentText, partnerField, BACK_TO_BACK } from './prompts.mjs';
 import { COMPAT_VAR } from './compat.mjs';
@@ -299,6 +299,7 @@ export function varTexts(state, { sim, battle = null, lang = 'ko', en = null, ef
       if (battle.commands && battle.now) party.push(...battleStatusLines(battle.now, namer, spec), actRules(battle.now, { tools: battle.tools !== false }));
     }
   }
+  const era = stateGen(state);
   (state?.party ?? []).forEach((mon, i) => {
 
     if (isEgg(mon)) { party.push(`[${ownLabel(i + 1)} | Egg]`); return; }
@@ -307,8 +308,8 @@ export function varTexts(state, { sim, battle = null, lang = 'ko', en = null, ef
     const fields = [ownLabel(i + 1), `Species: ${namer.species(mon.set.species)}`];
     if (mon.set.name) fields.push(`Nickname: ${mon.set.name}`);
     fields.push(`Level: ${mon.set.level}`, `HP: ${hp}%`, `Status: ${status}`);
-    if (mon.set.ability) fields.push(`Ability: ${namer.abilities(mon.set.ability)}`);
-    fields.push(`Item: ${mon.set.item ? item(mon.set.item) : 'None'}`);
+    if (mon.set.ability && era >= 3) fields.push(`Ability: ${namer.abilities(mon.set.ability)}`);
+    if (era >= 2) fields.push(`Item: ${mon.set.item ? item(mon.set.item) : 'None'}`);
     fields.push(`Moves: ${(mon.set.moves ?? []).map(m => namer.moves(m)).join(', ') || 'None'}`);
     party.push(`[${fields.join(' | ')}]`);
   });

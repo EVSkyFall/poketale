@@ -49,7 +49,7 @@ function monViewOf(ctx, { battle, pokemon, fainted }, mon, species) {
   const sp = battle.dex.species.get(species ?? pokemon.baseSpecies.name);
   const name = species ? outsideName(ctx, battle, mon.set, sp.name) : outsideName(ctx, battle, mon.set);
   return {
-    speciesId: sp.id, spriteId: spriteIdOf(sp), name, level: pokemon.level, gender: pokemon.gender || '', shiny: !!pokemon.set.shiny,
+    speciesId: sp.id, spriteId: spriteIdOf(sp), name, level: pokemon.level, gender: pokemon.m?.start?.gender ?? (pokemon.gender || ''), shiny: !!pokemon.set.shiny,
     hp: fainted ? 0 : pokemon.hp, maxhp: pokemon.maxhp, status: fainted ? '' : pokemon.status || '',
   };
 }

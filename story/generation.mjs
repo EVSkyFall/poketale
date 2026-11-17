@@ -51,7 +51,7 @@ export function generationsAt(chat) {
   const messages = chat?.message ?? [];
   const { first, changes } = readGeneration(chat);
   const start = firstOf(first, messages);
-  const placed = changes.map(change => ({ ...change, place: change.at === null ? -Infinity : importPlace(messages, change) }));
+  const placed = changes.map(change => ({ ...change, place: change.at === null ? -1 : importPlace(messages, change) }));
   return (i, time) => placed.reduce((value, change) => (i > change.place || (i === change.place && typeof time === 'number' && time >= change.time) ? change.value : value), start);
 }
 

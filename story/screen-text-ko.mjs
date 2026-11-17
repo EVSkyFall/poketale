@@ -349,6 +349,8 @@ export default Object.freeze({
   'panel.travel.generation': '배틀 세대',
   'panel.gen.now': '{{gen}}세대',
   'panel.gen.auto': '자동',
+  'panel.gen.champions': '9세대 챔피언스',
+  'panel.gen.why.champions': '설정에서 챔피언스 룰을 골랐습니다',
   'panel.gen.why.start': '{{region}}에서 시작',
   'panel.gen.why.region': '{{region}} 도착',
   'panel.gen.why.journeys': '포켓몬스터W',

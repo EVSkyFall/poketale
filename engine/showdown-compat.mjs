@@ -1,6 +1,7 @@
 export function injectStatus(battle, pokemon, status, { sleepTurns, freezeTurns } = {}) {
 	pokemon.status = status;
 	pokemon.statusState = battle.initEffectState({ id: status, target: pokemon });
+	statusDrops(pokemon);
 	if (status === 'slp') pokemon.statusState.startTime = pokemon.statusState.time = sleepTurns;
 	if (status === 'frz' && freezeTurns) pokemon.statusState.startTime = pokemon.statusState.time = freezeTurns;
 	if (status === 'tox') pokemon.statusState.stage = 0;
@@ -13,14 +14,26 @@ export function setLevel(battle, pokemon, level) {
 	refreshStats(battle, pokemon);
 }
 
+// Generation 1 keeps the stats it fights with in modifiedStats, with paralysis and burn applied to them when the status
+// starts or the stats are recalculated (Showdown's species change does the same)
+function statusDrops(pokemon) {
+	if (!pokemon.modifiedStats || typeof pokemon.modifyStat !== 'function') return;
+	if (pokemon.status === 'par') pokemon.modifyStat('spe', 0.25);
+	if (pokemon.status === 'brn') pokemon.modifyStat('atk', 0.5);
+}
+
 function refreshStats(battle, pokemon) {
 	const species = pokemon.transformed ? pokemon.baseSpecies : pokemon.species;
 	const stats = battle.spreadModify(species.baseStats, pokemon.set);
 	if (species.maxHP) stats.hp = species.maxHP;
 	pokemon.baseStoredStats = stats;
 	if (!pokemon.transformed) {
-		for (const s of Object.keys(pokemon.storedStats)) pokemon.storedStats[s] = stats[s];
+		for (const s of Object.keys(pokemon.storedStats)) {
+			pokemon.storedStats[s] = stats[s];
+			if (pokemon.modifiedStats) pokemon.modifiedStats[s] = stats[s];
+		}
 		pokemon.speed = pokemon.storedStats.spe;
+		statusDrops(pokemon);
 	}
 	const oldMax = pokemon.maxhp;
 	pokemon.baseMaxhp = stats.hp;

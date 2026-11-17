@@ -89,7 +89,11 @@ export function formatRules(sim, format = DEFAULT_FORMAT) {
 
 		stat: (baseStats, set, statName) => statModify.call(self, baseStats, rules.engineSet(set), statName),
 
-		engineSet: set => (champions ? { ...set, evs: NO_EVS } : set),
+		engineSet: set => {
+			const own = champions ? { ...set, evs: NO_EVS } : set;
+			// Generations 1-2 battles have no natures and keep even IVs only (Showdown): stats outside them are reckoned so too
+			return self.gen <= 2 ? { ...own, nature: '', ivs: Object.fromEntries(Object.entries(own.ivs ?? {}).map(([s, v]) => [s, v & 30])) } : own;
+		},
 
 		maxPp(moveId, ups = 0) {
 			const move = dex.moves.get(moveId);

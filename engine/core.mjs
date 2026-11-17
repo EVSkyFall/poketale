@@ -29,7 +29,7 @@ export function createStoryBattle(sim, given, options = {}) {
 	const rng = new sim.PRNG(given.seed);
 	for (const [key, seat] of Object.entries(shape.seats)) {
 		context.sets[key] = seat.team.map(m => completeSet(sim.Dex, m.set, rng, { levelUp: options.levelUp, label: m.uid, tera: !m.noTera }));
-		battle.setPlayer(key, { name: seat.name, team: sim.Teams.pack(context.sets[key].map(set => eraSet(gen, heldItemForm(sim.Dex, set)))) });
+		battle.setPlayer(key, { name: seat.name, team: sim.Teams.pack(context.sets[key].map(set => heldItemForm(sim.Dex, eraSet(gen, set)))) });
 	}
 
 	if (shape.waiting) context.sets.waiting = shape.waiting.team.map(m => completeSet(sim.Dex, m.set, rng, { levelUp: options.levelUp, label: m.uid, tera: !m.noTera }));
@@ -110,7 +110,7 @@ function resultMon(sim, p) {
 		ability: sim.Dex.toID(p.m.start.ability),
 
 		nature: p.m.start.nature ?? p.set.nature,
-		ivs: { ...p.set.ivs },
+		ivs: { ...(p.m.start.ivs ?? p.set.ivs) },
 
 		evs: { ...p.set.evs },
 		gender: p.m.start.gender ?? p.gender,

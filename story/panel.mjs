@@ -554,14 +554,15 @@ const START_REGION_IDS = Object.freeze(['kanto', 'johto', 'hoenn', 'sinnoh', 'un
 // The journey tab's battle generation: what it is now, why, and the choices (auto, 1-9)
 export function generationView(generation, lang) {
   if (!generation) return null;
-  const { gen, setting, auto } = generation;
+  const { gen, setting, auto, champions } = generation;
   const t = (key, values) => say(lang, key, values);
   const region = id => t(`region.${id}`);
   const by = auto?.by ?? { kind: 'none' };
   const why = setting === 'legacy' ? t('panel.gen.why.legacy') : setting !== 'auto' ? t('panel.gen.why.manual')
     : by.kind === 'journeys' ? t('panel.gen.why.journeys') : by.kind === 'start' ? t('panel.gen.why.start', { region: region(START_REGION_IDS[by.region - 1]) })
       : by.kind === 'region' ? t('panel.gen.why.region', { region: region(by.region) }) : t('panel.gen.why.none');
-  return { now: t('panel.gen.now', { gen }), why, choices: GENERATION_SETTINGS.map(value => ({ value, label: value === 'auto' ? t('panel.gen.auto') : String(value), on: value === setting })) };
+  // Champions rules (the settings' rule) are generation 9 whatever the story's generation
+  return { now: champions ? t('panel.gen.champions') : t('panel.gen.now', { gen }), why: champions ? t('panel.gen.why.champions') : why, choices: GENERATION_SETTINGS.map(value => ({ value, label: value === 'auto' ? t('panel.gen.auto') : String(value), on: value === setting })) };
 }
 
 export function panelModel({ state, ctx, lang, locked = false, resume = false, debug = false, offer = null, travel = null, generation = null, compat = !!travel, dexHome = null,

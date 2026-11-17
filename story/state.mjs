@@ -196,16 +196,16 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
   const generationAt = generationsAt(chat);
   const genAt = (i, auto) => battleGen(generationAt(i), auto);
 
-  const applyImportsAt = (i, start, at, reflected, seen) => importsAt(i).reduce((cur, imp) => {
+  const applyImportsAt = (i, start, at, reflected, seen, auto) => importsAt(i).reduce((cur, imp) => {
     const here = { ...at, ...ruleValues(ctxAt(i, imp.time)) };
-    let next = cur;
+    let next = inRule(ctx?.sim, cur, at.rule, battleGen(generationAt(i, imp.time), auto));
     for (const action of heldActions(imp)) {
       if (!isReflected(action, reflected, seen)) next = runAction(next, action, here).state;
       reflected.add(action.id);
     }
     return applyImport(next, imp, here);
   }, start);
-  const importKeysAt = i => importsAt(i).map(imp => `${hashKey(JSON.stringify(imp))}:${Object.values(ruleValues(ctxAt(i, imp.time))).join(':')}`);
+  const importKeysAt = i => importsAt(i).map(imp => `${hashKey(JSON.stringify(imp))}:${Object.values(ruleValues(ctxAt(i, imp.time))).join(':')}:${generationAt(i, imp.time)}`);
   const importKey = i => [...(i === 0 ? importKeysAt(-1) : []), ...importKeysAt(i)].join(',');
 
   const league = readLeague(chat);
@@ -256,7 +256,7 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
   const reflected = new Set([...seen].flatMap(key => reflectedBy(table, key)));
   const importedUpto = n => [...imports].filter(([at]) => at <= n).flatMap(([, list]) => list.flatMap(imp => heldActions(imp).map(action => action.id)));
   if (from) for (const id of importedUpto(from - 1)) reflected.add(id);
-  let state = from ? folds[from - 1].after : applyImportsAt(-1, inRule(ctx?.sim, emptyState(), settingsOf(-1).rule, genAt(-1, auto)), ctxAt(-1), reflected, seen);
+  let state = from ? folds[from - 1].after : applyImportsAt(-1, inRule(ctx?.sim, emptyState(), settingsOf(-1).rule, genAt(-1, auto)), ctxAt(-1), reflected, seen, auto);
   if (!from) state = book(state, -1);
   for (let i = from; i <= last; i++) {
     const name = messageId(messages[i], i);
@@ -306,14 +306,14 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
       if (Object.keys(table.fills).length !== before) changed = true;
       ops.forEach((_, j) => { const key = `${name}:${event.key}:${j}`; if (Object.hasOwn(table.fills, key)) fills[key] = table.fills[key]; });
     }
-    state = book(applyImportsAt(i, state, at, reflected, seen), i);
+    state = book(applyImportsAt(i, state, at, reflected, seen, auto), i);
     if (keep) folds.push({ key: keyOf(i), after: state, fills, status, win, auto });
   }
 
   const after = inRule(ctx?.sim, state, settingsOf(last + 1).rule, genAt(last + 1, auto));
   const counted = new Set(parts.slice(0, last + 1).flatMap(text => findTags(text).map(t => t.key)).filter(used));
   return { state: keep && after === state ? clone(state) : after, table, changed, counted, reflected: new Set([...counted].flatMap(key => reflectedBy(table, key))),
-    imported: new Set(importedUpto(last)), status, generation: { gen: stateGen(after), setting: generationAt(last + 1), auto } };
+    imported: new Set(importedUpto(last)), status, generation: { gen: stateGen(after), setting: generationAt(last + 1), auto, ...(ruleOf(after) === 'champions' ? { champions: true } : {}) } };
 }
 
 const heldActions = imp => (Array.isArray(imp.held) ? imp.held.filter(action => isRecord(action) && typeof action.id === 'string' && Array.isArray(action.ops)) : []);
@@ -457,7 +457,7 @@ function addCounts(now, end, start) {
 export function evolutionCheck(ctx, mon, party = [], badges = 0) {
   const { sim } = ctx;
   const species = sim.Dex.species.get(mon.set.species);
-  const rules = formatRules(sim, ruleFormat(ctx.rule));
+  const rules = formatRules(sim, ctx.format ?? ruleFormat(ctx.rule));
   const stat = name => rules.stat(species.baseStats, mon.set, name);
   const status = ctx.status ?? null;
   return {
@@ -1072,7 +1072,7 @@ export function levelUpOutside(mon, delta, ctx, rng, { effort, party = [], badge
 
   for (let level = from; level < to; level++) addFriendship(next, null, 'level', ctx);
 
-  const { mon: evolving, now } = evolutionCheck(ctx, next, party, badges);
+  const { mon: evolving, now } = evolutionCheck({ ...ctx, format }, next, party, badges);
   const evolution = levelEvolution(sim.Dex, evolving, now);
   if (evolution) next.pending.evolve = evolution;
   return next;
@@ -1343,7 +1343,8 @@ export function toEngineSpec(state, battle, ctx, { seed, formatid, picture, play
     team: battle.foePartner.team.map((teamSet, i) => blockMember(sim, teamSet, `foe2-${i + 1}`, null)),
     ...(second.sprite ? { trainerSprite: second.sprite } : {}), ...(second.silhouette ? { trainerSilhouette: true } : {}) };
 
-  const gimmicks = foeGimmicksOf(sim.Dex, foeGimmicks, { battle, region: status?.region ?? null, seed, p2, partner: partner?.team, foePartner: foePartner?.team });
+  const gimmicks = foeGimmicksOf(sim.Dex, foeGimmicks, { battle, region: status?.region ?? null, seed, p2, partner: partner?.team, foePartner: foePartner?.team,
+    gen: formatGen(formatid || stateFormat(state)) ?? DEFAULT_GEN });
   if (gimmicks.p2) p2.splice(0, p2.length, ...gimmicks.p2);
   if (gimmicks.partner) partner.team = gimmicks.partner;
   if (gimmicks.foePartner) foePartner.team = gimmicks.foePartner;
