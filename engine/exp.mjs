@@ -197,8 +197,10 @@ function sharePieces(battle, state, faced, alive) {
 	if (battle.gen === 1) {
 		if (!era.bag) { for (const p of participants) give(p, P); return out; }
 		const N = battle.sides[0].pokemon.filter(p => p.m.exp !== undefined).length;
+		// The game divides by the participants only when there are two or more (pret/pokered
+		// DivideExpDataByNumMonsGainingExp), so with none left standing (Explosion) the rest share half
 		for (const p of participants) give(p, 2 * P);
-		for (const p of alive) give(p, 2 * P * N);
+		for (const p of alive) give(p, 2 * Math.max(P, 1) * N);
 		return out;
 	}
 	const holders = alive.filter(p => p.item === EXP_SHARE);
@@ -318,9 +320,26 @@ export function replaceMove(battle, uid, slotIndex, moveId) {
 	refreshRequest(battle, side, pokemon);
 }
 
+// The turn's request was made before the new move came in: its disables are worked out again as Battle.nextTurn does
+function redoDisables(battle, pokemon) {
+	pokemon.maybeDisabled = false;
+	pokemon.maybeLocked = false;
+	for (const slot of pokemon.moveSlots) {
+		slot.disabled = false;
+		slot.disabledSource = '';
+	}
+	battle.runEvent('DisableMove', pokemon);
+	for (const slot of pokemon.moveSlots) {
+		const move = battle.dex.getActiveMove(slot.id);
+		battle.singleEvent('DisableMove', move, null, pokemon);
+		if (move.flags['cantusetwice'] && pokemon.lastMove?.id === slot.id) pokemon.disableMove(pokemon.lastMove.id);
+	}
+}
+
 function refreshRequest(battle, side, pokemon) {
 	const request = side.activeRequest;
 	if (!request || request.wait || battle.ended) return;
+	if (pokemon.isActive) redoDisables(battle, pokemon);
 	if (request.active && pokemon.isActive) request.active = side.active.map(p => p?.getMoveRequestData());
 	request.side = side.getRequestData();
 	side.emitRequest(request);

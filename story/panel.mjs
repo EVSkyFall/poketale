@@ -458,8 +458,10 @@ export function boxMenu(mon, { locked = false, debug = false }, lang) {
 
 export function bagMenu(id, { locked = false, sim, state, trade }, lang) {
   const kind = itemKind(id, sim, trade);
-  if (NOT_TOSSABLE.has(kind)) return null;
   const r = row(lang);
+  // A key item a Pokémon can hold (the Exp. Share): given, never tossed
+  if (HELD_KEYS.has(id)) return [r('give', 'hold', locked || !state.party.length), r('cancel', 'cancel')];
+  if (NOT_TOSSABLE.has(kind)) return null;
   if (isDexItem(state, id)) return [r('use', 'use'), r('cancel', 'cancel')];
   const list = [];
   if (USABLE.has(kind)) list.push(r('use', 'use', locked || !state.party.length));

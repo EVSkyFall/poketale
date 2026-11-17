@@ -133,7 +133,7 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
       mentions: [...storyMentions(cur.chat)].sort((a, b) => a - b) } : null;
 
     const sig = JSON.stringify([cur?.key ?? null, cur?.lang ?? null, !!cur?.on, battle.phase, chatScreen, !!cur?.compat, !!cur?.debug, cur?.aux?.on ?? null, cur?.offer ?? null, travel, cur?.generation ?? null, dex,
-      pictures?.route() ?? null, place(), shift(), below, room]);
+      cur?.ctx?.eraGimmicks ?? null, pictures?.route() ?? null, place(), shift(), below, room]);
     if (!force && sig === lastSig) return;
     if ((cur?.id ?? null) !== chatId) {
       const id = cur?.id ?? null;

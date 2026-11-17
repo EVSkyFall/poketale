@@ -1334,6 +1334,9 @@ export function nextStageSpec(spec, result, state, ctx, { seed }) {
 
 const playerTeam = state => hatchedParty(state).map(mon => engineMember(mon, state.customItems));
 
+// An Exp. Share in the bag or held by one of the player's Pokémon (generations 2-5 have it held)
+const ownsExpShare = state => (state.bag?.expshare ?? 0) > 0 || [...state.party, ...state.box].some(mon => toID(mon.set?.item) === 'expshare');
+
 function battleBag(state, setting = true) {
   const tools = setting && ITEM_EFFECTS_READY;
   const effectOf = id => customInfo(state, id)?.effect;
@@ -1398,7 +1401,7 @@ export function toEngineSpec(state, battle, ctx, { seed, formatid, picture, play
     },
     wild: !!battle.wild,
     boss: !battle.wild && !!battle.boss,
-    ...(expShare === 'era' ? { expShareEra: { bag: (state.bag?.expshare ?? 0) > 0 } } : expShareOn(expShare, state.bag) ? {} : { expShare: false }),
+    ...(expShare === 'era' ? { expShareEra: { bag: ownsExpShare(state) } } : expShareOn(expShare, ownsExpShare(state)) ? {} : { expShare: false }),
     ...(eraGimmickMode(eraGimmicks) === DEFAULT_ERA_GIMMICKS ? {} : { eraGimmicks: eraGimmickMode(eraGimmicks) }),
     expRate: storyExpRate(expRate),
     ...(friendshipRate === 1 ? {} : { friendshipRate }),
