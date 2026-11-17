@@ -15,6 +15,7 @@ import { answeredLine } from './act-prompts.mjs';
 import { dropTaken, statusIn, statusMoneyAt, latestStatus, compatWorld } from './compat.mjs';
 import { shopEvent, limitedKey } from './shop.mjs';
 import { withMachineStandard } from './machine-standards.mjs';
+import { discWorld, autoGenAt, generationsAt, raiseGen } from './generation.mjs';
 
 export const QUEUE_VAR = '$pkb_queue';
 
@@ -383,7 +384,8 @@ export function changesIn(text, chat, ctx, lang) {
   const events = [], errors = [];
   for (const [n, block] of blocks.entries()) {
     if (held.has(changeAt(index, n))) { errors.push(heldLine(lang)); continue; }
-    const { ops, errors: unread } = parseChange(block.body, withMachineStandard(machineReading, machineRegion, compatWorld(chat)));
+    const { ops, errors: unread } = parseChange(block.body, withMachineStandard(machineReading, machineRegion, discWorld(compatWorld(chat), generationsAt(chat)(index >= 0 ? index : messages.length),
+      raiseGen(autoGenAt(chat, index >= 0 ? index : messages.length - 1), machineRegion))));
     errors.push(...unread.map(note => ruleText(note, lang)));
     if (!state) { events.push(...ops.map(op => eventOf({ op, before: null, after: null }, null))); continue; }
     const result = applyOps(state, ops, at, `${chatId}:${block.key}`, table, { trace: true });

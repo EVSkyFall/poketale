@@ -10,8 +10,8 @@ import { toID, koSpellings, readsOfficial } from '../names/index.js';
 import { DEFAULT_EMOJI, CUSTOM_EFFECTS, customItemId, splitEmoji, topEffect } from './custom-items.mjs';
 import { ruleNote } from './failure.mjs';
 import { readTime, clockHourOf, regionIn } from './compat.mjs';
-import { DEFAULT_STANDARD, regionStandard, parseMachineId, isMachineId as isTm } from './machine-standards.mjs';
-import { machineByMove, machineByNumber, hasMachineKind, nearestStandards } from './item-info.mjs';
+import { DEFAULT_STANDARD, regionStandard, parseMachineId, isMachineId as isTm, tagGen } from './machine-standards.mjs';
+import { machineByMove, machineByNumber, hasMachineKind, nearestStandards, lookupStandards } from './item-info.mjs';
 import { norm } from './norm.mjs';
 import { readHair, readOutfit } from './trainer-colors.mjs';
 import { readStyles } from './trainer-pool.mjs';
@@ -293,8 +293,8 @@ function discNamed(raw, names) {
 }
 
 // A region in parentheses names the standard printed on that region's discs ((Kanto) is Red/Blue whatever era the
-// bot's world is in); a region without discs (Hisui) is read as Scarlet/Violet
-const tagStandard = region => regionStandard(region) ?? DEFAULT_STANDARD;
+// bot's world is in, (Kanto · Gen 3) is FireRed/LeafGreen); a region without discs (Hisui) is read as Scarlet/Violet
+const tagStandard = (region, gen) => regionStandard(region, gen ? { gen } : null) ?? DEFAULT_STANDARD;
 
 // A disc named in story text: undefined when the text is not one, null when it is but names no disc. The standard
 // is a region written in parentheses ("TM11 (Kanto)"), else the message's (reading.machineStd). A move name wins over
@@ -303,11 +303,11 @@ const tagStandard = region => regionStandard(region) ?? DEFAULT_STANDARD;
 // whatever kind (TM Surf in Kanto is HM03); "HM" and "TR" are said on purpose and keep their kind (HM03 Surf in Paldea
 // is still an HM, and an HM no game had is no disc).
 function machineRef(raw, reading) {
-  let tagged = null;
+  let tagged = null, tagRegion = null;
   const text = String(raw ?? '').replace(PAREN, (all, inner) => {
     const region = regionIn(inner);
     if (!region) return all;
-    tagged ??= tagStandard(region);
+    if (!tagged) { tagged = tagStandard(region, tagGen(inner)); tagRegion = region; }
     return ' ';
   });
   // Region tags are already out, so a Korean gloss is all dropGloss can take: it is dropped from the name only when the
@@ -323,7 +323,7 @@ function machineRef(raw, reading) {
   const number = !whole && m ? Number(m[1]) : null;
   const move = whole ?? (m?.[2] ? moveNamed(m[2], reading) : null);
   if (move) {
-    const order = nearestStandards(std);
+    const order = lookupStandards(std, tagRegion ?? reading?.machineRegion ?? null);
     if (parts.kind !== 'tm') return order.map(s => machineByMove(s, move, parts.kind, { exact: true })).find(Boolean) ?? null;
     return order.map(s => machineByMove(s, move, parts.kind)).find(Boolean) ?? null;
   }
