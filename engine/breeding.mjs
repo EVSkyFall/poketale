@@ -102,12 +102,14 @@ function inheritIvs(a, b, rng) {
 	const open = [...STATS];
 	const take = (stat, parent) => { ivs[stat] = ivOf(parent, stat); open.splice(open.indexOf(stat), 1); left--; };
 	const powered = [a, b].filter(p => POWER_ITEMS[toID(p.set.item)]);
+	let sure = null;
 	if (powered.length) {
 		const parent = powered[rng.random(powered.length)];
-		take(POWER_ITEMS[toID(parent.set.item)], parent);
+		sure = POWER_ITEMS[toID(parent.set.item)];
+		take(sure, parent);
 	}
 	while (left > 0) take(open[rng.random(open.length)], rng.random(2) ? a : b);
-	return ivs;
+	return { ivs, sure };
 }
 
 function inheritNature(a, b, rng) {
@@ -153,9 +155,13 @@ export function breedEgg(dex, a, b, rng, { levelUp, oneSpecial = false }) {
 	const held = [a, b].map(p => toID(p.set.item));
 	const { species, gender } = hatchling(dex, eggForm(dex, line, other), held, rng);
 	const nature = inheritNature(a, b, rng);
-	const ivs = inheritIvs(a, b, rng);
-	// One Special: when both halves were passed down, the Special Attack one stands for both
-	if (oneSpecial && ivs.spa !== undefined && ivs.spd !== undefined) ivs.spd = ivs.spa;
+	const { ivs, sure } = inheritIvs(a, b, rng);
+	// One Special: when both halves were passed down, the Special Attack one stands for both, unless a Power item made
+	// sure of the Special Defense one
+	if (oneSpecial && ivs.spa !== undefined && ivs.spd !== undefined) {
+		if (sure === 'spd') ivs.spa = ivs.spd;
+		else ivs.spd = ivs.spa;
+	}
 	const set = completeSet(dex, {
 		species: species.name, level: HATCH_LEVEL, ivs, ability: inheritAbility(dex, line, species, rng), shiny: rng.random(SHINY_ODDS) === 0,
 		...(gender ? { gender } : {}), ...(nature ? { nature } : {}),

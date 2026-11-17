@@ -587,7 +587,7 @@ export function draftProblems(draft, ctx) {
   for (const mon of draft.mons) {
     if (mon.action === 'skip') continue;
     const label = note(mon.place === 'box' ? 'monInBox' : 'monInParty', { mon: labelOf(mon.set) || note('newMon') });
-    for (const problem of monProblems(mon, ctx, draft.kind)) out.push(note('monProblem', { mon: label, problem }));
+    for (const problem of monProblems(mon, ctx, draft.kind, draft.gen)) out.push(note('monProblem', { mon: label, problem }));
     if (mon.action === 'update') {
       if (!mon.match) out.push(note('noMatch', { mon: label }));
       else if (targets.has(mon.match.uid)) out.push(note('sameMatch', { mon: label, other: targets.get(mon.match.uid) }));
