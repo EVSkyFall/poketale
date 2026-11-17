@@ -150,12 +150,18 @@ export function checkBagItem(battle, choice) {
 
 	const target = side.pokemon.find(p => p.m.uid === choice.target);
 	if (!target) return fail('notarget', choice.target);
+	return targetCheck(battle, target, item, choice.move);
+}
+
+// What the item would do to this Pokémon now: checked when it is chosen, and again when it is used, since another
+// action of the turn may have done it already (both slots of a double battle on the same Pokémon)
+function targetCheck(battle, target, item, move) {
 	if (target.isActive && target.volatiles['embargo']) return fail('embargo');
 	if (item.revive) return target.fainted ? { ok: true } : fail('notfainted');
 	if (item.pp) {
 
-		const slots = ppSlots(target, item, choice.move);
-		if (!slots) return fail('nomove', choice.move);
+		const slots = ppSlots(target, item, move);
+		if (!slots) return fail('nomove', move);
 		return slots.some(s => s.pp < s.maxpp) ? { ok: true } : fail('noeffect');
 	}
 	if (target.fainted) return fail('fainted');
@@ -391,8 +397,14 @@ function useItem(sim, battle, state, choice, side = battle.sides[0]) {
 	if (!target || (target.fainted && !item.revive)) return;
 	const effect = itemEffect(item, choice.item);
 	const from = `[from] ${effect.fullname}`;
+	const label = Object.hasOwn(BAG_ITEMS, choice.item) ? [] : [item.name];
+	// Nothing left for it to do: it has no effect and stays in the bag
+	if (!targetCheck(battle, target, item, choice.move).ok) {
+		battle.add('-story-item', target, target.m.uid, choice.item, ...label, '[fail]');
+		return;
+	}
 
-	battle.add('-story-item', target, target.m.uid, choice.item, ...(Object.hasOwn(BAG_ITEMS, choice.item) ? [] : [item.name]));
+	battle.add('-story-item', target, target.m.uid, choice.item, ...label);
 
 	if (item.revive) {
 
@@ -422,12 +434,8 @@ function useItem(sim, battle, state, choice, side = battle.sides[0]) {
 		battle.add('-end', target, 'Attract', from);
 	}
 	if (item.guard) {
-		const added = battle.gen <= 2 ? target.addVolatile('mist', target, effect) : target.side.addSideCondition('mist', target, effect);
-		// Already up (both slots of a double battle chose it this turn): it fails and stays in the bag
-		if (!added) {
-			battle.add('-fail', target);
-			return;
-		}
+		if (battle.gen <= 2) target.addVolatile('mist', target, effect);
+		else target.side.addSideCondition('mist', target, effect);
 	}
 
 	// A flute stays in the bag

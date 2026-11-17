@@ -68,7 +68,7 @@ export function createBag({ sim, battle, names, spec, wild, lang = DEFAULT_LANG 
     if (!counts.has(id)) return 0;
     const have = isTool(id) ? Math.min(counts.get(id), 1) : counts.get(id);
     // A flute stays in the bag, so one serves every action of the turn
-    return bagItem(battle, id).keep ? have : have - (taken?.get(id) ?? 0);
+    return bagItem(battle, id)?.keep ? have : have - (taken?.get(id) ?? 0);
   };
   function itemView(id, party, position, taken) {
     const base = { id, name: itemName(id), count: isTool(id) ? counts.get(id) : left(id, taken), target: targetKind(id),

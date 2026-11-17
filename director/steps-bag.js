@@ -31,12 +31,15 @@ export function createBagSteps({ battle, view, names, ledger, bag, lang = DEFAUL
 
         using = null;
         await say('own.trainerUsedItem', { trainerName: battle.getSide(ident.slice(0, 2)).name, itemName: names.item(item) });
+        if (kw.fail) await say('party-ui-handler.anyEffect');
         return;
       }
       using = { item, name: ledger.get(ident).name, ppShown: false };
       const flute = BAG_ITEMS[item]?.flute;
-      if (!BAG_ITEMS[item]?.keep) bag?.spend(item);
+      // An item with nothing left to do stays in the bag
+      if (!BAG_ITEMS[item]?.keep && !kw.fail) bag?.spend(item);
       await say(flute ? 'own.playedFlute' : 'own.usedItem', { pokemonName: using.name, itemName: itemName(item) });
+      if (kw.fail) await say('party-ui-handler.anyEffect');
       return;
     }
     case '-story-flute': await say('own.fluteNoEffect'); return;

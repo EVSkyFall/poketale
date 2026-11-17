@@ -258,7 +258,7 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
       break;
     }
 
-    case '-story-item': push({ type: 'item', mon: ref(who(args[0])), item: args[2], ...(args[3] ? { label: args[3] } : {}) }); break;
+    case '-story-item': push({ type: 'item', mon: ref(who(args[0])), item: args[2], ...(args[3] && args[3] !== '[fail]' ? { label: args[3] } : {}), ...(args.includes('[fail]') ? { failed: true } : {}) }); break;
 
     case '-story-tool': {
       const trainer = tagArg(args, 'trainer') ?? null;
@@ -715,7 +715,7 @@ function eventText(e, namer, sides, ctx = reasonCtx(null, null)) {
   case 'status': return `${mon(e.mon)} ${STATUS_EN[e.status] ?? `got ${e.status}`}`;
   case 'faint': return `${mon(e.mon)} fainted`;
   case 'ball': return `${namer.items(e.ball)} thrown at ${mon(e.mon)} → ${e.result === 'caught' ? 'caught' : e.result === 'blocked' ? 'blocked' : 'broke free'}`;
-  case 'item': return `${ownerName(ownerOf(e.mon, sides), sides)} used ${e.label ?? namer.items(e.item)} on ${mon(e.mon)}`;
+  case 'item': return `${ownerName(ownerOf(e.mon, sides), sides)} used ${e.label ?? namer.items(e.item)} on ${mon(e.mon)}${e.failed ? ' → no effect' : ''}`;
   case 'tool': return toolText(e, mon, sides);
   case 'run': return e.result === 'escaped' ? 'Got away safely' : 'Could not get away';
   case 'levelup': return `${mon(e.mon)} grew to Lv${e.level}`;
