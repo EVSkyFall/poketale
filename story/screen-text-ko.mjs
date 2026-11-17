@@ -509,6 +509,7 @@ export default Object.freeze({
   'panel.sc.mode.ivs': '개체값',
   'panel.sc.mode.evs': '노력치',
   'panel.sc.evNote': '합계 {{n}}/{{max}}',
+  'panel.sc.evNoteFree': '합계 {{n}}',
   'panel.sc.exp': '경험치',
   'panel.sc.power': '위력',
   'panel.sc.accuracy': '명중',

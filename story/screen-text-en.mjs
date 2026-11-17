@@ -509,6 +509,7 @@ export default Object.freeze({
   'panel.sc.mode.ivs': 'IVs',
   'panel.sc.mode.evs': 'EVs',
   'panel.sc.evNote': 'EV total {{n}}/{{max}}',
+  'panel.sc.evNoteFree': 'EV total {{n}}',
   'panel.sc.exp': 'Experience',
   'panel.sc.power': 'Power',
   'panel.sc.accuracy': 'Accuracy',

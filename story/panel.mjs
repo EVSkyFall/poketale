@@ -8,7 +8,8 @@ import { applyOps, emptyState, maxHp, movePp, toID, clone, healParty, rememberab
 import { EGG_SPRITE, compatHearts } from '../engine/breeding.mjs';
 import { FRIENDSHIP_MAX, FRIENDSHIP_STEPS } from '../engine/friendship.mjs';
 import { PARTY_MAX, MAX_LEVEL, MAX_IV, EV_STAT_MAX, EV_TOTAL_MAX, BOX_SIZE, MAX_MOVES } from './rules.mjs';
-import { ruleFormat, DEFAULT_FORMAT } from '../engine/rules.mjs';
+import { ruleFormat, DEFAULT_FORMAT, formatGen } from '../engine/rules.mjs';
+import { usesStatExp, statExpOf, vitaminWorks } from '../engine/stat-exp.mjs';
 import { MAX_PP_UPS } from '../engine/pp.mjs';
 import { OUTSIDE_ITEMS, VITAMIN_EVS, HYPER_TRAIN_LEVEL, isTm } from './items.mjs';
 import { itemText, tmMove, canLearnTm } from './item-info.mjs';
@@ -219,6 +220,7 @@ export function useCheck(mon, itemId, ctx, lang, party = [], format = DEFAULT_FO
   const item = OUTSIDE_ITEMS[id];
   if (item.vitamin) {
     const evs = mon.set.evs ?? {};
+    if (usesStatExp(formatGen(format))) return vitaminWorks(statExpOf(mon.statExp, evs), item.vitamin) ? { ok: true } : no;
     const total = STATS.reduce((sum, s) => sum + (evs[s] ?? 0), 0);
     return (evs[item.vitamin] ?? 0) < EV_STAT_MAX && total < EV_TOTAL_MAX ? { ok: true } : no;
   }
@@ -264,7 +266,7 @@ export function useOps(mon, itemId, { sim }, { move, stat } = {}) {
     }
     if (ref && Object.hasOwn(FRIENDSHIP_STEPS, id)) ops.push({ op: 'friendship', ref, source: id });
   } else if (kind === 'candy') ops.push({ op: 'level', ref, delta: 1, candy: true });
-  else if (kind === 'train' && outside.vitamin) ops.push({ op: 'evs', ref, stat: outside.vitamin, amount: VITAMIN_EVS }, { op: 'friendship', ref, source: 'vitamin' });
+  else if (kind === 'train' && outside.vitamin) ops.push({ op: 'evs', ref, stat: outside.vitamin, amount: VITAMIN_EVS, vitamin: true }, { op: 'friendship', ref, source: 'vitamin' });
   else if (kind === 'train' && outside.evBerry) {
     if ((mon.set.evs?.[outside.evBerry] ?? 0) > 0) ops.push({ op: 'evs', ref, stat: outside.evBerry, amount: -VITAMIN_EVS });
     ops.push({ op: 'friendship', ref, source: 'berry' });

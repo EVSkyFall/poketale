@@ -14,11 +14,15 @@ export const STATS = Object.freeze(['hp', 'atk', 'def', 'spa', 'spd', 'spe']);
 
 export const NON_HP_STATS = Object.freeze(STATS.slice(1));
 
+// Generations 1-2 have one Special stat in place of Sp. Atk and Sp. Def
+export const hasOneSpecial = gen => Number.isInteger(gen) && gen <= 2;
+
 export const STATUS_IDS = Object.freeze(new Set(['', 'brn', 'par', 'slp', 'frz', 'psn', 'tox']));
 
 export const toID = text => String(text ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 
-export function completeSet(dex, set, rng, { levelUp, label = set.species, tera = true } = {}) {
+// oneSpecial: made in generation 1 or 2, so one IV is drawn for both special stats
+export function completeSet(dex, set, rng, { levelUp, label = set.species, tera = true, oneSpecial = false } = {}) {
 	const out = { ...set };
 	const species = dex.species.get(out.species);
 	if (!out.moves?.length) {
@@ -53,6 +57,9 @@ export function completeSet(dex, set, rng, { levelUp, label = set.species, tera 
 		if (out.ivs[s] === undefined) out.ivs[s] = rng.random(MAX_IV + 1);
 		if (out.evs[s] === undefined) out.evs[s] = 0;
 	}
+	// Both are still drawn so the draws after them stay the same; a given one wins over a drawn one
+	if (oneSpecial && open.includes('spd')) out.ivs.spd = out.ivs.spa;
+	else if (oneSpecial && open.includes('spa')) out.ivs.spa = out.ivs.spd;
 	if (!out.gender) {
 		if (species.gender) out.gender = species.gender === 'N' ? '' : species.gender;
 		else out.gender = rng.random() < species.genderRatio.M ? 'M' : 'F';

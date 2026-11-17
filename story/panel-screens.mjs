@@ -92,7 +92,7 @@ function summaryView(screen, mon, env, t) {
     const exp = summary.exp && { total: summary.exp.total.toLocaleString(lang), next: summary.exp.next.toLocaleString(lang), ratio: summary.exp.ratio,
       level: shown.level, nextLevel: summary.exp.next ? shown.level + 1 : null };
     out.stats = { title: t('panel.sc.page.stats'), modes: modes.map(id => ({ id, label: t(`panel.sc.mode.${id}`) })), mode, cells,
-      note: mode === 'evs' ? { text: t('panel.sc.evNote', { n: total, max: EV_TOTAL_MAX }) } : null,
+      note: mode === 'evs' ? { text: summary.evsUncapped ? t('panel.sc.evNoteFree', { n: total }) : t('panel.sc.evNote', { n: total, max: EV_TOTAL_MAX }) } : null,
       exp: exp && { ...exp, title: t('panel.sc.exp'), labels: { total: words('pokemon-summary.expPoints'), next: words('pokemon-summary.nextLv') } } };
   } else {
     const moves = summary.moves;

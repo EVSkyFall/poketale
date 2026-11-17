@@ -1,7 +1,7 @@
 import { DEFAULT_FORMAT, doublesFormat, multiFormat, hasDoubles, formatRules } from './rules.mjs';
 import { eraSet } from './era.mjs';
 import { installExtensions, extensionResults } from './extensions.mjs';
-import { completeSet, heldItemForm } from './mon.mjs';
+import { completeSet, heldItemForm, hasOneSpecial } from './mon.mjs';
 import { checkSpec } from './input.mjs';
 import { startsFainted } from './initial-state.mjs';
 import { countsResult } from './counts.mjs';
@@ -28,11 +28,11 @@ export function createStoryBattle(sim, given, options = {}) {
 
 	const rng = new sim.PRNG(given.seed);
 	for (const [key, seat] of Object.entries(shape.seats)) {
-		context.sets[key] = seat.team.map(m => completeSet(sim.Dex, m.set, rng, { levelUp: options.levelUp, label: m.uid, tera: !m.noTera }));
+		context.sets[key] = seat.team.map(m => completeSet(sim.Dex, m.set, rng, { levelUp: options.levelUp, label: m.uid, tera: !m.noTera, oneSpecial: hasOneSpecial(gen) }));
 		battle.setPlayer(key, { name: seat.name, team: sim.Teams.pack(context.sets[key].map(set => heldItemForm(sim.Dex, eraSet(gen, set)))) });
 	}
 
-	if (shape.waiting) context.sets.waiting = shape.waiting.team.map(m => completeSet(sim.Dex, m.set, rng, { levelUp: options.levelUp, label: m.uid, tera: !m.noTera }));
+	if (shape.waiting) context.sets.waiting = shape.waiting.team.map(m => completeSet(sim.Dex, m.set, rng, { levelUp: options.levelUp, label: m.uid, tera: !m.noTera, oneSpecial: hasOneSpecial(gen) }));
 	installExtensions(sim, battle, 'players', context);
 	return battle;
 }
@@ -124,6 +124,7 @@ function resultMon(sim, p) {
 		exp: p.m.exp,
 		friendship: p.m.friendship,
 		friendshipCarry: p.m.friendshipCarry || undefined,
+		statExp: p.m.statExp ? { ...p.m.statExp } : undefined,
 		counts: countsResult(p),
 		cloak: p.m.cloak,
 	};

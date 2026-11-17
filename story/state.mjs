@@ -1,6 +1,6 @@
 import { findBlocks, findTags, parseChange, parseBattle, battlesIn, hashKey, speciesName, sharedForms, pickForm, messageId, norm, stripBlocksRead } from './blocks.mjs';
 import { expForLevel, calcExpGain, growthOf as growthOfSpecies, DEFAULT_EXP_RATE, storyExpRate, STORY_EXP_PACE } from '../engine/exp.mjs';
-import { STATS, STATUS_IDS, completeSet, toID } from '../engine/mon.mjs';
+import { STATS, STATUS_IDS, completeSet, toID, hasOneSpecial } from '../engine/mon.mjs';
 import { levelEvolution, usesHeldItem, extraEvolutions, countOf, ABSENT_TRADE_EVOLUTION, EVOLVE_FRIENDSHIP } from '../engine/evolution.mjs';
 import { engineMember } from '../engine/input.mjs';
 import { escapeRe } from './norm.mjs';
@@ -36,6 +36,7 @@ import { SETTING_CHANGES_VAR, foldCtxAt, foldValues, ruleValues, rulesAt } from 
 import { enjoymentOf, setEnjoyment, friendshipFor, afterMessage, ENJOY_STEP, canEat, fullnessOf, setFullness, FULL_PER_FOOD, foodFriendship, parsePuff, puffFriendship,
   FREE_GRADE, puffCount, addPuffs, eatsFood, FULL_MAX } from './amie.mjs';
 import { eggChance, breedEgg, giftEgg, eggCycles, hatchSpeed, HATCH_FRIENDSHIP } from '../engine/breeding.mjs';
+import { usesStatExp, statExpOf, gainStatExp, vitaminWorks, vitaminGain } from '../engine/stat-exp.mjs';
 import { evGain, statRoom, clearBags, bagOf, traineeOf, setTrainee, isHungBag, setHungBag, refillEnergy } from './training.mjs';
 import { beatsRecord, recordOf, validRecord } from './amie-games.mjs';
 
@@ -48,6 +49,8 @@ export { PLAYER_NAME };
 const TYPICAL_BASE_EXP = 60;
 
 const TYPICAL_EV_YIELD = 1, RARE_EV_YIELD = 2, RARE_EV_ODDS = 10;
+// Generations 1-2: the stat experience such a foe gives in every stat (unevolved Pokémon of generations 1-2 average 51-59)
+const TYPICAL_BASE_STAT = 55;
 
 const BOX_NAME_SLOTS = 100;
 const WATER_BIOMES = new Set(['sea', 'seabed', 'lake', 'beach', 'swamp']);
@@ -433,7 +436,7 @@ export function storyTick(state, name, ctx) {
   const rng = rngFor(sim, `${name}:egg`);
   if (breeding?.chance && rng.random(100) < breeding.chance) {
     const [a, b] = [breeding.a, breeding.b].map(m => next.party.find(p => p.uid === m.uid));
-    const { set, ball } = breedEgg(sim.Dex, a, b, rng, { levelUp: ctx.levelUp });
+    const { set, ball } = breedEgg(sim.Dex, a, b, rng, { levelUp: ctx.levelUp, oneSpecial: hasOneSpecial(stateGen(state)) });
     const egg = newEgg(ctx, set, uniqueUid(next, `e${hashKey(name)}`), ball);
     const list = next.party.length < PARTY_MAX ? next.party : next.box;
     list.push(egg);
@@ -524,7 +527,7 @@ function applyOp(state, op, ctx, fillKey, fill) {
   switch (op?.op) {
     case 'add': {
       let set = fill.known;
-      if (!set || toID(set.species) !== toID(op.set.species)) set = fill.made = fillSet(ctx, op.set, rngFor(sim, fillKey));
+      if (!set || toID(set.species) !== toID(op.set.species)) set = fill.made = fillSet(ctx, op.set, rngFor(sim, fillKey), stateGen(state));
       const mon = newMon(ctx, clone(set), uniqueUid(state, `m${hashKey(fillKey)}`));
       if (op.set.hpPercent !== undefined) mon.hp = hpFromPercent(sim, mon.set, op.set.hpPercent, false, format);
       if (op.set.status) mon.status = op.set.status;
@@ -542,7 +545,7 @@ function applyOp(state, op, ctx, fillKey, fill) {
       const species = sim.Dex.species.get(op.species);
       if (!species.exists) fail('unknownSpecies', { species: op.species });
       let set = fill.known;
-      if (!set || toID(set.species) !== species.id) set = fill.made = giftEgg(sim.Dex, species.name, rngFor(sim, fillKey), { levelUp: ctx.levelUp });
+      if (!set || toID(set.species) !== species.id) set = fill.made = giftEgg(sim.Dex, species.name, rngFor(sim, fillKey), { levelUp: ctx.levelUp, oneSpecial: hasOneSpecial(stateGen(state)) });
       const egg = newEgg(ctx, clone(set), uniqueUid(state, `e${hashKey(fillKey)}`));
       (op.to === 'box' || state.party.length >= PARTY_MAX ? state.box : state.party).push(egg);
       return;
@@ -718,8 +721,19 @@ function applyOp(state, op, ctx, fillKey, fill) {
       if (!STATS.includes(stat)) fail('unknownStat', { stat: op.stat });
       const evs = mon.set.evs ??= {};
       for (const s of STATS) evs[s] ??= 0;
+      if (op.vitamin && usesStatExp(stateGen(state))) {
+        // Generations 1-2: the vitamin's own rule on stat experience, in place of the amount
+        const now = statExpOf(mon.statExp, evs);
+        if (!vitaminWorks(now, stat)) fail('evsMax', { mon: monLabel(mon) });
+        const oldMax = maxHp(sim, mon.set, format);
+        const out = gainStatExp(now, evs, vitaminGain(stat));
+        mon.statExp = out.statExp;
+        mon.set.evs = out.evs;
+        keepHpGain(sim, mon, oldMax, format);
+        return;
+      }
       const amount = Math.trunc(Number(op.amount) || 0);
-      const gain = evGain(evs, stat, amount);
+      const gain = evGain(evs, stat, amount, !usesStatExp(stateGen(state)));
       if (!gain) fail(amount < 0 ? 'evsZero' : 'evsMax', { mon: monLabel(mon) });
       const oldMax = maxHp(sim, mon.set, format);
       evs[stat] += gain;
@@ -834,7 +848,7 @@ function applyOp(state, op, ctx, fillKey, fill) {
       const bad = bags.find(id => !bagOf(id)) ?? (op.hung && !isHungBag(op.hung) ? op.hung.id ?? '' : undefined);
       if (bad !== undefined || (!bags.length && op.hung === undefined)) fail('trainBag', { bag: bad ?? '' });
       const oldMax = maxHp(sim, mon.set, format);
-      const { trainee, friendship } = clearBags(traineeOf(mon), bags);
+      const { trainee, friendship } = clearBags(traineeOf(mon, { totalCap: !usesStatExp(stateGen(state)) }), bags);
       setTrainee(mon, trainee);
       if (op.hung !== undefined) setHungBag(mon, op.hung);
       if (friendship) addFriendship(mon, friendship, 'soothing', ctx);
@@ -996,7 +1010,8 @@ function heal(sim, mon, { hpPercent, hpAdd, statusOnly, revive }, formatid) {
   mon.pp = {};
 }
 
-export function fillSet({ sim, levelUp }, teamSet, rng) {
+// gen: the story's generation when the Pokémon is made there (generations 1-2 draw one IV for both special stats)
+export function fillSet({ sim, levelUp }, teamSet, rng, gen = null) {
   const { hpPercent, status, ...set } = clone(teamSet);
   const species = sim.Dex.species.get(set.species);
   if (!species.exists) fail('unknownSpecies', { species: set.species });
@@ -1010,7 +1025,7 @@ export function fillSet({ sim, levelUp }, teamSet, rng) {
       return move.id;
     });
   }
-  const full = completeSet(sim.Dex, set, rng, { levelUp, label: species.name });
+  const full = completeSet(sim.Dex, set, rng, { levelUp, label: species.name, oneSpecial: hasOneSpecial(gen) });
   full.item = full.item ? itemId(full.item) : '';
   full.name = full.name ?? '';
   return full;
@@ -1057,7 +1072,13 @@ export function levelUpOutside(mon, delta, ctx, rng, { effort, party = [], badge
     next.exp = Math.max(low, Math.min(high, mon.exp ?? 0));
   }
 
-  if (effort) set.evs = gainEffort({ ...set.evs }, outsideDefeats(growth ?? 'mediumfast', from, to), rng);
+  const defeats = () => outsideDefeats(growth ?? 'mediumfast', from, to);
+  if (effort && usesStatExp(formatGen(format))) {
+    const evs = Object.fromEntries(STATS.map(s => [s, set.evs?.[s] ?? 0]));
+    const out = gainStatExp(statExpOf(mon.statExp, evs), evs, Object.fromEntries(STATS.map(s => [s, defeats() * TYPICAL_BASE_STAT])));
+    next.statExp = out.statExp;
+    set.evs = out.evs;
+  } else if (effort) set.evs = gainEffort({ ...set.evs }, defeats(), rng);
 
   const oldMax = maxHp(sim, { ...mon.set }, format);
   set.level = to;
@@ -1163,7 +1184,7 @@ export function applyBattleResult(before, result, ctx, { battle = null, outcome 
   for (const member of mine?.team ?? []) {
     const mon = [...state.party, ...state.box].find(m => m.uid === member.uid);
     if (!mon) continue;
-    const from = started.get(member.uid) ?? { set: mon.set, exp: mon.exp, friendship: mon.friendship, friendshipCarry: mon.friendshipCarry, counts: mon.counts };
+    const from = started.get(member.uid) ?? { set: mon.set, exp: mon.exp, friendship: mon.friendship, friendshipCarry: mon.friendshipCarry, counts: mon.counts, statExp: mon.statExp };
     const sameSpecies = toID(mon.set.species) === toID(from.set.species);
     gainLevel(ctx, mon, member, from);
 
@@ -1177,7 +1198,8 @@ export function applyBattleResult(before, result, ctx, { battle = null, outcome 
     if (member.counts) mon.counts = addCounts(mon.counts, member.counts, from.counts);
     if (member.cloak && sameSpecies && sim.Dex.species.get(mon.set.species).baseSpecies === 'Burmy') mon.set.species = member.cloak;
 
-    if (member.evs) mon.set.evs = addEffort(mon.set.evs, member.evs, from.set.evs);
+    if (member.statExp) addStatExp(mon, member.statExp, from);
+    else if (member.evs) mon.set.evs = addEffort(mon.set.evs, member.evs, from.set.evs);
     learnFromBattle(mon, member.moves.map(m => m.id), (from.set.moves ?? []).map(toID));
     const slots = new Map(member.moves.map(m => [m.id, m]));
     mon.pp = Object.fromEntries(mon.set.moves.flatMap(id => {
@@ -1253,6 +1275,15 @@ function gainLevel(ctx, mon, end, from) {
   mon.set.level = level;
 }
 
+// A generation 1-2 battle: the stat experience it added, on top of the Pokémon's own (with no cap on the EV total)
+function addStatExp(mon, end, from) {
+  const begin = statExpOf(from.statExp, from.set.evs);
+  const evs = Object.fromEntries(STATS.map(s => [s, mon.set.evs?.[s] ?? 0]));
+  const out = gainStatExp(statExpOf(mon.statExp, evs), evs, Object.fromEntries(STATS.map(s => [s, (end[s] ?? 0) - begin[s]])));
+  mon.statExp = out.statExp;
+  mon.set.evs = out.evs;
+}
+
 function addEffort(now, end, from) {
   const out = Object.fromEntries(STATS.map(s => [s, now?.[s] ?? 0]));
   for (const s of STATS) out[s] += Math.min(Math.max(0, (end[s] ?? 0) - (from?.[s] ?? 0)), statRoom(out, s));
@@ -1280,8 +1311,8 @@ export function storyEndTrainer(battle, outcome, team = null) {
   return { who, trainer: { name: battle.name, personal: personalName(battle), outcome, team: team ?? battle.team.map(({ species, level }) => ({ species, level })) } };
 }
 
-export const battleRecord = (spec, result, outcome) => ({ start: spec.p1.team.map(({ uid, set, exp, friendship, friendshipCarry, counts }) => ({ uid, set, exp,
-  ...(friendship === undefined ? {} : { friendship }), ...(friendshipCarry ? { friendshipCarry } : {}), ...(counts ? { counts } : {}) })), result,
+export const battleRecord = (spec, result, outcome) => ({ start: spec.p1.team.map(({ uid, set, exp, friendship, friendshipCarry, counts, statExp }) => ({ uid, set, exp,
+  ...(friendship === undefined ? {} : { friendship }), ...(friendshipCarry ? { friendshipCarry } : {}), ...(counts ? { counts } : {}), ...(statExp ? { statExp } : {}) })), result,
   ...(outcome === undefined ? {} : { outcome }), ...(spec.formatid ? { format: spec.formatid } : {}) });
 
 export const battlesBefore = spec => spec?.before ?? [];

@@ -5,6 +5,7 @@ import { formatRules, EV_STAT_MAX, EV_TOTAL_MAX } from './rules.mjs';
 import { MAX_LEVEL, STATS, NON_HP_STATS, toID } from './mon.mjs';
 import { genderAllows, everstoneStops, levelEvolution, battleEvolution, ABSENT_TRADE_EVOLUTION } from './evolution.mjs';
 import { winnerSide } from './winner.mjs';
+import { usesStatExp, statExpOf, statExpYield, gainStatExp } from './stat-exp.mjs';
 
 const states = new WeakMap();
 
@@ -74,8 +75,9 @@ export function attachExperience(sim, battle, spec, { exp: table, levelUp }) {
 	if (!table?.species) throw new Error('경험치 표(options.exp)가 없습니다');
 	if (!levelUp) throw new Error('경험치를 쓰려면 레벨업 기술 표(options.levelUp)도 필요합니다');
 
-	const effort = formatRules(sim, battle.format).effort && Array.isArray(table.effort);
-	const state = { sim, table, levelUp, effort, share: spec.expShare !== false, era: spec.expShareEra ?? null, rate: spec.expRate ?? DEFAULT_EXP_RATE, faced: new Map(), awarded: new Set(), learnQueue: [],
+	const statExp = usesStatExp(battle.gen);
+	const effort = formatRules(sim, battle.format).effort && (statExp || Array.isArray(table.effort));
+	const state = { sim, table, levelUp, effort, statExp, share: spec.expShare !== false, era: spec.expShareEra ?? null, rate: spec.expRate ?? DEFAULT_EXP_RATE, faced: new Map(), awarded: new Set(), learnQueue: [],
 		world: { timeOfDay: spec.timeOfDay ?? 'day', ...(Number.isInteger(spec.clockHour) ? { clockHour: spec.clockHour } : {}), weather: spec.weather ?? null, region: spec.region ?? null, money: spec.money ?? null, badges: spec.badges ?? 0,
 			trade: spec.tradeEvolution ?? ABSENT_TRADE_EVOLUTION, partner: !!spec.partner } };
 	states.set(battle, state);
@@ -85,6 +87,7 @@ export function attachExperience(sim, battle, spec, { exp: table, levelUp }) {
 		if (pokemon.m.partner) continue;
 		const growth = growthOf(state.table, speciesOf(battle, pokemon));
 		pokemon.m.startLevel = pokemon.level;
+		if (statExp) pokemon.m.statExp = statExpOf(members.get(pokemon.m.uid)?.statExp, pokemon.set.evs);
 		if (!growth) continue;
 
 		const level = Math.min(pokemon.level, MAX_LEVEL);
@@ -144,7 +147,17 @@ function awardExperience(battle, state, foe) {
 	const alive = battle.sides[0].pokemon.filter(p => p.hp > 0 && !p.fainted && p.m.exp !== undefined);
 	const pieces = sharePieces(battle, state, faced, alive);
 	// EVs first, then experience (gainEffort below - on level-up the new stats include this battle's EVs)
-	if (state.effort) {
+	if (state.effort && state.statExp) {
+		// Stat experience is shared out like the experience: each share is the foe's base stat over its divisor
+		const base = statExpYield(speciesOf(battle, foe).baseStats);
+		for (const p of alive) {
+			if (!pieces.has(p) || !p.m.statExp) continue;
+			const gain = Object.fromEntries(STATS.map(s => [s, pieces.get(p).reduce((sum, divisor) => sum + Math.floor(base[s] / divisor), 0)]));
+			const out = gainStatExp(p.m.statExp, p.set.evs, gain);
+			p.m.statExp = out.statExp;
+			Object.assign(p.set.evs, out.evs);
+		}
+	} else if (state.effort) {
 		const yieldOf = effortYield(state.table, speciesOf(battle, foe));
 		for (const p of alive) if (pieces.has(p)) gainEffort(p, yieldOf);
 	}

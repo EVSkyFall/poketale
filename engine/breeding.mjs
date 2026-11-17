@@ -148,7 +148,7 @@ function pushMoves(moves, more) {
 	return moves;
 }
 
-export function breedEgg(dex, a, b, rng, { levelUp }) {
+export function breedEgg(dex, a, b, rng, { levelUp, oneSpecial = false }) {
 	const [line, other] = roles(dex, a, b);
 	const held = [a, b].map(p => toID(p.set.item));
 	const { species, gender } = hatchling(dex, eggForm(dex, line, other), held, rng);
@@ -156,7 +156,7 @@ export function breedEgg(dex, a, b, rng, { levelUp }) {
 	const set = completeSet(dex, {
 		species: species.name, level: HATCH_LEVEL, ivs: inheritIvs(a, b, rng), ability: inheritAbility(dex, line, species, rng), shiny: rng.random(SHINY_ODDS) === 0,
 		...(gender ? { gender } : {}), ...(nature ? { nature } : {}),
-	}, rng, { levelUp });
+	}, rng, { levelUp, oneSpecial });
 	const learns = levelMoves(levelUp, species), eggMoves = new Set(eggMovesOf(dex, species.name));
 	const knows = p => (p.set.moves ?? []).map(toID);
 	const [mother, father] = line.set.gender === 'F' ? [line, other] : [other, line];
@@ -167,9 +167,9 @@ export function breedEgg(dex, a, b, rng, { levelUp }) {
 	return { set, ball: inheritBall(dex, line, other, rng) };
 }
 
-export function giftEgg(dex, name, rng, { levelUp }) {
+export function giftEgg(dex, name, rng, { levelUp, oneSpecial = false }) {
 	const species = dex.species.get(name);
-	const set = completeSet(dex, { species: species.name, level: HATCH_LEVEL }, rng, { levelUp });
+	const set = completeSet(dex, { species: species.name, level: HATCH_LEVEL }, rng, { levelUp, oneSpecial });
 	const eggMoves = eggMovesOf(dex, species.name).filter(m => !set.moves.includes(m));
 	if (eggMoves.length) set.moves = pushMoves([...set.moves], [eggMoves[rng.random(eggMoves.length)]]);
 	return set;
