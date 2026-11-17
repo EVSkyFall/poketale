@@ -17,6 +17,7 @@ import { ITEM_EFFECTS_READY } from './item-effects.mjs';
 import { PARTY_MAX, MAX_LEVEL, MAX_MOVES, MAX_IV, EV_STAT_MAX, EV_TOTAL_MAX, OT_NAME_MAX, BOX_NAME_MAX, PLAYER_NAME } from './rules.mjs';
 import { bossBgm, personalName } from './named.mjs';
 import { foeGimmicks as foeGimmicksOf } from './gimmicks.mjs';
+import { DEFAULT_ERA_GIMMICKS, eraGimmickMode } from '../engine/era-gimmicks.mjs';
 import { outcomeOf } from './outcome.mjs';
 import { opponentPicture, foePartnerPicture } from './trainer-look.mjs';
 import { readStored, isRecord } from './stored.mjs';
@@ -1321,7 +1322,8 @@ export const toolsIn = spec => !Array.isArray(spec?.bag?.offTools);
 const otherBag = ({ items, foods, tools, offTools, ...rest }) => rest;
 const hasTeraOrb = state => (state.bag.teraorb ?? 0) > 0;
 
-export function toEngineSpec(state, battle, ctx, { seed, formatid, picture, player, expShare, expRate = DEFAULT_EXP_RATE, status = null, effectItems = true, foeGimmicks = 'pokerogue' } = {}) {
+export function toEngineSpec(state, battle, ctx, { seed, formatid, picture, player, expShare, expRate = DEFAULT_EXP_RATE, status = null, effectItems = true, foeGimmicks = 'pokerogue',
+  eraGimmicks = DEFAULT_ERA_GIMMICKS } = {}) {
   if (!hatchedParty(state).length) fail('noParty');
   if (!hatchedParty(state).some(m => m.hp !== 0)) fail('allFainted');
   const { sim } = ctx;
@@ -1366,6 +1368,7 @@ export function toEngineSpec(state, battle, ctx, { seed, formatid, picture, play
     wild: !!battle.wild,
     boss: !battle.wild && !!battle.boss,
     ...(expShareOn(expShare, state.bag) ? {} : { expShare: false }),
+    ...(eraGimmickMode(eraGimmicks) === DEFAULT_ERA_GIMMICKS ? {} : { eraGimmicks: eraGimmickMode(eraGimmicks) }),
     expRate: storyExpRate(expRate),
     ...(friendshipRate === 1 ? {} : { friendshipRate }),
     ...(timeOfDay === 'day' ? {} : { timeOfDay }),

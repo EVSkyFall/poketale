@@ -84,6 +84,31 @@ export function battleFromJSON(sim, json) {
 	return battle;
 }
 
+// Older generations' move code sometimes lets a move fail without a word (generation 2 Sleep Talk while awake,
+// generation 3 Mirror Coat with nothing to reflect). Such a move gets the failure line the later code prints. From
+// generation 2 Showdown records the failure (moveThisTurnResult false), so a move that works silently (Wish) is left
+// alone; generation 1 records nothing, but its move code shows every effect, so a move followed by nothing failed.
+// Generation 9 is left as it is.
+const QUIET_LINE = /^\|(t:|split\||debug\||$)/;
+
+export function sayQuietFailures(battle) {
+	if (!(battle.gen < 9)) return;
+	const { actions } = battle;
+	const runMove = actions.runMove;
+	if (runMove.quietFailures) return;
+	const wrapped = function (move, pokemon, ...rest) {
+		const from = battle.log.length;
+		const result = runMove.call(this, move, pokemon, ...rest);
+		const ident = `${pokemon}`;
+		const lines = battle.log.slice(from).filter(line => !QUIET_LINE.test(line));
+		const at = lines.findIndex(line => line.startsWith(`|move|${ident}|`));
+		if (at >= 0 && at === lines.length - 1 && (battle.gen === 1 || pokemon.moveThisTurnResult === false) && !battle.ended) battle.add('-fail', pokemon);
+		return result;
+	};
+	wrapped.quietFailures = true;
+	actions.runMove = wrapped;
+}
+
 export function allowRayquazaMega(battle) {
 	const { actions } = battle;
 	const original = actions.canMegaEvo;

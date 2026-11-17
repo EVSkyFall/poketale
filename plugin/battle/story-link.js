@@ -63,7 +63,7 @@ export const battleFormat = async () => {
   const party = await pendingParty().catch(() => null);
   return party ? stateFormat(party.state) : ruleFormat(settings.rule);
 };
-const storyCtx = () => ctxPromise ??= loadLevelUp().then(levelUp => (ctxNow = { sim, levelUp, exp: EXP_TABLE, folds: createFolds(), get friendshipRate() { return settings.friendshipRate; }, get hatchRate() { return settings.hatchRate; }, get tradeEvolution() { return settings.tradeEvolution; }, get rule() { return settings.rule; } }))
+const storyCtx = () => ctxPromise ??= loadLevelUp().then(levelUp => (ctxNow = { sim, levelUp, exp: EXP_TABLE, folds: createFolds(), get friendshipRate() { return settings.friendshipRate; }, get hatchRate() { return settings.hatchRate; }, get tradeEvolution() { return settings.tradeEvolution; }, get rule() { return settings.rule; }, get eraGimmicks() { return settings.eraGimmicks; } }))
   .catch(error => { ctxPromise = undefined; throw error; });
 let ctxNow = null;
 
@@ -1145,7 +1145,7 @@ async function prepareBattle(press, mode, retryOf, owner) {
     const playerName = persona.name;
 
     spec = start ? restartSpec(start, freshSeed()) : toEngineSpec(state, battle, { ...ctx, playerName, lang: currentLang(pass.chat) },
-      { seed: freshSeed(), formatid: stateFormat(state), expShare: settings.expShare, expRate: settings.expRate, effectItems: settings.effectItems, foeGimmicks: settings.foeGimmicks, picture: pictureOptions(key, pass.chat), player: playerOptions(persona.look),
+      { seed: freshSeed(), formatid: stateFormat(state), expShare: settings.expShare, expRate: settings.expRate, effectItems: settings.effectItems, foeGimmicks: settings.foeGimmicks, eraGimmicks: settings.eraGimmicks, picture: pictureOptions(key, pass.chat), player: playerOptions(persona.look),
         status: statusIn(pass.chat.message[at]) });
     startBalls = { mine: fighters.map(ballOf), ...blockBalls(battle) };
   }

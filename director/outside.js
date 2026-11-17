@@ -31,7 +31,7 @@ function readOutside(ctx, mon, read) {
   if (fainted) Object.assign(member, { hp: 1, status: '' });
   const foe = { uid: 'outside-foe', set: structuredClone(mon.set) };
   const spec = {
-    seed: OUTSIDE_SEED, formatid: format,
+    seed: OUTSIDE_SEED, formatid: format, ...(ctx.eraGimmicks ? { eraGimmicks: ctx.eraGimmicks } : {}),
     p1: { name: ctx.trainer || PLAYER_NAME, team: [member] }, p2: { name: '-', team: [foe] },
   };
   const options = ctx.exp && ctx.levelUp ? { exp: ctx.exp, levelUp: ctx.levelUp } : {};

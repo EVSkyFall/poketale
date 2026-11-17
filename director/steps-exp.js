@@ -7,6 +7,7 @@ import { MAX_LEVEL, NON_HP_STATS, spriteIdOf } from '../engine/mon.mjs';
 import { createLedger } from './ledger.js';
 import { identName, teamOf } from './read.js';
 import { ownTemplate } from './own-text.js';
+import { eraBlocked } from '../engine/era-gimmicks.mjs';
 import { evolutionChoices, evolutionFlips } from '../engine/evolution.mjs';
 import { say as screenSay } from '../story/screen-text.mjs';
 
@@ -42,6 +43,8 @@ export function learnMoveOption(battle, names, id, pp, maxpp, lang = DEFAULT_LAN
   const move = battle.dex.moves.get(id);
   return {
     id: move.id, name: names.move(move.id), type: move.type, category: move.category, pp, maxpp,
+    // Disabled in this generation's battles (engine/era-gimmicks.mjs): the summary marks it so it can be replaced
+    ...(eraBlocked(battle.dex, battle.gen, move.id, battle.storyEraGimmicks) ? { tag: interpolate(ownTemplate('own.eraGimmickTag', lang), {}, lang) } : {}),
 
     power: move.category !== 'Status' && move.basePower > 0 ? move.basePower : null,
     accuracy: move.accuracy === true ? null : move.accuracy,

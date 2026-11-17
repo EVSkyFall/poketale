@@ -9,7 +9,8 @@ import { installSeats } from './seats.mjs';
 import { installField } from './field.mjs';
 import { installFriendship } from './friendship.mjs';
 import { installCounts } from './counts.mjs';
-import { allowRayquazaMega } from './showdown-compat.mjs';
+import { allowRayquazaMega, sayQuietFailures } from './showdown-compat.mjs';
+import { installEraGimmicks } from './era-gimmicks.mjs';
 
 export const EXTENSIONS = [
 
@@ -18,6 +19,10 @@ export const EXTENSIONS = [
 	{ name: 'rules', at: 'create', install: applyFormatRules, keys: [], copy: 'reapply' },
 
 	{ name: 'rayquaza-mega', at: 'create', install: (sim, battle) => allowRayquazaMega(battle), keys: [], copy: 'reapply' },
+
+	{ name: 'quiet-failures', at: 'create', install: (sim, battle) => sayQuietFailures(battle), keys: [], copy: 'reapply' },
+
+	{ name: 'era-gimmicks', at: 'create', install: (sim, battle, { spec }) => installEraGimmicks(battle, spec ? spec.eraGimmicks ?? null : undefined), keys: [], copy: 'reapply' },
 	{ name: 'winner', at: 'create', install: (sim, battle) => installWinner(battle), keys: ['storyWinner'], copy: 'keep',
 		fields: ['outcome', 'winner'], result: winnerResult },
 
