@@ -7,6 +7,10 @@
 
 const later = (battle, move) => !!move?.exists && move.gen > battle.gen;
 
+// Handlers of one event with equal priority are put in order by the battle's random numbers, which would change every
+// later roll of a battle that never uses a later move; the handlers added here take a priority no other handler has
+const TIE_FREE = 0.5;
+
 // Moved code that throws leaves the battle going without that effect
 function guarded(battle, label, run) {
 	try {
@@ -30,6 +34,10 @@ export function runLaterMoves(battle) {
 	const gen = battle.gen;
 	if (!(gen < 9)) return;
 	revivingRequests(battle);
+	if (gen <= 5) {
+		effectiveness(battle);
+		olderModifyMove(battle);
+	}
 	if (gen <= 3) {
 		modifyMove(battle);
 		modifyTarget(battle);
@@ -41,16 +49,59 @@ export function runLaterMoves(battle) {
 		tailwindSpeed(battle);
 		moveHitGaps(battle);
 		selfDestructIfHit(battle);
+		multiAccuracy(battle);
+		bypassSubstitute(battle);
+		screensByCategory(battle);
 	}
 	if (gen === 2) runMoveGen2(battle);
 	if (gen === 1) {
 		basePower(battle);
+		accuracyGen1(battle);
 		prepareHit(battle);
 		afterMove(battle);
 		runMoveGen1(battle);
 		boostFlags(battle);
 		areaMoves(battle);
 	}
+}
+
+// Types a generation does not have yet (Dark and Steel before generation 2, Fairy before 6) are missing from its type
+// chart: a later move of such a type hits with the chart of the type's own generation. Generation 1 also runs the
+// Effectiveness event of its damage on the battle instead of the Pokémon hit, so a later move's own handler (Freeze-Dry,
+// Flying Press) and the hit Pokémon's later volatile (Tar Shot) are run there
+const TYPE_FROM = Object.freeze({ Dark: 2, Steel: 2, Fairy: 6 });
+function effectiveness(battle) {
+	const gen = battle.gen;
+	battle.onEvent('Effectiveness', battle.format, TIE_FREE, function (typeMod, target, type, move) {
+		if (typeof typeMod !== 'number' || !move?.type || typeof type !== 'string') return;
+		let mod = typeMod;
+		const from = TYPE_FROM[move.type];
+		if (from && gen < from) mod += this.dex.forGen(from).getEffectiveness(move.type, type) - this.dex.getEffectiveness(move.type, type);
+		const defender = gen === 1 && target === this ? this.activeTarget : null;
+		if (defender) {
+			if (later(this, move) && move.onEffectiveness) {
+				const out = guarded(this, `${move.id} effectiveness`, () => move.onEffectiveness.call(this, mod, defender, type, move));
+				if (typeof out === 'number') mod = out;
+			}
+			for (const id of Object.keys(defender.volatiles)) {
+				const effect = this.dex.conditions.get(id);
+				if (!effect.onEffectiveness || !later(this, this.dex.moves.get(id))) continue;
+				const out = guarded(this, `${id} effectiveness`, () => effect.onEffectiveness.call(this, mod, defender, type, move));
+				if (typeof out === 'number') mod = out;
+			}
+		}
+		return mod === typeMod ? undefined : mod;
+	});
+}
+
+// Laser Focus gives a crit stage that the tables before generation 6 do not make sure (generation 1 has no stage step
+// at all); a self-targeting status move rolls no accuracy from generation 5 (Obstruct, Clangorous Soul)
+function olderModifyMove(battle) {
+	const gen = battle.gen;
+	battle.onEvent('ModifyMove', battle.format, TIE_FREE, function (move, pokemon) {
+		if (pokemon.volatiles['laserfocus'] && move.category !== 'Status') move.willCrit = true;
+		if (gen <= 4 && later(this, move) && move.target === 'self' && move.category === 'Status' && move.accuracy !== true) move.accuracy = true;
+	});
 }
 
 // Generations 1-3 never let a move pick its target again: Metal Burst and Comeuppance hit the Pokémon that last hurt
@@ -138,15 +189,13 @@ const SPECIAL_TYPES = new Set(['Fire', 'Water', 'Grass', 'Ice', 'Electric', 'Dar
 
 // Generations 1-3 run ModifyMove but not ModifyType: a later move's own type (Weather Ball, Judgment, Tera Blast...),
 // then Electrify's and Ion Deluge's Electric. A move whose type changes there takes that type's category, as those
-// generations' own Hidden Power and Weather Ball do. Generation 1 also has no ModifyCritRatio, so Laser Focus's sure hit
+// generations' own Hidden Power and Weather Ball do
 function modifyMove(battle) {
-	const gen = battle.gen;
 	battle.onEvent('ModifyMove', battle.format, 1, function (move, pokemon, target) {
 		const type = move.type;
 		if (later(this, move) && move.onModifyType) guarded(this, `${move.id} type`, () => move.onModifyType.call(this, move, pokemon, target));
 		if (move.id !== 'struggle' && (pokemon.volatiles['electrify'] || (move.type === 'Normal' && this.field.pseudoWeather['iondeluge']))) move.type = 'Electric';
 		if (move.type !== type && move.category !== 'Status') move.category = SPECIAL_TYPES.has(move.type) ? 'Special' : 'Physical';
-		if (gen === 1 && pokemon.volatiles['laserfocus'] && move.category !== 'Status') move.willCrit = true;
 	});
 }
 
@@ -164,28 +213,49 @@ function hitTargets(battle) {
 
 // Generation 1 runs BasePower without the move's own handler (Facade, Brine, Venoshock, Knock Off...). It has no final
 // damage step either: Aurora Veil halves the power of hits that are not critical unless Reflect or Light Screen covers
-// it, and Glaive Rush's user takes double until its next move
+// it, and the hit Pokémon's damage handlers run here (Glaive Rush's user takes double, a diving one takes double from
+// Surf, a minimized one from a later stomping move)
 function basePower(battle) {
 	battle.onEvent('BasePower', battle.format, 1, function (power, attacker, defender, move) {
 		let out;
 		if (later(this, move) && move.onBasePower) out = guarded(this, `${move.id} power`, () => move.onBasePower.call(this, power, attacker, defender, move));
 		if (defender?.side.sideConditions['auroraveil'] && !defender.getMoveHitData(move).crit
 			&& !defender.volatiles[move.category === 'Physical' ? 'reflect' : 'lightscreen']) this.chainModify(0.5);
-		if (defender?.volatiles['glaiverush']) this.chainModify(2);
+		for (const id of Object.keys(defender?.volatiles ?? {})) {
+			const effect = this.dex.conditions.get(id);
+			if (!effect.onSourceModifyDamage || !(later(this, move) || later(this, this.dex.moves.get(id)))) continue;
+			guarded(this, `${id} damage`, () => effect.onSourceModifyDamage.call(this, power, attacker, defender, move));
+		}
 		return out;
+	});
+}
+
+// Generation 1 has no ModifyAccuracy step: a later field effect's change (Gravity) is made in its Accuracy event
+function accuracyGen1(battle) {
+	battle.onEvent('Accuracy', battle.format, TIE_FREE, function (accuracy, target, source, move) {
+		if (typeof accuracy !== 'number') return;
+		for (const id of Object.keys(this.field.pseudoWeather)) {
+			const effect = this.dex.conditions.get(id);
+			if (effect.onModifyAccuracy && later(this, this.dex.moves.get(id))) guarded(this, `${id} accuracy`, () => effect.onModifyAccuracy.call(this, accuracy, target, source, move));
+		}
 	});
 }
 
 // Generation 2's runMove runs only the move's own AfterMove: a later move's volatile that ends there (Charge, after the
 // next move other than Charge, as in generations 3-8) gets it with the move that ran last, as later runMove does (a
 // move Sleep Talk calls counts). Neither generation 1 nor 2 counts a Pokémon's moves since it came in (Fake Out, First
-// Impression and Mat Block work only on the first)
+// Impression and Mat Block work only on the first), nor records a move it could not use (Stomping Tantrum) or the
+// turn's last move that worked (Fusion Flare, Fusion Bolt)
 function runMoveGen2(battle) {
 	wrap(battle.actions, 'runMove', 'gen2', runMove => function (moveOrMoveName, pokemon, ...rest) {
 		pokemon.activeMoveActions++;
 		const moved = pokemon.moveThisTurn;
 		const result = runMove.call(this, moveOrMoveName, pokemon, ...rest);
-		if (moved || !pokemon.moveThisTurn || pokemon.fainted) return result;
+		if (moved) return result;
+		// A move it could not use counts as failed (Stomping Tantrum); a move that worked is the turn's last (Fusion Flare)
+		if (!pokemon.moveThisTurn && pokemon.moveThisTurnResult === undefined) pokemon.moveThisTurnResult = false;
+		battle.lastSuccessfulMoveThisTurn = pokemon.moveThisTurn && pokemon.moveThisTurnResult !== false ? battle.activeMove?.id ?? pokemon.moveThisTurn : null;
+		if (!pokemon.moveThisTurn || pokemon.fainted) return result;
 		const move = battle.activeMove?.id ? battle.activeMove : battle.dex.getActiveMove(pokemon.moveThisTurn);
 		for (const [id, state] of Object.entries(pokemon.volatiles)) {
 			const effect = battle.dex.conditions.get(id);
@@ -221,7 +291,12 @@ function afterMove(battle) {
 const ENCORE_SKIPS = new Set(['metronome', 'mimic', 'mirrormove', 'sketch', 'sleeptalk', 'transform']);
 
 // Generation 1's runMove, for what later moves need from it:
-// - the count of moves since the Pokémon came in (Fake Out, First Impression, Mat Block)
+// - the count of moves since the Pokémon came in (Fake Out, First Impression, Mat Block), whether the move failed
+//   (Stomping Tantrum) and the turn's last move that worked (Fusion Flare)
+// - target 'allies' on the user (Life Dew) and the user's own stat change after the hit (Scale Shot, Clanging Scales)
+// - stats in use: generation 1 reads them from modifiedStats, which only its own stage changes and status moves keep up;
+//   a later move that writes stats or stages directly (Speed Swap, Power Trick, Heart Swap, Topsy-Turvy, Psych Up,
+//   Baton Pass) or burns or paralyses through its own code (Beak Blast, Dire Claw) gets them worked out again
 // - the move Encore locks in, which only generation 2's Pokemon.moveUsed records; generation 1 plays generation 2's
 //   Encore, so it is the move chosen for the turn (Metronome and Mirror Move lock in nothing), once it was used
 // - later two-turn moves (Bounce, Dive, Phantom Force, Meteor Beam, Sky Drop...) count on twoturnmove as later
@@ -234,17 +309,63 @@ function runMoveGen1(battle) {
 		const move = battle.dex.moves.get(id);
 		return later(battle, move) && move.flags['charge'];
 	};
-	const started = new Map();
+	const started = new Map(), struck = new Map();
+	let laterRan = false;
 	battle.onEvent('BeforeMove', battle.format, -100, function (pokemon, target, move) {
 		started.set(pokemon, move);
+	});
+	// A Pokémon that comes in with passed stages (Baton Pass) gets them in its stats. Wrapped rather than a SwitchIn
+	// handler: Pokémon coming in together sort the field's handlers, and a tie there takes a random number
+	wrap(battle.actions, 'switchIn', 'passedStages', switchIn => function (pokemon, ...rest) {
+		const result = switchIn.call(this, pokemon, ...rest);
+		if (pokemon?.isActive && pokemon.modifiedStats) {
+			for (const stat of RESTAT) if (pokemon.boosts[stat] && pokemon.modifiedStats[stat] === pokemon.storedStats[stat]) guarded(battle, 'passed stages', () => restat(pokemon, stat, 0));
+		}
+		return result;
+	});
+	wrap(battle.actions, 'tryMoveHit', 'struck', tryMoveHit => function (target, pokemon, ...rest) {
+		const result = tryMoveHit.call(this, target, pokemon, ...rest);
+		struck.set(pokemon, result);
+		return result;
+	});
+	wrap(battle.actions, 'useMoveInner', 'gen1', useMoveInner => function (moveOrMoveName, pokemon, options, ...rest) {
+		const move = battle.dex.moves.get(moveOrMoveName);
+		if (!later(battle, move)) return useMoveInner.call(this, moveOrMoveName, pokemon, options, ...rest);
+		laterRan = true;
+		// Target 'allies' is the user and its allies; generation 1 sent it to the foe
+		if (move.target === 'allies') options = { ...options, target: pokemon };
+		struck.delete(pokemon);
+		const result = useMoveInner.call(this, moveOrMoveName, pokemon, options, ...rest);
+		const hit = struck.get(pokemon);
+		if (move.selfBoost && hit !== undefined && hit !== false && pokemon.hp) {
+			const active = typeof moveOrMoveName === 'string' ? battle.dex.getActiveMove(moveOrMoveName) : moveOrMoveName;
+			guarded(battle, `${move.id} self boost`, () => this.moveHit(pokemon, pokemon, active, move.selfBoost, false, true));
+		}
+		return result;
 	});
 	wrap(battle.actions, 'runMove', 'gen1', runMove => function (moveOrMoveName, pokemon, ...rest) {
 		pokemon.activeMoveActions++;
 		started.delete(pokemon);
+		struck.delete(pokemon);
+		laterRan = false;
+		const active = battle.getAllActive();
+		// Only where later code was at work (a later move used, or a later volatile out such as Beak Blast's): the
+		// generation's own moves keep their own stats rules (Transform copies the stats in use)
+		const watched = active.some(p => Object.keys(p.volatiles).some(id => later(battle, battle.dex.moves.get(id))));
+		const before = new Map(active.map(p => [p, { stored: { ...p.storedStats }, boosts: { ...p.boosts }, status: p.status, modified: { ...p.modifiedStats } }]));
 		const locked = pokemon.volatiles['twoturnmove'], attacking = locked && charging(locked.move) ? locked.move : null;
 		const result = attacking ? withoutPP(pokemon, () => runMove.call(this, moveOrMoveName, pokemon, ...rest)) : runMove.call(this, moveOrMoveName, pokemon, ...rest);
+		if (laterRan || watched) guarded(battle, 'stats', () => restatAll(before));
 		const move = started.get(pokemon);
 		started.delete(pokemon);
+		// A move it could not use, or one that missed or failed, counts as failed (Stomping Tantrum); one that worked is
+		// the turn's last (Fusion Flare)
+		if (!move) pokemon.moveThisTurnResult = false;
+		else if (struck.has(pokemon)) {
+			const worked = struck.get(pokemon) !== false;
+			pokemon.moveThisTurnResult = worked;
+			battle.lastSuccessfulMoveThisTurn = worked ? battle.activeMove?.id ?? move.id : null;
+		}
 		// Used, not stopped after BeforeMove (generation 1 records nothing for the charge turn of its own two-turn moves)
 		if (move && (pokemon.moveThisTurn || pokemon.volatiles['twoturnmove'])) pokemon.lastMoveEncore = ENCORE_SKIPS.has(move.id) ? null : move;
 		if (attacking) {
@@ -260,6 +381,29 @@ function runMoveGen1(battle) {
 		}
 		return result;
 	});
+}
+
+const RESTAT = ['atk', 'def', 'spa', 'spd', 'spe'];
+const STAGE_UP = [1, 1.5, 2, 2.5, 3, 3.5, 4], STAGE_DOWN = [100, 66, 50, 40, 33, 28, 25];
+
+// Generation 1's own boostBy rule: the stat from the stored one and the stage, 999 at most when the stage went up
+function restat(pokemon, stat, stageBefore) {
+	const stage = pokemon.boosts[stat];
+	pokemon.modifiedStats[stat] = pokemon.storedStats[stat];
+	pokemon.modifyStat(stat, stage >= 0 ? STAGE_UP[stage] : STAGE_DOWN[-stage] / 100);
+	if (stage > stageBefore && pokemon.modifiedStats[stat] > 999) pokemon.modifiedStats[stat] = 999;
+}
+
+function restatAll(before) {
+	for (const [pokemon, was] of before) {
+		if (!pokemon.isActive || pokemon.fainted || !pokemon.modifiedStats) continue;
+		for (const stat of RESTAT) {
+			if (pokemon.storedStats[stat] !== was.stored[stat] || pokemon.boosts[stat] !== was.boosts[stat]) restat(pokemon, stat, was.boosts[stat]);
+		}
+		if (pokemon.status === was.status) continue;
+		if (pokemon.status === 'brn' && pokemon.modifiedStats.atk >= was.modified.atk) pokemon.modifyStat('atk', 0.5);
+		if (pokemon.status === 'par' && pokemon.modifiedStats.spe >= was.modified.spe) pokemon.modifyStat('spe', 0.25);
+	}
 }
 
 function withoutPP(pokemon, run) {
@@ -318,8 +462,9 @@ function watchRefusal(battle, data, run) {
 
 // What generations 1-2's moveHit does not do for a later move that its own TryHit let through: start a slot condition
 // (Wish, Healing Wish, Lunar Dance, Revival Blessing, whose switch to a fainted Pokémon the moveHit asks only when a
-// healthy one could come in), and in generation 1 run HitField (Perish Song, Court Change), HitSide (Quick Guard, Wide
-// Guard) and AfterHit (Ceaseless Edge, Stone Axe, Mortal Spin, Ice Spinner)
+// healthy one could come in), thaw the target (Hydro Steam), and in generation 1 run HitField (Perish Song, Court
+// Change), HitSide (Quick Guard, Wide Guard) and AfterHit (Ceaseless Edge, Stone Axe, Mortal Spin, Ice Spinner) and drag
+// the target out (Dragon Tail, Circle Throw)
 function moveHitGaps(battle) {
 	const gen = battle.gen;
 	wrap(battle.actions, 'moveHit', 'gaps', moveHit => function (target, pokemon, move, moveData, isSecondary, isSelf) {
@@ -349,6 +494,9 @@ function moveHitGaps(battle) {
 		if (gen === 1 && data.onAfterHit && target && (typeof result === 'number' || result === true)) {
 			guarded(battle, `${move.id} after hit`, () => battle.singleEvent('AfterHit', data, {}, target, pokemon, move));
 		}
+		if (gen === 1 && data.forceSwitch && target && target !== pokemon && target.hp && pokemon.hp && (typeof result === 'number' || result === true)
+			&& battle.canSwitch(target.side) && guarded(battle, `${move.id} drag`, () => battle.runEvent('DragOut', target, pokemon, move))) target.forceSwitchFlag = true;
+		if (data.thawsTarget && target?.status === 'frz' && typeof result === 'number') target.cureStatus();
 		if (worked && data.selfSwitch && pokemon.hp && !pokemon.switchFlag && (battle.canSwitch(pokemon.side) || move.id === 'revivalblessing')) {
 			pokemon.switchFlag = move.id;
 		}
@@ -375,5 +523,87 @@ function selfDestructIfHit(battle) {
 		}
 		if ((result || result === 0) && !move.laterRefused && pokemon.hp) battle.faint(pokemon, pokemon, move);
 		return result;
+	});
+}
+
+// Generations 1-2 roll accuracy once for a move whose every hit rolls (Triple Axel, Population Bomb): the hits after the
+// first are rolled before the hit loop, and it gets as many hits as landed in a row
+function multiAccuracy(battle) {
+	wrap(battle.actions, 'tryMoveHit', 'multiaccuracy', tryMoveHit => function (target, pokemon, move, ...rest) {
+		if (!move.multiaccuracy || typeof move.multihit !== 'number' || !target || !later(battle, move)) return tryMoveHit.call(this, target, pokemon, move, ...rest);
+		const all = move.multihit;
+		let hits = 1;
+		while (hits < all && rollsHit(battle, pokemon, target, move)) hits++;
+		move.multihit = hits;
+		try {
+			return tryMoveHit.call(this, target, pokemon, move, ...rest);
+		} finally {
+			move.multihit = all;
+		}
+	});
+}
+
+const ACCURACY_STAGES = [1, 4 / 3, 5 / 3, 2, 7 / 3, 8 / 3, 3];
+function rollsHit(battle, pokemon, target, move) {
+	let accuracy = move.accuracy;
+	if (accuracy === true) return true;
+	const ratio = stage => (stage >= 0 ? ACCURACY_STAGES[stage] : 1 / ACCURACY_STAGES[-stage]);
+	if (!move.ignoreAccuracy) accuracy *= ratio(battle.clampIntRange(pokemon.boosts.accuracy, -6, 6));
+	if (!move.ignoreEvasion) accuracy /= ratio(battle.clampIntRange(target.boosts.evasion, -6, 6));
+	return battle.randomChance(Math.max(0, Math.min(100, Math.floor(accuracy))), 100);
+}
+
+// Generations 1-2's Substitute takes every move; a later move that goes around it (Hyperspace Hole, sound moves from
+// generation 6, Parting Shot) hits the Pokémon behind it
+function bypassSubstitute(battle) {
+	wrap(battle.actions, 'moveHit', 'bypasssub', moveHit => function (target, pokemon, move, moveData, isSecondary, isSelf, ...rest) {
+		const run = () => moveHit.call(this, target, pokemon, move, moveData, isSecondary, isSelf, ...rest);
+		const substitute = target?.volatiles?.['substitute'];
+		if (!substitute || isSelf || target === pokemon || !later(battle, move) || !(move.flags?.['bypasssub'] || move.infiltrates)) return run();
+		delete target.volatiles['substitute'];
+		try {
+			return run();
+		} finally {
+			if (!target.volatiles['substitute']) target.volatiles['substitute'] = substitute;
+		}
+	});
+}
+
+// Generations 1-2 put Reflect and Light Screen on the stat a hit is worked out with, later generations on the move's
+// category: a later move that uses another stat (Psyshock and Secret Sword hit Defense with a special move, Body Press
+// attacks with Defense) gets the screen of its category, and the attacker's own screen does not raise its attack
+const SCREEN_OF = Object.freeze({ def: 'reflect', spd: 'lightscreen' });
+function screensByCategory(battle) {
+	const gen = battle.gen;
+	const holder = pokemon => (gen === 1 ? pokemon.volatiles : pokemon.side.sideConditions);
+	wrap(battle.actions, 'getDamage', 'screens', getDamage => function (source, target, move, ...rest) {
+		const data = typeof move === 'string' ? battle.dex.moves.get(move) : move;
+		if (!source || !target || !later(battle, data) || data.category === 'Status' || !(data.overrideDefensiveStat || data.overrideOffensiveStat)) {
+			return getDamage.call(this, source, target, move, ...rest);
+		}
+		const physical = data.category === 'Physical';
+		const defType = data.overrideDefensiveStat || (physical ? 'def' : 'spd');
+		const atkType = data.overrideOffensiveStat || (physical ? 'atk' : 'spa');
+		const undo = [];
+		const put = (where, key, value) => {
+			undo.push([where, key, Object.hasOwn(where, key), where[key]]);
+			if (value === undefined) delete where[key];
+			else where[key] = value;
+		};
+		if (SCREEN_OF[defType]) {
+			const defending = holder(target), screen = defending[physical ? 'reflect' : 'lightscreen'];
+			put(defending, 'reflect', undefined);
+			put(defending, 'lightscreen', undefined);
+			put(defending, SCREEN_OF[defType], screen);
+		}
+		if (gen === 2 && SCREEN_OF[atkType] && source.side !== target.side) put(holder(source), SCREEN_OF[atkType], undefined);
+		try {
+			return getDamage.call(this, source, target, move, ...rest);
+		} finally {
+			for (const [where, key, had, value] of undo.reverse()) {
+				if (had) where[key] = value;
+				else delete where[key];
+			}
+		}
 	});
 }
