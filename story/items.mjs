@@ -81,9 +81,10 @@ export const OUTSIDE_ITEMS = {
 
 export const FOOD_BERRY = 1;
 
-export const EXP_SHARE_MODES = ['always', 'item'];
+// era: the battle's generation's own rule (engine/exp.mjs sharePieces)
+export const EXP_SHARE_MODES = ['era', 'always', 'item'];
 
-export const expShareOn = (mode, bag) => mode !== 'item' || (bag?.expshare ?? 0) > 0;
+export const expShareOn = (mode, owned) => mode !== 'item' || owned;
 
 // TMs, HMs and TRs of every region's standard (story/machine-standards.mjs); tmId is a Scarlet/Violet TM
 export const tmId = number => machineId('tm', number);

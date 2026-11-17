@@ -3,18 +3,20 @@ import { BALLS } from '../engine/capture.mjs';
 import { expForLevel, growthOf } from '../engine/exp.mjs';
 import { STATS, displayName, heldItemForm, spriteIdOf } from '../engine/mon.mjs';
 import { itemEvolution, tradeEvolution, tradePair, evolutionItems, spinEvolution, ABSENT_TRADE_EVOLUTION } from '../engine/evolution.mjs';
-import { applyOps, emptyState, maxHp, movePp, toID, clone, healParty, rememberableMoves, friendshipOf, evolutionCheck, isEgg, hatched, hatchedParty, breedingOf, stateFormat,
+import { applyOps, emptyState, maxHp, movePp, toID, clone, healParty, rememberableMoves, friendshipOf, evolutionCheck, isEgg, hatched, hatchedParty, breedingOf, stateFormat, stateGen,
   restsLeft, restHelps, SHORT_RESTS } from './state.mjs';
 import { EGG_SPRITE, compatHearts } from '../engine/breeding.mjs';
 import { FRIENDSHIP_MAX, FRIENDSHIP_STEPS } from '../engine/friendship.mjs';
 import { PARTY_MAX, MAX_LEVEL, MAX_IV, EV_STAT_MAX, EV_TOTAL_MAX, BOX_SIZE, MAX_MOVES } from './rules.mjs';
-import { ruleFormat, DEFAULT_FORMAT } from '../engine/rules.mjs';
+import { ruleFormat, DEFAULT_FORMAT, formatGen } from '../engine/rules.mjs';
+import { usesStatExp, statExpOf, vitaminWorks, vitaminStats } from '../engine/stat-exp.mjs';
 import { MAX_PP_UPS } from '../engine/pp.mjs';
 import { OUTSIDE_ITEMS, VITAMIN_EVS, HYPER_TRAIN_LEVEL, isTm } from './items.mjs';
 import { itemText, tmMove, canLearnTm } from './item-info.mjs';
 import { parseMachineId, machineUsedUp, machineOrder } from './machine-standards.mjs';
 import { withParticle, statName, natureName, listOf, boxLabel } from './diary.mjs';
 import { say } from './screen-text.mjs';
+import { GENERATION_SETTINGS } from './generation.mjs';
 import { battleNamesIn } from '../plugin/battle/names.js';
 import bagIcons from '../data/bag-icons.json' with { type: 'json' };
 import { CUSTOM_PREFIX, isCustomItem, customInfo, itemId, isDexItem, ownerName } from './custom-items.mjs';
@@ -36,6 +38,7 @@ export const MAP_READY = false;
 
 export const TRAVEL_SUBS = Object.freeze(['trip', 'map', 'dex', 'badge']);
 
+// The trip page is there for every chat once the battle generation is known; the bot's journey only for compatible bots
 const travelSubs = ({ trip, badges }) => TRAVEL_SUBS.filter(sub => (sub === 'trip' ? trip : sub === 'map' ? MAP_READY : sub === 'badge' ? badges : true));
 
 const travelSub = (ui, subs) => (subs.includes(ui.sub) ? ui.sub : subs.includes('trip') ? 'trip' : 'dex');
@@ -217,6 +220,7 @@ export function useCheck(mon, itemId, ctx, lang, party = [], format = DEFAULT_FO
   const item = OUTSIDE_ITEMS[id];
   if (item.vitamin) {
     const evs = mon.set.evs ?? {};
+    if (usesStatExp(formatGen(format))) return vitaminWorks(statExpOf(mon.statExp, evs), item.vitamin) ? { ok: true } : no;
     const total = STATS.reduce((sum, s) => sum + (evs[s] ?? 0), 0);
     return (evs[item.vitamin] ?? 0) < EV_STAT_MAX && total < EV_TOTAL_MAX ? { ok: true } : no;
   }
@@ -262,7 +266,7 @@ export function useOps(mon, itemId, { sim }, { move, stat } = {}) {
     }
     if (ref && Object.hasOwn(FRIENDSHIP_STEPS, id)) ops.push({ op: 'friendship', ref, source: id });
   } else if (kind === 'candy') ops.push({ op: 'level', ref, delta: 1, candy: true });
-  else if (kind === 'train' && outside.vitamin) ops.push({ op: 'evs', ref, stat: outside.vitamin, amount: VITAMIN_EVS }, { op: 'friendship', ref, source: 'vitamin' });
+  else if (kind === 'train' && outside.vitamin) ops.push({ op: 'evs', ref, stat: outside.vitamin, amount: VITAMIN_EVS, vitamin: true }, { op: 'friendship', ref, source: 'vitamin' });
   else if (kind === 'train' && outside.evBerry) {
     if ((mon.set.evs?.[outside.evBerry] ?? 0) > 0) ops.push({ op: 'evs', ref, stat: outside.evBerry, amount: -VITAMIN_EVS });
     ops.push({ op: 'friendship', ref, source: 'berry' });
@@ -277,7 +281,9 @@ export function useOps(mon, itemId, { sim }, { move, stat } = {}) {
   return ops;
 }
 
-export const canHold = (id, sim, holder = null) => !NOT_HOLDABLE.has(itemKind(id, sim)) && !isDexItem(holder, id);
+// The Exp. Share is a key item, but generations 2-5 have it held (settings: Exp. Share by generation)
+const HELD_KEYS = new Set(['expshare']);
+export const canHold = (id, sim, holder = null) => (HELD_KEYS.has(id) || !NOT_HOLDABLE.has(itemKind(id, sim))) && !isDexItem(holder, id);
 
 export function holdableItems(state, sim) {
   return Object.entries(state.bag ?? {}).filter(([id, n]) => n > 0 && canHold(id, sim, state)).map(([id]) => id);
@@ -452,12 +458,14 @@ export function boxMenu(mon, { locked = false, debug = false }, lang) {
 
 export function bagMenu(id, { locked = false, sim, state, trade }, lang) {
   const kind = itemKind(id, sim, trade);
-  if (NOT_TOSSABLE.has(kind)) return null;
   const r = row(lang);
+  // A key item a Pokémon can hold (the Exp. Share): given, never tossed
+  if (HELD_KEYS.has(id)) return [r('give', 'hold', locked || !state.party.length), r('cancel', 'cancel')];
+  if (NOT_TOSSABLE.has(kind)) return null;
   if (isDexItem(state, id)) return [r('use', 'use'), r('cancel', 'cancel')];
   const list = [];
   if (USABLE.has(kind)) list.push(r('use', 'use', locked || !state.party.length));
-  if (!NOT_HOLDABLE.has(kind)) list.push(r('give', 'hold', locked || !state.party.length));
+  if (HELD_KEYS.has(id) || !NOT_HOLDABLE.has(kind)) list.push(r('give', 'hold', locked || !state.party.length));
   list.push(r('toss', 'toss', locked));
   list.push(r('cancel', 'cancel'));
   return list;
@@ -547,7 +555,23 @@ export function foodList(state, sim, lang) {
   return [...free, ...prizes, ...items];
 }
 
-export function panelModel({ state, ctx, lang, locked = false, resume = false, debug = false, offer = null, travel = null, compat = !!travel, dexHome = null,
+const START_REGION_IDS = Object.freeze(['kanto', 'johto', 'hoenn', 'sinnoh', 'unova', 'kalos', 'alola', 'galar', 'paldea']);
+
+// The journey tab's battle generation: what it is now, why, and the choices (auto, 1-9)
+export function generationView(generation, lang) {
+  if (!generation) return null;
+  const { gen, setting, auto, champions } = generation;
+  const t = (key, values) => say(lang, key, values);
+  const region = id => t(`region.${id}`);
+  const by = auto?.by ?? { kind: 'none' };
+  const why = setting === 'legacy' ? t('panel.gen.why.legacy') : setting !== 'auto' ? t('panel.gen.why.manual')
+    : by.kind === 'journeys' ? t('panel.gen.why.journeys') : by.kind === 'start' ? t('panel.gen.why.start', { region: region(START_REGION_IDS[by.region - 1]) })
+      : by.kind === 'region' ? t('panel.gen.why.region', { region: region(by.region) }) : t('panel.gen.why.none');
+  // Champions rules (the settings' rule) are generation 9 whatever the story's generation
+  return { now: champions ? t('panel.gen.champions') : t('panel.gen.now', { gen }), why: champions ? t('panel.gen.why.champions') : why, choices: GENERATION_SETTINGS.map(value => ({ value, label: value === 'auto' ? t('panel.gen.auto') : String(value), on: value === setting })) };
+}
+
+export function panelModel({ state, ctx, lang, locked = false, resume = false, debug = false, offer = null, travel = null, generation = null, compat = !!travel, dexHome = null,
   dexRegions = [], dexMentions = [], ui, screen = null, money = state.money === null ? null : state.money ?? 0 }) {
   const { sim } = ctx;
   const party = Array.from({ length: PARTY_MAX }, (_, i) => (state.party[i] ? slotView(state.party[i], ctx, state, lang) : null));
@@ -559,10 +583,10 @@ export function panelModel({ state, ctx, lang, locked = false, resume = false, d
   });
   const tabs = TABS;
   const tab = tabs.includes(ui.tab) ? ui.tab : 'party';
-  const subs = travelSubs({ trip: !!(compat && travel), badges: !!(compat || debug) }), sub = travelSub(ui, subs);
+  const subs = travelSubs({ trip: !!(compat && travel) || !!generation, badges: !!(compat || debug) }), sub = travelSub(ui, subs);
   const alerts = { party: state.party.some(m => pendingCount(m) > 0), box: false, bag: false };
   return {
-    lang, open: !!ui.open, tab, tabs, travel: compat ? travel : null, compat: !!compat, subs, sub, locked, resume: !!resume, screen,
+    lang, open: !!ui.open, tab, tabs, travel: compat ? travel : null, generation: generationView(generation, lang), compat: !!compat, subs, sub, locked, resume: !!resume, screen,
     dex: tab === 'travel' && sub === 'dex' && !screen ? dexView({ state, sim, lang, names: namesFor(lang, sim), ui, home: dexHome, regions: dexRegions, mentions: dexMentions }) : null,
     alerts,
     party, box: { index, count, name: boxName(state, index, lang), cells },
@@ -676,7 +700,7 @@ function wordsOf(lang, sim, state) {
   const names = namesFor(lang, sim);
   return {
     lang, names, t: (key, values) => say(lang, key, values), p: (word, pair) => withParticle(lang, word, pair),
-    mon: mon => monName(mon, sim, names), label: id => itemLabel(state, id, names),
+    mon: mon => monName(mon, sim, names), label: id => itemLabel(state, id, names), gen: stateGen(state),
   };
 }
 
@@ -762,6 +786,7 @@ function reduceRaw(ui, hit, env) {
     case 'rebreed': return locked || !state.breeding || hatchedParty(state).length < 2 ? same : { ui: { ...calm(ui), pairHidden: false, select: breedPick(null, w) }, effect: null };
     case 'unbreed': return locked || !state.breeding ? same : { ui: { ...calm(ui), pairHidden: false }, effect: { kind: 'queue', action: actions.unbreed() } };
     case 'later': return locked ? same : { ui: calm(ui), effect: { kind: 'importLater' } };
+    case 'genSet': return locked || !GENERATION_SETTINGS.includes(hit.value) ? same : { ui: calm(ui), effect: { kind: 'generation', value: hit.value } };
     case 'botSet': return locked ? same : { ui: calm(ui), effect: { kind: 'botTravel', change: { key: hit.key, on: !!hit.on } } };
     case 'guideClear': return locked ? same : { ui: calm(ui), effect: { kind: 'botTravel', change: { clear: 'guide' } } };
 
@@ -811,7 +836,8 @@ function useAfter(mon, id, { sim }, w, { stat, move } = {}) {
   const { t, p, lang } = w;
   const outside = OUTSIDE_ITEMS[id] ?? {}, who = mon ? w.mon(mon) : '';
   if (outside.all) return t('panel.usedAll');
-  if (outside.vitamin) return t('panel.usedVitamin', { mon: who, stat: statName(outside.vitamin, lang) });
+  // Generations 1-2: Calcium and Zinc both raise the one Special
+  if (outside.vitamin) return t('panel.usedVitamin', { mon: who, stat: usesStatExp(w.gen) ? listOf(vitaminStats(outside.vitamin).map(s => statName(s, lang)), lang) : statName(outside.vitamin, lang) });
   if (outside.evBerry && (mon.set.evs?.[outside.evBerry] ?? 0) > 0) return t('panel.usedEvBerry', { mon: who, stat: statName(outside.evBerry, lang) });
   if (outside.exp) return t('panel.usedExp', { mon: p(who, '은/는'), n: outside.exp.toLocaleString(lang) });
   if (outside.ability) return t('panel.usedAbility', { mon: who, ability: p(w.names.ability(abilityChange(sim, mon, id)), '으로/로') });

@@ -7,6 +7,7 @@ import { findOocs, unwrapOocs } from './chat.mjs';
 import { pkbLog } from './prompts.mjs';
 import { coveredMarks } from './save.mjs';
 import { boxOf } from './diary.mjs';
+import { STATS } from '../engine/mon.mjs';
 import { itemId, customInfo, withItemTags } from './custom-items.mjs';
 import { say } from './screen-text.mjs';
 import { commandsIn } from './commands.mjs';
@@ -88,7 +89,7 @@ function withUids(state, op, ctx) {
 }
 
 export function pendingState(chat, ctx, { uptoIndex, survey } = {}) {
-  const { state, table, changed, counted, reflected, imported, status } = computeState(chat, ctx, { uptoIndex, survey });
+  const { state, table, changed, counted, reflected, imported, status, generation } = computeState(chat, ctx, { uptoIndex, survey });
   const at = { ...ctx, status };
   const added = readQueue(chat).actions.filter(action => !isReflected(action, reflected, counted));
   let cur = state;
@@ -100,7 +101,7 @@ export function pendingState(chat, ctx, { uptoIndex, survey } = {}) {
     errors.push(...result.errors);
     if (!result.errors.length) holds.push(action);
   }
-  return { state: cur, table, errors, changed, added, holds, status, imported };
+  return { state: cur, table, errors, changed, added, holds, status, imported, generation };
 }
 
 const actionRecord = ({ id, type, at, item, ops, in: holder }) => ({ id, type, at, ...(item ? { item } : {}), ops, ...(holder ? { in: holder } : {}) });
@@ -290,7 +291,9 @@ export function eventOf({ op, before, after }, ctx) {
     // Items outside battle: vitamins, Exp. Candy, Ability Capsule/Patch, Mints, Bottle Caps
     case 'evs': {
       const w = refWho(op.ref); const [b, a] = pair(w);
-      return { kind: 'evs', who: w, stat: op.stat, from: b?.set.evs?.[op.stat] ?? 0, to: a?.set.evs?.[op.stat] ?? 0 };
+      // A vitamin in generations 1-2 raises both halves of the Special
+      const stats = STATS.filter(s => (a?.set.evs?.[s] ?? 0) !== (b?.set.evs?.[s] ?? 0));
+      return { kind: 'evs', who: w, stat: op.stat, from: b?.set.evs?.[op.stat] ?? 0, to: a?.set.evs?.[op.stat] ?? 0, ...(stats.length > 1 ? { stats } : {}) };
     }
     case 'exp': {
       const w = refWho(op.ref); const [b, a] = pair(w);
