@@ -1039,7 +1039,7 @@ function screenPress(ui, hit, { state, ctx }) {
     if (hit.t === 'scPage' && SUMMARY_PAGES.includes(hit.page)) return set({ page: hit.page });
     if (hit.t === 'scStat' && statModes(ctx).includes(hit.mode)) return set({ stat: hit.mode });
     if (hit.t === 'scMove' && mon.set.moves[hit.i]) return set({ move: hit.i });
-    if (hit.t === 'scLock' && !isEgg(mon)) return { ui, effect: { kind: 'queue', action: actions.evolveLock(mon, mon.evolveLocked !== true) } };
+    if (hit.t === 'scLock' && !isEgg(mon) && !evolveLocked(ctx.sim.Dex, { species: mon.set.species, gigantamax: mon.set.gigantamax === true })) return { ui, effect: { kind: 'queue', action: actions.evolveLock(mon, mon.evolveLocked !== true) } };
     if (hit.t === 'scNav') {
       const list = hatchedParty(state), at = list.findIndex(m => m.uid === mon.uid);
       if (at < 0 || list.length < 2) return same;

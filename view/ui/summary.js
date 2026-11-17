@@ -300,7 +300,12 @@ export class SummaryScreen {
       }
       if (bottom <= PAGE_BOTTOM) break;
     }
-    if (bond) p.add(s.add.image(7, y + BOND_HEART_DY, artTexture(s, bond.band === 'lowest' ? 'heartCold' : 'heart')).setOrigin(0, 0));
+    if (bond) {
+      const heart = s.add.image(7, y, artTexture(s, bond.band === 'lowest' ? 'heartCold' : 'heart')).setOrigin(0, 0);
+      // Shrunk text under it: the heart stays beside its own line, clear of the traits line
+      heart.setY(y + (traits ? Math.min(BOND_HEART_DY, Math.max(0, lines[0].displayHeight - heart.displayHeight)) : BOND_HEART_DY));
+      p.add(heart);
+    }
     p.add(lines);
   }
   statsPage(container, content, mon, summary) {
@@ -525,7 +530,7 @@ export class SummaryScreen {
     this.locking = true;
     try {
       const traits = await this.lock();
-      if (!this.container || this.party[this.index] !== mon) return;
+      if (!this.container || !this.finish || this.party[this.index] !== mon) return;
       if (!traits) { await this.notice(s.words('own.evolveLockFailed')); return; }
       mon.summary.traits = traits;
       this.paintLock(this.nameRefs?.evolveLock?.icon, traits.locked);

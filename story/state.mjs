@@ -228,7 +228,7 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
       if (!isReflected(action, reflected, seen)) next = runAction(next, action, here).state;
       reflected.add(action.id);
     }
-    return markPartner(cur, applyImport(next, imp, here), partnerAt(i, Infinity, imp.time), importOrder(imp));
+    return markPartner(next, applyImport(next, imp, here), partnerAt(i, Infinity, imp.time), importOrder(imp));
   }, start);
   const importKeysAt = i => importsAt(i).map(imp => `${hashKey(JSON.stringify(imp))}:${Object.values(ruleValues(ctxAt(i, imp.time))).join(':')}`);
   const importKey = i => [...(i === 0 ? importKeysAt(-1) : []), ...importKeysAt(i)].join(',');
