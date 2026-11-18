@@ -82,8 +82,9 @@ function summaryView(screen, mon, env, t) {
 
     const modes = statModes(ctx).filter(mode => (mode === 'ivs' ? !!summary.ivs : mode === 'evs' ? !!summary.evs : true));
     const mode = modes.includes(screen.stat) ? screen.stat : modes[0];
-    const cells = STATS.map(stat => {
-      const cell = { stat, label: statName(stat, lang), up: mode === 'stats' && summary.nature?.plus === stat, down: mode === 'stats' && summary.nature?.minus === stat };
+    // Generation 1 has one Special (director/summary.js oneSpecial)
+    const cells = STATS.filter(stat => !(summary.oneSpecial && stat === 'spd')).map(stat => {
+      const cell = { stat, label: summary.oneSpecial && stat === 'spa' ? summary.oneSpecial.label : statName(stat, lang), up: mode === 'stats' && summary.nature?.plus === stat, down: mode === 'stats' && summary.nature?.minus === stat };
       if (mode === 'ivs') return { ...cell, value: summary.ivs[stat], of: MAX_IV, top: summary.ivs[stat] >= MAX_IV };
       if (mode === 'evs') return { ...cell, value: summary.evs[stat], of: EV_STAT_MAX, top: summary.evs[stat] >= EV_STAT_MAX };
       return { ...cell, value: stat === 'hp' ? `${summary.stats.hp}/${summary.stats.maxhp}` : summary.stats[stat] };

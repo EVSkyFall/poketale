@@ -90,6 +90,14 @@ export function dexFill(state, sim, regions = [], mentions = []) {
   return { seen, caught };
 }
 
+// state.gen is the battle generation (story/state.mjs stateGen; none = 9)
+function eraTypes(sim, state, species) {
+  const gen = state?.gen;
+  if (!Number.isInteger(gen) || gen >= 9 || !(species.gen <= gen)) return species.types;
+  const then = sim.Dex.forGen(gen).species.get(species.id);
+  return then.exists && then.types?.length ? then.types : species.types;
+}
+
 export function dexLooks(state, sim, num) {
   const ids = new Set([...state?.dex?.seen ?? [], ...state?.dex?.caught ?? [], ...owned(state ?? {}).map(mon => sim.Dex.species.get(mon.set.species).id)]
     .map(id => sim.Dex.species.get(id)).filter(s => s?.exists && s.num === num).map(s => s.id));
@@ -138,7 +146,8 @@ export function dexView({ state, sim, lang, names, ui, home = null, regions = []
 
       name: entry ? rows0[0]?.name ?? entry.name : displayName(sim.Dex, names, species.id),
       form: entry ? entry.form || (entry.name !== (rows0[0]?.name ?? entry.name) ? entry.name : '') : species.forme.replace(/-/g, ' '),
-      types: [...species.types], category: entry ? entry.category ?? rows0[0]?.category ?? '' : '',
+      // The types of the chat's battle generation (generation 1 Clefairy is Normal); a species from later keeps its own
+      types: [...eraTypes(sim, state, species)], category: entry ? entry.category ?? rows0[0]?.category ?? '' : '',
       height: entry ? measure(entry.height, 'm') : measure(species.heightm, 'm'), weight: entry ? measure(entry.weight, 'kg') : measure(species.weightkg, 'kg'),
       text: entry?.text ?? '', spriteId: spriteIdOf(species) || species.id, shiny: look.shiny,
       looks: looks.length, look: looks.indexOf(look),

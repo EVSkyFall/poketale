@@ -25,6 +25,8 @@ import { ruleError } from './failure.mjs';
 import { surveyBattles, dropOocs } from './chat.mjs';
 import { statusIn, battleScene, COMPAT_LINE_RE, FIELD_WEATHERS, compatWorld, COMPAT_WORLD_VARS } from './compat.mjs';
 import { withMachineStandard } from './machine-standards.mjs';
+import { learningAt, learnGen, metGenOf } from './learning.mjs';
+import { levelUpAt } from '../engine/levelup.mjs';
 import { badgeCount, earnedBadges, readLeague, leaguePlaces, leagueAt, leagueDate, keepRecords, LEAGUE_VAR, UNOVA_ERA_VAR } from './badges.mjs';
 import { changeFriendship, moveFriendship, friendshipStep, baseFriendship, friendshipLocked, FRIEND_BALL_FRIENDSHIP, FRIENDSHIP_STEPS, FOND_FRIENDSHIP } from '../engine/friendship.mjs';
 import { entry as nameEntry, koSpellings } from '../names/index.js';
@@ -199,6 +201,8 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
   // The battle generation at each message: the chat's setting, and the automatic one carried through the fold
   const generationAt = generationsAt(chat);
   const genAt = (i, auto) => battleGen(generationAt(i), auto);
+  // Where Pokémon learn and join at each message (story/learning.mjs)
+  const learningOf = (i, region, auto) => learningAt({ setting: generationAt(i), world: discWorld(world, generationAt(i), auto), region, by: ctxAt(i).learnMoves });
 
   const applyImportsAt = (i, start, at, reflected, seen, auto) => importsAt(i).reduce((cur, imp) => {
     const here = { ...at, ...ruleValues(ctxAt(i, imp.time)) };
@@ -260,13 +264,15 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
   const reflected = new Set([...seen].flatMap(key => reflectedBy(table, key)));
   const importedUpto = n => [...imports].filter(([at]) => at <= n).flatMap(([, list]) => list.flatMap(imp => heldActions(imp).map(action => action.id)));
   if (from) for (const id of importedUpto(from - 1)) reflected.add(id);
-  let state = from ? folds[from - 1].after : applyImportsAt(-1, inRule(ctx?.sim, emptyState(), settingsOf(-1).rule, genAt(-1, auto)), ctxAt(-1), reflected, seen, auto);
+  let state = from ? folds[from - 1].after
+    : applyImportsAt(-1, inRule(ctx?.sim, emptyState(), settingsOf(-1).rule, genAt(-1, auto)), { ...ctxAt(-1), learning: learningOf(-1, null, auto) }, reflected, seen, auto);
   if (!from) state = book(state, -1);
   for (let i = from; i <= last; i++) {
     const name = messageId(messages[i], i);
-    const here = ctxAt(i);
     const window = messages[i]?.role === 'char' ? statusIn(messages[i]) : null;
     if (window) auto = raiseGen(auto, window.region);
+    const learning = learningOf(i, (window ?? status)?.region, auto);
+    const here = { ...ctxAt(i), learning };
 
     state = inRule(ctx?.sim, state, here.rule, genAt(i, auto));
     if (league) state = { ...state, badges: leagueAt(league, places, i) };
@@ -310,11 +316,11 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
       if (Object.keys(table.fills).length !== before) changed = true;
       ops.forEach((_, j) => { const key = `${name}:${event.key}:${j}`; if (Object.hasOwn(table.fills, key)) fills[key] = table.fills[key]; });
     }
-    state = book(applyImportsAt(i, state, at, reflected, seen, auto), i);
+    state = withLearning(book(applyImportsAt(i, state, at, reflected, seen, auto), i), learning);
     if (keep) folds.push({ key: keyOf(i), after: state, fills, status, win, auto });
   }
 
-  const after = inRule(ctx?.sim, state, settingsOf(last + 1).rule, genAt(last + 1, auto));
+  const after = withLearning(inRule(ctx?.sim, state, settingsOf(last + 1).rule, genAt(last + 1, auto)), learningOf(last + 1, status?.region, auto));
   const counted = new Set(parts.slice(0, last + 1).flatMap(text => findTags(text).map(t => t.key)).filter(used));
   return { state: keep && after === state ? clone(state) : after, table, changed, counted, reflected: new Set([...counted].flatMap(key => reflectedBy(table, key))),
     imported: new Set(importedUpto(last)), status, generation: { gen: stateGen(after), setting: generationAt(last + 1), auto, ...(ruleOf(after) === 'champions' ? { champions: true } : {}) } };
@@ -394,13 +400,19 @@ export function newEgg(ctx, set, uid, ball) {
   return { ...mon, egg: { cycles: eggCycles(ctx.sim.Dex, set.species) }, ...(ball && ball !== 'pokeball' ? { ball } : {}) };
 }
 
+// A hatched Pokémon comes from where it hatched, as in the games
 function hatch(state, ctx, mon) {
   delete mon.egg;
   if (ruleValues(ctx).startFull) mon.full = FULL_MAX;
   mon.friendship = HATCH_FRIENDSHIP;
   mon.pending.hatched = true;
+  const met = metGenOf(ctx.learning);
+  if (met !== null) mon.metGen = met;
   markDex(state, ctx.sim, mon.set.species, true);
 }
+
+// The level-up table for a Pokémon joining here (its default moves, an egg's moves)
+const joiningLevelUp = ctx => levelUpAt(ctx.levelUp, learnGen(ctx.learning));
 
 const parentOf = mon => ({ species: mon.set.species, gender: mon.set.gender || '', ot: mon.ot ?? '' });
 
@@ -436,7 +448,7 @@ export function storyTick(state, name, ctx) {
   const rng = rngFor(sim, `${name}:egg`);
   if (breeding?.chance && rng.random(100) < breeding.chance) {
     const [a, b] = [breeding.a, breeding.b].map(m => next.party.find(p => p.uid === m.uid));
-    const { set, ball } = breedEgg(sim.Dex, a, b, rng, { levelUp: ctx.levelUp, oneSpecial: hasOneSpecial(stateGen(state)) });
+    const { set, ball } = breedEgg(sim.Dex, a, b, rng, { levelUp: joiningLevelUp(ctx), oneSpecial: hasOneSpecial(stateGen(state)) });
     const egg = newEgg(ctx, set, uniqueUid(next, `e${hashKey(name)}`), ball);
     const list = next.party.length < PARTY_MAX ? next.party : next.box;
     list.push(egg);
@@ -467,7 +479,8 @@ export function evolutionCheck(ctx, mon, party = [], badges = 0) {
   return {
     mon: { species: species.name, gender: mon.set.gender, item: mon.set.item, uid: mon.uid, moves: mon.set.moves, nature: mon.natureOrig ?? mon.set.nature,
       ability: mon.set.ability, stats: { atk: stat('atk'), def: stat('def') }, counts: mon.counts },
-    now: { level: mon.set.level, friendship: friendshipOf(ctx, mon), timeOfDay: status?.timeOfDay ?? 'day', ...duskClock(ctx, status?.hour), weather: FIELD_WEATHERS[status?.weather] ?? null,
+    // gen: evolutions into later generations' species are not offered (engine/evolution.mjs inGeneration)
+    now: { gen: formatGen(ctx.format ?? ruleFormat(ctx.rule)), level: mon.set.level, friendship: friendshipOf(ctx, mon), timeOfDay: status?.timeOfDay ?? 'day', ...duskClock(ctx, status?.hour), weather: FIELD_WEATHERS[status?.weather] ?? null,
       region: status?.region ?? null, money: status?.money ?? null, badges, trade: ctx.tradeEvolution ?? ABSENT_TRADE_EVOLUTION,
       party: hatched(party).filter(m => m.uid !== mon.uid).map(m => m.set.species) },
   };
@@ -545,7 +558,7 @@ function applyOp(state, op, ctx, fillKey, fill) {
       const species = sim.Dex.species.get(op.species);
       if (!species.exists) fail('unknownSpecies', { species: op.species });
       let set = fill.known;
-      if (!set || toID(set.species) !== species.id) set = fill.made = giftEgg(sim.Dex, species.name, rngFor(sim, fillKey), { levelUp: ctx.levelUp, oneSpecial: hasOneSpecial(stateGen(state)) });
+      if (!set || toID(set.species) !== species.id) set = fill.made = giftEgg(sim.Dex, species.name, rngFor(sim, fillKey), { levelUp: joiningLevelUp(ctx), oneSpecial: hasOneSpecial(stateGen(state)) });
       const egg = newEgg(ctx, clone(set), uniqueUid(state, `e${hashKey(fillKey)}`));
       (op.to === 'box' || state.party.length >= PARTY_MAX ? state.box : state.party).push(egg);
       return;
@@ -1010,8 +1023,9 @@ function heal(sim, mon, { hpPercent, hpAdd, statusOnly, revive }, formatid) {
   mon.pp = {};
 }
 
-// gen: the story's generation when the Pokémon is made there (generations 1-2 draw one IV for both special stats)
-export function fillSet({ sim, levelUp }, teamSet, rng, gen = null) {
+// gen: the story's generation when the Pokémon is made there (generations 1-2 draw one IV for both special stats).
+// learn: the generation whose level-up table gives its default moves (story/learning.mjs learnGen; null = newest).
+export function fillSet({ sim, levelUp, learning }, teamSet, rng, gen = null, learn = learnGen(learning)) {
   const { hpPercent, status, ...set } = clone(teamSet);
   const species = sim.Dex.species.get(set.species);
   if (!species.exists) fail('unknownSpecies', { species: set.species });
@@ -1025,7 +1039,7 @@ export function fillSet({ sim, levelUp }, teamSet, rng, gen = null) {
       return move.id;
     });
   }
-  const full = completeSet(sim.Dex, set, rng, { levelUp, label: species.name, oneSpecial: hasOneSpecial(gen) });
+  const full = completeSet(sim.Dex, set, rng, { levelUp: levelUpAt(levelUp, learn), label: species.name, oneSpecial: hasOneSpecial(gen) });
   full.item = full.item ? itemId(full.item) : '';
   full.name = full.name ?? '';
   return full;
@@ -1033,16 +1047,22 @@ export function fillSet({ sim, levelUp }, teamSet, rng, gen = null) {
 
 export function newMon(ctx, set, uid) {
   const growth = growthOf(ctx, set.species);
+  const met = metGenOf(ctx.learning);
   return {
     uid, set, hp: null, status: '', pp: {},
     exp: growth ? expForLevel(growth, set.level) : 0,
     pending: { levels: 0, moves: [], evolve: null },
     ...(ruleValues(ctx).startFull ? { full: FULL_MAX } : {}),
+    ...(met === null ? {} : { metGen: met }),
   };
 }
 
-export const levelUpMoves = ({ sim, levelUp }, species) => levelUp?.[sim.Dex.species.get(species).id] ?? [];
+// The moves a Pokémon learns by level here: by the "Learned Moves" setting, from the table of the generation of where
+// it is or of where it came from (story/learning.mjs). mon null: the newest table.
+export const levelUpMoves = ({ sim, levelUp, learning }, species, mon = null) =>
+  levelUpAt(levelUp, mon ? learnGen(learning, mon) : null)?.[sim.Dex.species.get(species).id] ?? [];
 
+// The move reminder keeps the newest table in every generation (owner's decision: a convenience, not a period rule)
 export function rememberableMoves(ctx, mon) {
   const known = new Set(mon.set.moves.map(toID));
   const lowest = new Map();
@@ -1086,7 +1106,7 @@ export function levelUpOutside(mon, delta, ctx, rng, { effort, party = [], badge
   if (next.hp !== null && next.hp > 0) next.hp = Math.min(newMax, next.hp + newMax - oldMax);
 
   next.pending.levels += to - from;
-  for (const [level, moveid] of levelUpMoves(ctx, set.species)) {
+  for (const [level, moveid] of levelUpMoves(ctx, set.species, next)) {
     if (level <= from || level > to) continue;
     if (set.moves.includes(moveid) || next.pending.moves.includes(moveid)) continue;
     next.pending.moves.push(moveid);
@@ -1128,7 +1148,9 @@ function sameSlotAbility(from, ability, to) {
   return to.abilities[slot] ?? to.abilities['0'];
 }
 
-function evolve(state, ctx, mon, target, { decoration } = {}) {
+// ctx without a place (the panel's evolution preview) learns where the state stands
+function evolve(state, given, mon, target, { decoration } = {}) {
+  const ctx = given.learning || !state.learning ? given : { ...given, learning: state.learning };
   const { sim } = ctx;
   const from = sim.Dex.species.get(mon.set.species);
   const to = sim.Dex.species.get(target);
@@ -1141,7 +1163,7 @@ function evolve(state, ctx, mon, target, { decoration } = {}) {
   delete mon.counts;
   mon.pending.evolve = null;
 
-  for (const [level, moveid] of levelUpMoves(ctx, to.name)) {
+  for (const [level, moveid] of levelUpMoves(ctx, to.name, mon)) {
     if (level !== 0 || mon.set.moves.includes(moveid) || mon.pending.moves.includes(moveid)) continue;
     mon.pending.moves.push(moveid);
   }
@@ -1151,7 +1173,9 @@ function evolve(state, ctx, mon, target, { decoration } = {}) {
     if (state.party.length >= PARTY_MAX || !(state.bag.pokeball > 0)) break;
     const extra = sim.Dex.species.get(name);
     const set = { ...clone(before.set), species: extra.name, ability: extra.abilities['0'], item: '', name: '', gender: extra.gender === 'N' ? '' : before.set.gender };
-    const born = { ...newMon(ctx, set, uniqueUid(state, `${mon.uid}-${extra.id}`)), ball: 'pokeball', ...(before.exp === undefined ? {} : { exp: before.exp }), ...(before.ot ? { ot: before.ot } : {}) };
+    const { metGen: _, ...made } = newMon(ctx, set, uniqueUid(state, `${mon.uid}-${extra.id}`));
+    const born = { ...made, ball: 'pokeball', ...(before.exp === undefined ? {} : { exp: before.exp }), ...(before.ot ? { ot: before.ot } : {}),
+      ...(Number.isInteger(before.metGen) ? { metGen: before.metGen } : {}) };
     state.bag.pokeball -= 1;
     if (!state.bag.pokeball) delete state.bag.pokeball;
     state.party.push(born);
@@ -1332,7 +1356,11 @@ export function nextStageSpec(spec, result, state, ctx, { seed }) {
     ...(spec.bag ? { bag: { ...otherBag(spec.bag), ...battleBag(now, toolsIn(spec)), caughtSpecies: [...now.dex.caught] } } : {}), teraOrb: hasTeraOrb(now), before };
 }
 
-const playerTeam = state => hatchedParty(state).map(mon => engineMember(mon, state.customItems));
+// learnGen: the generation whose level-up table each Pokémon learns from in the battle (engine/exp.mjs)
+const playerTeam = state => hatchedParty(state).map(mon => {
+  const member = engineMember(mon, state.customItems), gen = learnGen(state.learning, mon);
+  return gen === null ? member : { ...member, learnGen: gen };
+});
 
 // An Exp. Share in the bag or held by one of the player's Pokémon (generations 2-5 have it held)
 const ownsExpShare = state => (state.bag?.expshare ?? 0) > 0 || [...state.party, ...state.box].some(mon => toID(mon.set?.item) === 'expshare');
@@ -1547,6 +1575,17 @@ function shareOf(hp, was, max) {
 
 // A state moves to other rules or another generation keeping its sets; only HP (kept as a share) and PP (dropped
 // when at or over the new maximum) follow
+// Where the state stands, for battles and screens opened at that point (story/learning.mjs); chats kept on
+// generation 9 keep none, as they learn from the newest tables
+function withLearning(state, learning) {
+  const want = learning && !learning.legacy ? { place: learning.place, by: learning.by } : null;
+  const has = state.learning ?? null;
+  if ((!has && !want) || (has && want && has.place === want.place && has.by === want.by)) return state;
+  const next = clone(state);
+  if (want) next.learning = want; else delete next.learning;
+  return next;
+}
+
 export function inRule(sim, state, rule = DEFAULT_RULE, gen = DEFAULT_GEN) {
   if (ruleOf(state) === rule && stateGen(state) === gen) return state;
   const from = stateFormat(state), to = ruleFormat(rule, gen);

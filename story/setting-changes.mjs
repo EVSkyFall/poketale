@@ -5,6 +5,7 @@ import { isExpRate } from '../engine/exp.mjs';
 import { TRADE_EVOLUTIONS, ABSENT_TRADE_EVOLUTION } from '../engine/evolution.mjs';
 import { RULE_IDS, DEFAULT_RULE } from '../engine/rules.mjs';
 import { ITEM_EFFECTS_READY } from './item-effects.mjs';
+import { LEARN_MODES, DEFAULT_LEARN } from './learning.mjs';
 
 export const SETTING_CHANGES_VAR = '$pkb_setting_changes';
 
@@ -15,6 +16,8 @@ const FOLDED = Object.freeze({
   tradeEvolution: { valid: value => TRADE_EVOLUTIONS.includes(value), none: ABSENT_TRADE_EVOLUTION },
 
   rule: { valid: value => RULE_IDS.includes(value), none: DEFAULT_RULE },
+
+  learnMoves: { valid: value => LEARN_MODES.includes(value), none: DEFAULT_LEARN },
 });
 const FOLD_SETTINGS = Object.freeze(Object.keys(FOLDED));
 

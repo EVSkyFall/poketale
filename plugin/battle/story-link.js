@@ -63,7 +63,7 @@ export const battleFormat = async () => {
   const party = await pendingParty().catch(() => null);
   return party ? stateFormat(party.state) : ruleFormat(settings.rule);
 };
-const storyCtx = () => ctxPromise ??= loadLevelUp().then(levelUp => (ctxNow = { sim, levelUp, exp: EXP_TABLE, folds: createFolds(), get friendshipRate() { return settings.friendshipRate; }, get hatchRate() { return settings.hatchRate; }, get tradeEvolution() { return settings.tradeEvolution; }, get rule() { return settings.rule; }, get eraGimmicks() { return settings.eraGimmicks; } }))
+const storyCtx = () => ctxPromise ??= loadLevelUp().then(levelUp => (ctxNow = { sim, levelUp, exp: EXP_TABLE, folds: createFolds(), get friendshipRate() { return settings.friendshipRate; }, get hatchRate() { return settings.hatchRate; }, get tradeEvolution() { return settings.tradeEvolution; }, get learnMoves() { return settings.learnMoves; }, get rule() { return settings.rule; }, get eraGimmicks() { return settings.eraGimmicks; } }))
   .catch(error => { ctxPromise = undefined; throw error; });
 let ctxNow = null;
 
@@ -1333,7 +1333,7 @@ async function writeResult(origin, { outcome, result, apply }) {
 
     const battles = [...battlesBefore(origin.stage), ...(apply ? [battleRecord(origin.stage, apply, outcome)] : [])];
 
-    const after = applyBattles(before, battles, { ...ctx, status: latestStatus(chat, blockAt) }, { battle: origin.battle });
+    const after = applyBattles(before, battles, { ...ctx, status: latestStatus(chat, blockAt), learning: before.learning }, { battle: origin.battle });
     const tag = hashKey(`${origin.key}:${Date.now()}`);
 
     const caughtMon = result.captured ? [...after.party, ...after.box].find(m => ![...before.party, ...before.box].some(b => b.uid === m.uid)) : null;
@@ -2178,7 +2178,7 @@ async function debugScreen(target, screen) {
 }
 
 export const debugAdd = (where, target) => debugScreen(target, ({ ctx, state }) => (where === 'bag' ? { mode: 'bag', state }
-  : { mode: 'create', draft: newMonDraft(ctx, { place: where, seed: freshSeed(), gen: stateGen(state) }) }));
+  : { mode: 'create', draft: newMonDraft(ctx, { place: where, seed: freshSeed(), gen: stateGen(state), learning: state.learning }) }));
 
 export const debugEdit = (uid, target) => debugScreen(target, ({ ctx, state }) => ({ mode: 'edit', draft: currentMonDraft(ctx, state, uid) }));
 

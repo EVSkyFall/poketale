@@ -3,6 +3,7 @@ import en from './text-summary-en.json' with { type: 'json' };
 import { learnMoveOption } from './steps-exp.js';
 import { ownText } from './text.js';
 import { checkLang, DEFAULT_LANG } from './lang.js';
+import { say as screenSay } from '../story/screen-text.mjs';
 
 const PHRASES = { ko, en };
 import { expForLevel } from '../engine/exp.mjs';
@@ -41,6 +42,8 @@ export function summaryView(battle, names, entry, pokemon, options = {}, lang = 
   if (!battle.dex.currentMod.startsWith('champions')) summary.ivs = { hp: 31, atk: 31, def: 31, spa: 31, spd: 31, spe: 31, ...(saved.ivs ?? pokemon.set.ivs) };
   else if (battle.ruleTable.has('levelclausemod')) summary.ivs = { hp: 31, atk: 31, def: 31, spa: 31, spd: 31, spe: 31 };
 
+  // Generation 1 has one Special stat (Special Attack and Special Defense are the same number there)
+  if (battle.gen === 1) summary.oneSpecial = { label: screenSay(checkLang(lang), 'stat.special') };
   if (entry.teraType && battle.gen === 9) summary.teraType = entry.teraType;
   const exp = expInfo(battle, pokemon, options.exp);
   if (exp) summary.exp = exp;

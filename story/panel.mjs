@@ -111,13 +111,13 @@ export function cordEvolutions(ctx, mon, party = []) {
   if (!trade) return null;
   const first = { uid: mon.uid, into: trade.into, ...(trade.consumeHeld ? { consumeHeld: true } : {}) };
   const other = trade.with && hatched(party).find(m => m.uid !== mon.uid && toID(ctx.sim.Dex.species.get(m.set.species).name) === toID(trade.with));
-  const into = other && tradePair(ctx.sim.Dex, { species: mon.set.species, item: mon.set.item }, { species: other.set.species, item: other.set.item })?.[1];
+  const into = other && tradePair(ctx.sim.Dex, { species: mon.set.species, item: mon.set.item }, { species: other.set.species, item: other.set.item }, now.gen)?.[1];
   return into ? [first, { uid: other.uid, into }] : [first];
 }
 
-export function swapEvolutions(ctx, a, b) {
+export function swapEvolutions(ctx, a, b, gen = null) {
   if ((ctx.tradeEvolution ?? ABSENT_TRADE_EVOLUTION) !== 'level' || hatched([a, b]).length < 2) return null;
-  const into = tradePair(ctx.sim.Dex, { species: a.set.species, item: a.set.item }, { species: b.set.species, item: b.set.item });
+  const into = tradePair(ctx.sim.Dex, { species: a.set.species, item: a.set.item }, { species: b.set.species, item: b.set.item }, gen);
   return into && [[a, into[0]], [b, into[1]]].filter(([, to]) => to).map(([mon, to]) => ({ uid: mon.uid, into: to }));
 }
 
@@ -208,10 +208,10 @@ export function useCheck(mon, itemId, ctx, lang, party = [], format = DEFAULT_FO
     return useful ? { ok: true } : no;
   }
   if (kind === 'candy') return mon.set.level < MAX_LEVEL ? { ok: true } : no;
-  if (kind === 'stone') { const into = stoneEvolution(ctx, mon, id, party); return into ? { ok: true, evolutions: [{ uid: mon.uid, into }] } : no; }
+  if (kind === 'stone') { const into = stoneEvolution({ ...ctx, format }, mon, id, party); return into ? { ok: true, evolutions: [{ uid: mon.uid, into }] } : no; }
   if (kind === 'evolve') {
 
-    const evolutions = (ctx.tradeEvolution ?? ABSENT_TRADE_EVOLUTION) === 'level' ? null : cordEvolutions(ctx, mon, party);
+    const evolutions = (ctx.tradeEvolution ?? ABSENT_TRADE_EVOLUTION) === 'level' ? null : cordEvolutions({ ...ctx, format }, mon, party);
     return evolutions ? { ok: true, evolutions } : no;
   }
   if (kind === 'tm') {
@@ -353,8 +353,9 @@ export function levelUpPlan(mon) {
   return { hatch: !!mon?.pending?.hatched, moves: [...(mon?.pending?.moves ?? [])], evolve: mon?.pending?.evolve ?? null };
 }
 
-export function evolutionMoves(ctx, mon, into) {
-  const probe = { ...emptyState(), party: [{ ...clone(mon), pending: { levels: 0, moves: [], evolve: null } }] };
+// learning: where the state stands (state.learning), for the table the evolved Pokémon learns from
+export function evolutionMoves(ctx, mon, into, learning = null) {
+  const probe = { ...emptyState(), ...(learning ? { learning } : {}), party: [{ ...clone(mon), pending: { levels: 0, moves: [], evolve: null } }] };
   const { state, errors } = applyOps(probe, [{ op: 'evolve', ref: refOf(mon), species: into }], ctx, 'panel:evolve', null);
   return errors.length ? [] : state.party[0].pending.moves;
 }
@@ -419,8 +420,9 @@ export function trainAction(mon, result) {
   return { type: 'train', ops: [{ op: 'train', ref: refOf(mon), bags: [...bags], ...(same ? {} : { hung: hung && { id: hung.id, hits: hung.hits } }) }] };
 }
 
-export function spinInto(ctx, mon, spin) {
-  const { mon: evolving, now } = evolutionCheck(ctx, mon);
+// state: where the Pokémon is, for its generation
+export function spinInto(ctx, mon, spin, state = null) {
+  const { mon: evolving, now } = evolutionCheck(state ? { ...ctx, format: stateFormat(state) } : ctx, mon);
   return spinEvolution(ctx.sim.Dex, evolving, spin, now);
 }
 
@@ -890,7 +892,7 @@ function slotPress(ui, hit, { state, ctx, locked, debug, panel, w }) {
         const from = findIn(state.party, select.uid);
         if (!from || from.uid === mon.uid) return { ui: calm(ui), effect: null };
 
-        const evolutions = swapEvolutions(ctx, from, mon);
+        const evolutions = swapEvolutions(ctx, from, mon, formatGen(stateFormat(state)));
         if (evolutions) return { ui: calm(ui), effect: { kind: 'evolve', evolutions, before: actions.order(from, mon).ops } };
         return { ui: calm(ui), effect: { kind: 'queue', action: actions.order(from, mon) } };
       }

@@ -10,6 +10,7 @@ import { ownTemplate } from './own-text.js';
 import { eraBlocked } from '../engine/era-gimmicks.mjs';
 import { moveCategory } from '../engine/later-moves.mjs';
 import { evolutionChoices, evolutionFlips } from '../engine/evolution.mjs';
+import { levelUpAt } from '../engine/levelup.mjs';
 import { say as screenSay } from '../story/screen-text.mjs';
 
 export const EXP_KINDS = ['-story-exp', '-story-levelup', '-story-learnmove', '-story-movequeue', '-story-replacemove', '-story-skipmove'];
@@ -273,7 +274,7 @@ export function createExpSteps({ battle, view, names, warn, ledger = createLedge
     await sayTimed('menu.evolutionDone', { pokemonName: preName, evolvedPokemonName: mon(to).name }, { promptDelay: 4000 });
     const outcome = { species: to.name, baseSpecies: to.baseSpecies, name: nicknamed ? member.name : to.name, moves: member.moves.map(m => ({ ...m })) };
 
-    for (const [level, id] of levelUp?.[to.id] ?? []) {
+    for (const [level, id] of levelUpAt(levelUp, byUid(member.uid)?.m?.learnGen)?.[to.id] ?? []) {
       if (level !== 0 || outcome.moves.some(m => m.id === id)) continue;
       const move = battle.dex.moves.get(id);
       if (!move.exists) continue;

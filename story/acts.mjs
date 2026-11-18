@@ -16,6 +16,7 @@ import { dropTaken, statusIn, statusMoneyAt, latestStatus, compatWorld } from '.
 import { shopEvent, limitedKey } from './shop.mjs';
 import { withMachineStandard } from './machine-standards.mjs';
 import { discWorld, autoGenAt, generationsAt, raiseGen } from './generation.mjs';
+import { learningAt } from './learning.mjs';
 
 export const QUEUE_VAR = '$pkb_queue';
 
@@ -91,7 +92,7 @@ function withUids(state, op, ctx) {
 
 export function pendingState(chat, ctx, { uptoIndex, survey } = {}) {
   const { state, table, changed, counted, reflected, imported, status, generation } = computeState(chat, ctx, { uptoIndex, survey });
-  const at = { ...ctx, status };
+  const at = { ...ctx, status, learning: state.learning };
   const added = readQueue(chat).actions.filter(action => !isReflected(action, reflected, counted));
   let cur = state;
   const errors = [], holds = [];
@@ -123,7 +124,7 @@ export function queueAction(chat, ctx, input, { now = Date.now(), salt = '' } = 
   const action = { id: hashKey(`${now}:${salt}:${queue.actions.length}:${JSON.stringify(ops)}`), type, at: now };
   if (input.item) action.item = itemId(input.item);
   if (input.shop) action.shop = String(input.shop);
-  const result = runAction(base, { ...action, ops }, { ...ctx, status }, { normalize: true });
+  const result = runAction(base, { ...action, ops }, { ...ctx, status, learning: base.learning }, { normalize: true });
   if (result.errors.length) throw result.notes.length ? refusal(result.notes, { join: ' / ' }) : new Error(result.errors.join(' / '));
 
   if (hatchedParty(base).length && !hatchedParty(result.state).length) throw ruleError('acts.lastInParty');
@@ -384,6 +385,8 @@ export function changesIn(text, chat, ctx, lang, { growing = false } = {}) {
   // The discs belong to the generation where the text stands, as the fold reads them there
   const world = discWorld(compatWorld(chat), generationsAt(chat)(index >= 0 ? index : messages.length),
     raiseGen(autoGenAt(chat, index >= 0 ? index : messages.length - 1), machineRegion));
+  // Pokémon join and learn there as the fold has them (story/state.mjs computeState)
+  if (at) at.learning = learningAt({ setting: generationsAt(chat)(index >= 0 ? index : messages.length), world, region: machineRegion, by: at.learnMoves });
   const chatId = index >= 0 ? messageId(messages[index], index) : null;
   const held = index >= 0 ? heldChanges(chat, table ?? readTable(chat)) : new Set();
   const events = [], errors = [];
@@ -405,8 +408,11 @@ export function changesIn(text, chat, ctx, lang, { growing = false } = {}) {
 export function passingIn(chat, ctx, index) {
   const message = chat?.message?.[index];
   if (!ctx || message?.role !== 'char') return [];
-  const { state } = computeState(chat, ctx, { uptoIndex: index - 1 });
-  return storyTick(state, messageId(message, index), foldCtxAt(chat, ctx)(index)).events;
+  const { state, status } = computeState(chat, ctx, { uptoIndex: index - 1 });
+  const here = foldCtxAt(chat, ctx)(index), region = (statusIn(message) ?? status)?.region;
+  const setting = generationsAt(chat)(index);
+  const learning = learningAt({ setting, world: discWorld(compatWorld(chat), setting, raiseGen(autoGenAt(chat, index), region)), region, by: here.learnMoves });
+  return storyTick(state, messageId(message, index), { ...here, learning }).events;
 }
 
 export function passingTold(chat, ctx, index) {

@@ -2,6 +2,7 @@ import { DEFAULT_FORMAT, doublesFormat, multiFormat, hasDoubles, formatRules } f
 import { eraSet } from './era.mjs';
 import { installExtensions, extensionResults } from './extensions.mjs';
 import { completeSet, heldItemForm, hasOneSpecial } from './mon.mjs';
+import { levelUpAt } from './levelup.mjs';
 import { checkSpec } from './input.mjs';
 import { startsFainted } from './initial-state.mjs';
 import { countsResult } from './counts.mjs';
@@ -27,10 +28,12 @@ export function createStoryBattle(sim, given, options = {}) {
 	installExtensions(sim, battle, 'create', context);
 
 	const rng = new sim.PRNG(given.seed);
-	// Foes (p2, p4 and the trainer waiting to come out) bring only the battle generation's moves; one with nothing of that
-	// generation to fill its moves with keeps the ones it has (engine/mon.mjs completeSet)
+	// Foes (p2, p4 and the trainer waiting to come out) bring only the battle generation's moves, from that generation's
+	// level-up table; one with nothing of that generation to fill its moves with keeps the ones it has (engine/mon.mjs
+	// completeSet). The player's side fills from the table it learns from (story/learning.mjs).
 	const movesUpTo = gen < 9 ? gen : null;
-	const complete = (m, foe) => completeSet(sim.Dex, m.set, rng, { levelUp: options.levelUp, label: m.uid, tera: !m.noTera, oneSpecial: hasOneSpecial(gen), movesUpTo: foe ? movesUpTo : null });
+	const complete = (m, foe) => completeSet(sim.Dex, m.set, rng, { levelUp: levelUpAt(options.levelUp, foe ? movesUpTo : m.learnGen), label: m.uid, tera: !m.noTera,
+		oneSpecial: hasOneSpecial(gen), movesUpTo: foe ? movesUpTo : null });
 	for (const [key, seat] of Object.entries(shape.seats)) {
 		context.sets[key] = seat.team.map(m => complete(m, key === 'p2' || key === 'p4'));
 		battle.setPlayer(key, { name: seat.name, team: sim.Teams.pack(context.sets[key].map(set => heldItemForm(sim.Dex, eraSet(gen, set)))) });
