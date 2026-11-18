@@ -886,7 +886,7 @@ export default Object.freeze({
   'settings.row.rule': 'Rules',
   'settings.help.rule': 'Applies from the next new battle.\nChampions rules have no EVs.',
   'settings.row.expShare': 'Exp. Share',
-  'settings.help.expShare': "By Generation: the Exp. Share works as in the battle's generation.\nDefault: your whole party gains Exp. Points.\nItem: Pokémon that did not battle gain Exp. Points only while an Exp. Share is in your bag.\nApplies from the next new battle.",
+  'settings.help.expShare': "By Generation: the Exp. Share works as in the battle's generation.\nDefault: your whole party gains Exp. Points.\nItem: Pokémon that did not battle gain Exp. Points only while an Exp. Share is in your bag or held by one of your Pokémon.\nApplies from the next new battle.",
   'settings.row.expRate': 'EXP Rate',
   'settings.help.expRate': 'Multiplier for EXP gained',
   'settings.row.friendshipRate': 'Friendship Rate',
