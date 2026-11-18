@@ -27,6 +27,8 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
   // Stat lines: an ability's own line comes right after its -ability line and has no [from], so it is not the last move's doing.
   // `stats` is the run of stat lines just read, so one move's Sp. Atk and Sp. Def drops read as one change
   let abilityAt = -1, stats = null;
+  // After Showdown's blank line that opens end-of-turn effects (Octolock's drops), nothing belongs to the last move
+  let residual = false;
   const lines = log ?? [];
   const end = Math.min(to, lines.length);
   const illusion = new Set(lines.filter(l => l.startsWith('|replace|')).map(l => SIDE[/^(p\d)/.exec(l.split('|')[2] ?? '')?.[1]]).filter(Boolean));
@@ -44,7 +46,7 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
   // Every name shown so far, also before `from`, so each part of a long battle tells the same Pokémon apart the same way
   const shown = new Map();
   const ref = mon => {
-    const r = { species: mon.species, nick: nickOf(mon), side: mon.side, seat: mon.seat };
+    const r = { species: mon.species, nick: nickOf(mon), side: mon.side, seat: mon.seat, player: mon.player };
     shown.set(`${r.side} ${r.seat} ${r.species} ${r.nick}`, r);
     return r;
   };
@@ -92,6 +94,10 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
     const [, cmd, ...args] = line.split('|');
     if (cmd === 'split') { split = 2; continue; }
     const live = i >= from;
+    if (cmd === '') residual = true;
+    else if (cmd === 'turn' || cmd === 'move') residual = false;
+    // A blocked target's line between an ability and its stat lines (Clear Body against Cotton Down) keeps the run the ability's
+    if (abilityAt === i - 1 && (cmd === '-fail' || cmd === '-immune' || cmd === '-activate')) abilityAt = i;
 
     const push = (event, mark = true) => {
       if (live) turns[turns.length - 1].events.push(event);
@@ -124,7 +130,7 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
         return;
       }
       const ownMove = !from || (from.kind === 'moves' && recent?.type === 'move' && toID(from.name) === toID(recent.move));
-      const prev = ownMove && abilityAt !== i - 1 && !(before && !before.onMove) ? moveOf() : null;
+      const prev = ownMove && !residual && abilityAt !== i - 1 && !(before && !before.onMove) ? moveOf() : null;
       const effect = { ...change, mon: mon ? ref(mon) : null, from: prev ? null : from };
       if (prev) prev.effects.push(effect);
       else push({ type: 'stat', ...effect }, false);
@@ -671,7 +677,7 @@ const nameKey = (m, namer) => plain(m.nick ?? (namer.plainSpecies ? namer.plainS
 // A foe partner sharing the foe's side is told by seat (p2b), and Ally Switch moves seats, so it does not count as an owner of its own here
 function ownerKey(m, sides) {
   const owner = ownerOf(m, sides);
-  return owner === 'second' && !String(m.seat ?? '').startsWith('p4') ? 'theirs' : owner;
+  return owner === 'second' && !String(m.seat ?? m.player ?? '').startsWith('p4') ? 'theirs' : owner;
 }
 
 function clashesOf(read, namer, sides) {
@@ -686,7 +692,8 @@ function clashesOf(read, namer, sides) {
 const OWNERS = ['mine', 'partner', 'theirs', 'second'];
 
 function ownerOf(mon, sides) {
-  const player = String(mon?.seat ?? '').slice(0, 2);
+  // A benched Pokémon (Heal Bell's "p3: Chansey") has no seat yet, only its player
+  const player = String(mon?.seat ?? mon?.player ?? '').slice(0, 2);
   if (mon?.side === 'mine') return player === 'p3' && sides.partner ? 'partner' : 'mine';
   if (!sides.second) return 'theirs';
   if (player === 'p4') return 'second';
@@ -856,7 +863,8 @@ function statText(x, mon, namer, start = false) {
 
 const CURE_EN = { slp: 'woke up', frz: 'thawed out', par: 'was cured of paralysis', brn: 'was cured of its burn', psn: 'was cured of poison', tox: 'was cured of poison' };
 const CANT_EN = { par: "was paralyzed and couldn't move", slp: 'was fast asleep', frz: 'was frozen solid', flinch: "flinched and couldn't move",
-  recharge: 'had to recharge', attract: 'was immobilized by love', partiallytrapped: "was trapped and couldn't move", nopp: 'had no PP left' };
+  recharge: 'had to recharge', attract: 'was immobilized by love', partiallytrapped: "was trapped and couldn't move", nopp: 'had no PP left',
+  focuspunch: "lost its focus and couldn't move", shelltrap: "couldn't set off its Shell Trap" };
 const REASON_KINDS = { ability: 'abilities', item: 'items', move: 'moves' };
 
 function cantText(e, mon, namer) {
@@ -864,7 +872,9 @@ function cantText(e, mon, namer) {
   if (fixed) return `${mon(e.mon)} ${fixed}`;
   const what = e.move ? `use ${namer.moves(e.move)}` : 'move';
   const m = /^(ability|item|move):\s*(.+)$/i.exec(e.reason);
-  const why = m ? namer[REASON_KINDS[m[1].toLowerCase()]](m[2]) : e.reason ? namer.moves(e.reason) : '';
+  // A move that failed on its own ("Shell Trap" for Shell Trap) is not its own reason
+  const own = e.move && toID(m ? m[2] : e.reason) === toID(e.move);
+  const why = own ? '' : m ? namer[REASON_KINDS[m[1].toLowerCase()]](m[2]) : e.reason ? namer.moves(e.reason) : '';
   return `${mon(e.mon)} couldn't ${what}${why ? ` because of ${why}` : ''}`;
 }
 function toolText(e, mon, sides) {

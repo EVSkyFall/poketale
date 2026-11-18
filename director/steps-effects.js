@@ -713,7 +713,7 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
 
       if (effect.id === 'helpinghand') await say('battler-tags.helpingHandOnAdd', { pokemonNameWithAffix: nameOf(kw.of ?? a[0]), pokemonName: nameOf(a[0]) });
       else if (GUARD.has(effect.id)) await say(`arena-tag.conditionalProtectOnAdd${sideKey(positionOf(a[0]))}`, { moveName: names.move(effect.id) });
-      else if (SINGLE_TURN[effect.id]) await say(SINGLE_TURN[effect.id], { ...nv(a[0]), pokemonName: label(other(positionOf(a[0]))) ?? '' });
+      else if (SINGLE_TURN[effect.id]) await say(SINGLE_TURN[effect.id], nv(a[0]));
       else if (!QUIET_VOLATILE.has(effect.id) && effect.id !== 'snatch') warn(`-singleturn:${effect.id}`);
       return true;
     }

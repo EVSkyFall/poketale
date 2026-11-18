@@ -102,9 +102,10 @@ export function createBagSteps({ battle, view, names, ledger, bag, lang = DEFAUL
     case '-curestatus': {
       const status = statusNames[a[1]], name = ledger.get(a[0]).name;
 
-      if (!ledger.onField(a[0])) { if (status) await say(`status-effect.${status}.heal`, { pokemonNameWithAffix: affix(name, 'player') }); return; }
+      if (!ledger.onField(a[0])) { if (status) await say(`status-effect.${status}.heal`, { pokemonNameWithAffix: affix(name, sideOf(a[0])) }); return; }
       await view.setStatus(positionOf(a[0]), '');
-      await say(`own.cureFromItem.${a[1] === 'tox' ? 'psn' : a[1]}`, { pokemonNameWithAffix: affix(name, 'player'), pokemonName: affix(name, 'player'), itemName: itemName(sourceItem(kw.from)) });
+      const named = affix(name, positionOf(a[0]));
+      await say(`own.cureFromItem.${a[1] === 'tox' ? 'psn' : a[1]}`, { pokemonNameWithAffix: named, pokemonName: named, itemName: itemName(sourceItem(kw.from)) });
       return;
     }
     }
