@@ -82,9 +82,9 @@ const percent = (hp, maxhp) => Math.round(hp / maxhp * 100);
 // Not shown on screen: the screen log keeps it so the "log" send format says what each HP bar did
 export function hpLog(name, before, hp, maxhp) {
   if (!name || !(maxhp > 0) || !Number.isFinite(hp)) return null;
-  const was = before?.maxhp > 0 && Number.isFinite(before.hp) ? percent(before.hp, before.maxhp) : null;
-  if (was === percent(hp, maxhp)) return null;
-  return `${name} HP ${was === null ? '' : `${was}% → `}${percent(hp, maxhp)}%`;
+  const known = before?.maxhp > 0 && Number.isFinite(before.hp);
+  if (known && before.hp === hp && before.maxhp === maxhp) return null;
+  return `${name} HP ${known ? `${percent(before.hp, before.maxhp)}% → ` : ''}${percent(hp, maxhp)}%`;
 }
 
 // The lines a screen log keeps from view calls: the message box, and where an HP bar went

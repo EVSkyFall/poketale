@@ -114,7 +114,9 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
 
     const statChange = (mon, change) => {
       const from = fromOf(args);
-      const run = stats?.at === i - 1 ? stats : null;
+      const before = stats?.at === i - 1 ? stats : null;
+      // Joined only within one sent part: a line before `from` was never sent
+      const run = before?.live === live ? before : null;
       if (run && change.kind === 'boost' && run.change.kind === 'boost' && run.mon === mon && run.change.up === change.up && run.change.by === change.by
         && run.fromName === (from?.name ?? '')) {
         run.change.stats.push(...change.stats);
@@ -122,12 +124,12 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
         return;
       }
       const ownMove = !from || (from.kind === 'moves' && recent?.type === 'move' && toID(from.name) === toID(recent.move));
-      const prev = ownMove && abilityAt !== i - 1 && !(run && !run.onMove) ? moveOf() : null;
+      const prev = ownMove && abilityAt !== i - 1 && !(before && !before.onMove) ? moveOf() : null;
       const effect = { ...change, mon: mon ? ref(mon) : null, from: prev ? null : from };
       if (prev) prev.effects.push(effect);
       else push({ type: 'stat', ...effect }, false);
       // The pushed event shares effect.stats, so a later line of the same run lands in both
-      stats = { at: i, mon, change: effect, onMove: !!prev, fromName: from?.name ?? '' };
+      stats = { at: i, live, mon, change: effect, onMove: !!prev, fromName: from?.name ?? '' };
     };
 
     const gimmick = event => {
@@ -314,9 +316,22 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
       break;
     }
     case '-clearallboost': if (!silent) statChange(null, { kind: 'clear', which: 'all' }); break;
-    case '-clearboost': case '-clearnegativeboost': {
+    case '-clearboost': case '-clearnegativeboost': case '-clearpositiveboost': case '-invertboost': {
       const mon = seen(args[0]);
-      if (!silent && mon) statChange(mon, { kind: 'clear', which: cmd === '-clearboost' ? 'one' : 'negative' });
+      if (silent || !mon) break;
+      if (cmd === '-invertboost') { statChange(mon, { kind: 'invert' }); break; }
+      // Spectral Thief: -clearpositiveboost|TARGET|SOURCE|move: Spectral Thief
+      const taker = cmd === '-clearpositiveboost' && /^p\d/.test(args[1] ?? '') ? seen(args[1]) : null;
+      statChange(mon, { kind: 'clear', which: { '-clearboost': 'one', '-clearnegativeboost': 'negative', '-clearpositiveboost': 'positive' }[cmd],
+        ...(taker ? { other: ref(taker) } : {}) });
+      break;
+    }
+    // -copyboost|SOURCE|TARGET (Psych Up), -swapboost|SOURCE|TARGET|STATS (Heart Swap, Power Swap, Guard Swap)
+    case '-copyboost': case '-swapboost': {
+      const mon = seen(args[0]), other = /^p\d/.test(args[1] ?? '') ? seen(args[1]) : null;
+      if (silent || !mon || !other) break;
+      const listed = cmd === '-swapboost' && args[2] && !args[2].startsWith('[') ? args[2].split(',').map(s => s.trim()).filter(Boolean) : [];
+      statChange(mon, { kind: cmd === '-copyboost' ? 'copy' : 'swap', other: ref(other), ...(listed.length ? { stats: listed } : {}) });
       break;
     }
     case '-curestatus': if (!silent) push({ type: 'cure', mon: ref(who(args[0])), status: args[1], from: fromOf(args) }, false); break;
@@ -653,11 +668,17 @@ function sidesOf(read, sides = {}, namer = null) {
 const nameKey = (m, namer) => plain(m.nick ?? (namer.plainSpecies ? namer.plainSpecies(m.species) : m.species));
 
 // Names that stand for Pokémon of two or more owners (both sides sent out Alakazam): those need saying whose
+// A foe partner sharing the foe's side is told by seat (p2b), and Ally Switch moves seats, so it does not count as an owner of its own here
+function ownerKey(m, sides) {
+  const owner = ownerOf(m, sides);
+  return owner === 'second' && !String(m.seat ?? '').startsWith('p4') ? 'theirs' : owner;
+}
+
 function clashesOf(read, namer, sides) {
   const owners = new Map();
   for (const m of read?.mons ?? []) {
     const key = nameKey(m, namer);
-    owners.set(key, (owners.get(key) ?? new Set()).add(ownerOf(m, sides)));
+    owners.set(key, (owners.get(key) ?? new Set()).add(ownerKey(m, sides)));
   }
   return new Set([...owners].filter(([, set]) => set.size > 1).map(([key]) => key));
 }
@@ -813,7 +834,7 @@ function eventText(e, namer, sides, ctx = reasonCtx(null, null)) {
 const STAT_EN = { atk: 'Attack', def: 'Defense', spa: 'Sp. Atk', spd: 'Sp. Def', spe: 'Speed', accuracy: 'accuracy', evasion: 'evasiveness' };
 const listEn = items => (items.length > 1 ? `${items.slice(0, -1).join(', ')} and ${items.at(-1)}` : items[0] ?? '');
 
-const STAT_KINDS = new Set(['boost', 'setboost', 'clear']);
+const STAT_KINDS = new Set(['boost', 'setboost', 'clear', 'invert', 'copy', 'swap']);
 // By how many stages: 0 = it could not go further
 const RISE_EN = ["won't go any higher", 'rose', 'rose sharply', 'rose drastically'];
 const FALL_EN = ["won't go any lower", 'fell', 'harshly fell', 'severely fell'];
@@ -822,8 +843,12 @@ function statText(x, mon, namer, start = false) {
   const from = fromText(x.from, namer);
   if (x.kind === 'clear') {
     if (x.which === 'all') return `${start ? 'All' : 'all'} stat changes were eliminated${from}`;
+    if (x.which === 'positive') return `${mon(x.mon)}'s raised stats were ${x.other ? `taken by ${mon(x.other)}` : 'removed'}${from}`;
     return `${mon(x.mon)}'s ${x.which === 'negative' ? 'lowered stats returned to normal' : 'stat changes were removed'}${from}`;
   }
+  if (x.kind === 'invert') return `${mon(x.mon)}'s stat changes were inverted${from}`;
+  if (x.kind === 'copy') return `${mon(x.mon)} copied ${mon(x.other)}'s stat changes${from}`;
+  if (x.kind === 'swap') return `${mon(x.mon)} and ${mon(x.other)} swapped ${x.stats?.length ? `${listEn(x.stats.map(s => STAT_EN[s] ?? s))} changes` : 'stat changes'}${from}`;
   const stats = listEn(x.stats.map(s => STAT_EN[s] ?? s));
   if (x.kind === 'setboost') return `${mon(x.mon)}'s ${stats} ${x.to >= 6 ? 'rose to the maximum' : `became ${x.to > 0 ? '+' : ''}${x.to}`}${from}`;
   return `${mon(x.mon)}'s ${stats} ${(x.up ? RISE_EN : FALL_EN)[Math.min(x.by, 3)]}${from}`;
