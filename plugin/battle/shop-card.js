@@ -36,9 +36,11 @@ export function createShopCards(host) {
     for (const id of Object.keys(cart)) { const row = list.find(r => r.id === id); if (!row || row.soldOut) delete cart[id]; }
   };
 
-  // What a payment depends on, as the card shows it (story/shop-card.mjs shownSelector)
-  const shownOf = (mode, list, cart, paid) => ({ mode, prices: Object.fromEntries(list.map(r => [r.id, r.price])),
-    total: list.reduce((sum, r) => sum + r.price * (cart[r.id] ?? 0), 0), bonus: paid.error ? 0 : paid.bonus ?? 0 });
+  // What a payment depends on, as the card shows it (story/shop-card.mjs shownSelector): the goods and counts in the
+  // cart, the prices, the total and the Premier Ball bonus
+  const shownOf = (mode, list, cart, paid) => ({ mode, cart: Object.entries(cart).filter(([, n]) => n > 0).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+    prices: Object.fromEntries(list.map(r => [r.id, r.price])), total: list.reduce((sum, r) => sum + r.price * (cart[r.id] ?? 0), 0),
+    bonus: paid.error ? 0 : paid.bonus ?? 0 });
 
   async function counter(pass, { at, shop }, mem) {
     const state = await pass.state();
@@ -146,10 +148,14 @@ export function createShopCards(host) {
     if (mem?.busy) return;
     if (action === 'shopin') {
       if (mem) return;
-      open.set(name, { mode: 'buy', tab: null, carts: { buy: {}, sell: {} } });
+      const fresh = { mode: 'buy', tab: null, carts: { buy: {}, sell: {} }, busy: true };
+      open.set(name, fresh);
       // A card that could not be opened on screen stays closed, so the next press opens it again
       let opened = false;
-      try { opened = await swap(pass, shop, { grow: true }); } finally { if (!opened) open.delete(name); }
+      try { opened = await swap(pass, shop, { grow: true }); } finally {
+        fresh.busy = false;
+        if (!opened && open.get(name) === fresh) open.delete(name);
+      }
       return;
     }
     if (!mem) return swap(pass, shop);
@@ -190,8 +196,8 @@ export function createShopCards(host) {
       try {
         const doc = host.doc();
         const element = doc && await doc.querySelector(`.x-risu-pkbsh-${card.key}`);
-        // A press that started meanwhile, or opened or closed the card, draws it itself
-        if (!element || open.get(name)?.busy || (view.phase === 'open') !== open.has(name)) continue;
+        // A press that drew the card meanwhile, or is drawing it, or opened or closed it, has the newer card
+        if (!element || open.get(name)?.busy || drawn.get(name) !== card || (view.phase === 'open') !== open.has(name)) continue;
         await element.setInnerHTML(withIndex(html, shop.at));
         swapped = true;
         drawn.set(name, { ...card, at: shop.at, html });

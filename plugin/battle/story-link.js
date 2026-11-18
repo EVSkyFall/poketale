@@ -1333,9 +1333,11 @@ async function writeResult(origin, { outcome, result, apply }) {
 
     const battles = [...battlesBefore(origin.stage), ...(apply ? [battleRecord(origin.stage, apply, outcome)] : [])];
 
-    // A Pokémon caught here comes from where the battle was, not from where the chat stands now
+    // A Pokémon caught here comes from where the battle was: its message's region and world, under the generation setting
+    // the battle ran with (that of now, which cannot change while a battle is open), not from where the chat stands now
     const status = latestStatus(chat, blockAt);
-    const after = applyBattles(before, battles, { ...ctx, status, learning: acts.learningIn(chat, ctx, blockAt, status?.region) }, { battle: origin.battle });
+    const learning = acts.learningIn(chat, ctx, chat.message.length, status?.region, { worldAt: blockAt });
+    const after = applyBattles(before, battles, { ...ctx, status, learning }, { battle: origin.battle });
     const tag = hashKey(`${origin.key}:${Date.now()}`);
 
     const caughtMon = result.captured ? [...after.party, ...after.box].find(m => ![...before.party, ...before.box].some(b => b.uid === m.uid)) : null;

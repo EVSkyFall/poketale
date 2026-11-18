@@ -413,10 +413,11 @@ export function passingIn(chat, ctx, index) {
   return storyTick(state, messageId(message, index), { ...here, learning: learningIn(chat, ctx, index, region) }).events;
 }
 
-// Where Pokémon join and learn at message index, in the region given, as the fold has it there (story/state.mjs)
-export function learningIn(chat, ctx, index, region) {
+// Where Pokémon join and learn at message index, in the region given, as the fold has it there (story/state.mjs).
+// worldAt: the message up to which the Status Windows raise the world's generation, when it is not index's.
+export function learningIn(chat, ctx, index, region, { worldAt = index } = {}) {
   const setting = generationsAt(chat)(index), here = foldCtxAt(chat, ctx)(index);
-  return learningAt({ setting, world: discWorld(compatWorld(chat), setting, raiseGen(autoGenAt(chat, index), region)), region, by: here.learnMoves, rule: here.rule });
+  return learningAt({ setting, world: discWorld(compatWorld(chat), setting, raiseGen(autoGenAt(chat, worldAt), region)), region, by: here.learnMoves, rule: here.rule });
 }
 
 export function passingTold(chat, ctx, index) {
