@@ -27,11 +27,12 @@ function sourcesFor(species, dex = Dex, seen = new Set()) {
 
 const byLevel = (a, b) => a.level - b.level || (a.move < b.move ? -1 : a.move > b.move ? 1 : 0);
 
-// An older generation's list keeps each move once, at its lowest level: generation 1 holds Red/Blue's and Yellow's
-// levels together (Pikachu's Thunder Wave at 8 and 9).
+// An older generation's list keeps every level a move is learned at, as the newest one does: a starting move can come
+// again later (generation 1 Gyarados's Hydro Pump at 1 and 41), and one generation can hold several games' levels
+// (Red/Blue's and Yellow's Pikachu); a Pokémon that knows the move already does not learn it twice.
 function pastList(sources) {
 	const seen = new Set();
-	return sources.slice().sort(byLevel).flatMap(({ level, move }) => (seen.has(move) ? [] : (seen.add(move), [[level, move]])));
+	return sources.slice().sort(byLevel).flatMap(({ level, move }) => (seen.has(`${level}:${move}`) ? [] : (seen.add(`${level}:${move}`), [[level, move]])));
 }
 
 const levelUp = {}, past = {};

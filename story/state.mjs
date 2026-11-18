@@ -26,7 +26,7 @@ import { surveyBattles, dropOocs } from './chat.mjs';
 import { statusIn, battleScene, COMPAT_LINE_RE, FIELD_WEATHERS, compatWorld, COMPAT_WORLD_VARS } from './compat.mjs';
 import { withMachineStandard } from './machine-standards.mjs';
 import { learningAt, learnGen, metGenOf } from './learning.mjs';
-import { levelUpAt } from '../engine/levelup.mjs';
+import { levelUpAt, evolutionLevelMoves } from '../engine/levelup.mjs';
 import { badgeCount, earnedBadges, readLeague, leaguePlaces, leagueAt, leagueDate, keepRecords, LEAGUE_VAR, UNOVA_ERA_VAR } from './badges.mjs';
 import { changeFriendship, moveFriendship, friendshipStep, baseFriendship, friendshipLocked, FRIEND_BALL_FRIENDSHIP, FRIENDSHIP_STEPS, FOND_FRIENDSHIP } from '../engine/friendship.mjs';
 import { entry as nameEntry, koSpellings } from '../names/index.js';
@@ -202,10 +202,11 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
   const generationAt = generationsAt(chat);
   const genAt = (i, auto) => battleGen(generationAt(i), auto);
   // Where Pokémon learn and join at each message (story/learning.mjs)
-  const learningOf = (i, region, auto) => learningAt({ setting: generationAt(i), world: discWorld(world, generationAt(i), auto), region, by: ctxAt(i).learnMoves });
+  const learningOf = (i, region, auto, time) => learningAt({ setting: generationAt(i, time), world: discWorld(world, generationAt(i, time), auto), region, by: ctxAt(i, time).learnMoves });
 
   const applyImportsAt = (i, start, at, reflected, seen, auto) => importsAt(i).reduce((cur, imp) => {
-    const here = { ...at, ...ruleValues(ctxAt(i, imp.time)) };
+    // An import made after a change of the generation setting at the same message joins under the new one
+    const here = { ...at, ...ruleValues(ctxAt(i, imp.time)), learning: learningOf(i, at.status?.region ?? null, auto, imp.time) };
     let next = inRule(ctx?.sim, cur, at.rule, battleGen(generationAt(i, imp.time), auto));
     for (const action of heldActions(imp)) {
       if (!isReflected(action, reflected, seen)) next = runAction(next, action, here).state;
@@ -298,7 +299,7 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
         for (const action of (acted?.v === 2 ? acted.actions : storyEnd?.actions) ?? []) if (!isReflected(action, reflected, seen)) state = runAction(state, action, at).state;
         for (const id of reflectedBy(table, event.key)) reflected.add(id);
         if (acted?.v === 2) continue;
-        if (!storyEnd) state = inRule(ctx?.sim, withBook(clone(table.snaps[event.key]), state), here.rule, genAt(i, auto));
+        if (!storyEnd) state = inRule(ctx?.sim, keepOrigins(state, withBook(clone(table.snaps[event.key]), state), learning), here.rule, genAt(i, auto));
         else {
           if (storyEnd.engine) state = applyBattles(state, [...storyEnd.engine.before ?? [], storyEnd.engine], at);
           if (storyEnd.who) {
@@ -1163,8 +1164,8 @@ function evolve(state, given, mon, target, { decoration } = {}) {
   delete mon.counts;
   mon.pending.evolve = null;
 
-  for (const [level, moveid] of levelUpMoves(ctx, to.name, mon)) {
-    if (level !== 0 || mon.set.moves.includes(moveid) || mon.pending.moves.includes(moveid)) continue;
+  for (const moveid of evolutionLevelMoves(levelUpMoves(ctx, to.name, mon), mon.set.level, learnGen(ctx.learning, mon))) {
+    if (mon.set.moves.includes(moveid) || mon.pending.moves.includes(moveid)) continue;
     mon.pending.moves.push(moveid);
   }
   settlePending(mon);
@@ -1352,7 +1353,10 @@ export function nextStageSpec(spec, result, state, ctx, { seed }) {
   const before = [...battlesBefore(spec), battleRecord(spec, ended)];
   const now = inRule(ctx.sim, applyBattles(state, before, ctx), formatRule(spec.formatid), formatGen(spec.formatid) ?? stateGen(state));
   const { foePartner, double, partner, ...same } = spec;
-  return { ...same, seed: [...seed], p1: { ...spec.p1, team: playerTeam(now) }, p2: waiting,
+  // The table each Pokémon learned from in the first battle, where the state cannot tell it
+  const learned = new Map(spec.p1.team.map(member => [member.uid, member.learnGen]));
+  const team = playerTeam(now).map(member => (member.learnGen === undefined && Number.isInteger(learned.get(member.uid)) ? { ...member, learnGen: learned.get(member.uid) } : member));
+  return { ...same, seed: [...seed], p1: { ...spec.p1, team }, p2: waiting,
     ...(spec.bag ? { bag: { ...otherBag(spec.bag), ...battleBag(now, toolsIn(spec)), caughtSpecies: [...now.dex.caught] } } : {}), teraOrb: hasTeraOrb(now), before };
 }
 
@@ -1575,6 +1579,19 @@ function shareOf(hp, was, max) {
 
 // A state moves to other rules or another generation keeping its sets; only HP (kept as a share) and PP (dropped
 // when at or over the new maximum) follow
+// A battle snapshot saved before Pokémon carried their origin keeps the one the fold gave them; one that joined in that
+// battle comes from where the battle was. after is a fresh copy.
+function keepOrigins(before, after, learning) {
+  const known = new Map([...before.party, ...before.box].filter(mon => Number.isInteger(mon.metGen)).map(mon => [mon.uid, mon.metGen]));
+  const met = metGenOf(learning);
+  for (const mon of [...after.party ?? [], ...after.box ?? []]) {
+    if (Number.isInteger(mon.metGen)) continue;
+    const gen = known.get(mon.uid) ?? met;
+    if (Number.isInteger(gen)) mon.metGen = gen;
+  }
+  return after;
+}
+
 // Where the state stands, for battles and screens opened at that point (story/learning.mjs); chats kept on
 // generation 9 keep none, as they learn from the newest tables
 function withLearning(state, learning) {
