@@ -33,8 +33,9 @@ export function summaryView(battle, names, entry, pokemon, options = {}, lang = 
 
     const original = battle.dex.natures.get(pokemon.m?.natureOrig ?? '');
     const shown = original.exists && original.id !== nature.id ? original : nature;
+    // Natures do nothing in generations 1-2: no stat is tinted there
     summary.nature = { name: phrases[`nature.${shown.id}`] ?? shown.name, text: phrases[`natureFragment.${shown.id}`] ?? '{{nature}}',
-      ...(nature.plus ? { plus: nature.plus, minus: nature.minus } : {}) };
+      ...(nature.plus && battle.gen >= 3 ? { plus: nature.plus, minus: nature.minus } : {}) };
 
     if (shown !== nature) summary.nature.mint = ownText('own.mintNote', { itemName: names.item(`${nature.id}mint`) }, lang);
   }
@@ -42,8 +43,12 @@ export function summaryView(battle, names, entry, pokemon, options = {}, lang = 
   if (!battle.dex.currentMod.startsWith('champions')) summary.ivs = { hp: 31, atk: 31, def: 31, spa: 31, spd: 31, spe: 31, ...(saved.ivs ?? pokemon.set.ivs) };
   else if (battle.ruleTable.has('levelclausemod')) summary.ivs = { hp: 31, atk: 31, def: 31, spa: 31, spd: 31, spe: 31 };
 
-  // Generation 1 has one Special stat (Special Attack and Special Defense are the same number there)
-  if (battle.gen === 1) summary.oneSpecial = { label: screenSay(checkLang(lang), 'stat.special') };
+  // Generation 1 has one Special stat (Special Attack and Special Defense are the same number there), worked out from the
+  // higher of the two IVs (engine/rules.mjs engineSet): the Special row shows that one
+  if (battle.gen === 1) {
+    summary.oneSpecial = { label: screenSay(checkLang(lang), 'stat.special') };
+    if (summary.ivs) summary.ivs = { ...summary.ivs, spa: Math.max(summary.ivs.spa ?? 0, summary.ivs.spd ?? 0) };
+  }
   if (entry.teraType && battle.gen === 9) summary.teraType = entry.teraType;
   const exp = expInfo(battle, pokemon, options.exp);
   if (exp) summary.exp = exp;

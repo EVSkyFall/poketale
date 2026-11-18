@@ -916,7 +916,7 @@ export default Object.freeze({
   'settings.foeGimmicks.region': 'By Region',
   'settings.foeGimmicks.pokerogue': 'PokeRogue',
   'settings.row.eraGimmicks': 'Gimmicks Not in the Generation',
-  'settings.help.eraGimmicks': "Disable: moves tied to gimmicks the generation doesn't have (weather, abilities and so on) are disabled.\nEnable: moves tied to gimmicks of later generations (weather, abilities and so on) work in the current generation.",
+  'settings.help.eraGimmicks': "Disable: moves tied to gimmicks the generation doesn't have (weather, abilities and so on) are disabled, and shops don't sell goods the generation didn't have.\nEnable: moves tied to gimmicks of later generations (weather, abilities and so on) work in the current generation, and shops sell goods the generation didn't have at today's prices.",
   'settings.eraGimmicks.disable': 'Disable',
   'settings.eraGimmicks.enable': 'Enable',
   'settings.row.speed': 'Game Speed',

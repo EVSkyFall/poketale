@@ -30,16 +30,17 @@ export function createStoryBattle(sim, given, options = {}) {
 	const rng = new sim.PRNG(given.seed);
 	// Foes (p2, p4 and the trainer waiting to come out) bring only the battle generation's moves, from that generation's
 	// level-up table; one with nothing of that generation to fill its moves with keeps the ones it has (engine/mon.mjs
-	// completeSet). The player's side fills from the table it learns from (story/learning.mjs).
+	// completeSet). The player's Pokémon (p1) fill from the table they learn from (story/learning.mjs); a partner trainer at
+	// their side (p3) from the battle generation's table, keeping the moves it brings.
 	const movesUpTo = gen < 9 ? gen : null;
-	const complete = (m, foe) => completeSet(sim.Dex, m.set, rng, { levelUp: levelUpAt(options.levelUp, foe ? movesUpTo : m.learnGen), label: m.uid, tera: !m.noTera,
-		oneSpecial: hasOneSpecial(gen), movesUpTo: foe ? movesUpTo : null });
+	const complete = (m, key) => completeSet(sim.Dex, m.set, rng, { levelUp: levelUpAt(options.levelUp, key === 'p1' ? m.learnGen : movesUpTo), label: m.uid, tera: !m.noTera,
+		oneSpecial: hasOneSpecial(gen), movesUpTo: key === 'p1' || key === 'p3' ? null : movesUpTo });
 	for (const [key, seat] of Object.entries(shape.seats)) {
-		context.sets[key] = seat.team.map(m => complete(m, key === 'p2' || key === 'p4'));
+		context.sets[key] = seat.team.map(m => complete(m, key));
 		battle.setPlayer(key, { name: seat.name, team: sim.Teams.pack(context.sets[key].map(set => heldItemForm(sim.Dex, eraSet(gen, set)))) });
 	}
 
-	if (shape.waiting) context.sets.waiting = shape.waiting.team.map(m => complete(m, true));
+	if (shape.waiting) context.sets.waiting = shape.waiting.team.map(m => complete(m, 'waiting'));
 	installExtensions(sim, battle, 'players', context);
 	return battle;
 }

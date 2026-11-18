@@ -916,7 +916,7 @@ export default Object.freeze({
   'settings.foeGimmicks.region': '지방별',
   'settings.foeGimmicks.pokerogue': 'PokeRogue',
   'settings.row.eraGimmicks': '세대에 없는 기믹',
-  'settings.help.eraGimmicks': '비활성화: 세대에 없는 기믹(날씨, 특성 등)과 관련된 기술을 비활성화합니다.\n활성화: 현재 세대에 없는 최신 세대의 기믹(날씨, 특성 등)과 관련된 기술을 활성화합니다.',
+  'settings.help.eraGimmicks': '비활성화: 세대에 없는 기믹(날씨, 특성 등)과 관련된 기술을 비활성화합니다. 상점도 그 세대에 없던 물건은 팔지 않습니다.\n활성화: 현재 세대에 없는 최신 세대의 기믹(날씨, 특성 등)과 관련된 기술을 활성화합니다. 상점은 그 세대에 없던 물건도 최신 정가로 팝니다.',
   'settings.eraGimmicks.disable': '비활성화',
   'settings.eraGimmicks.enable': '활성화',
   'settings.row.speed': '배속',

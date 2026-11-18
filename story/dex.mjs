@@ -2,7 +2,8 @@ import LISTS from '../data/dex-lists.json' with { type: 'json' };
 import { dexEntries, dexEntry } from '../names/dex.js';
 import { BADGES, isChampion, readLeague, knownUnovaEra, PRE_STORY } from './badges.mjs';
 import { latestStatus } from './compat.mjs';
-import { isEgg } from './state.mjs';
+import { isEgg, stateFormat } from './state.mjs';
+import { formatGen } from '../engine/rules.mjs';
 import { displayName, spriteIdOf } from '../engine/mon.mjs';
 import { say } from './screen-text.mjs';
 
@@ -92,7 +93,7 @@ export function dexFill(state, sim, regions = [], mentions = []) {
 
 // state.gen is the battle generation (story/state.mjs stateGen; none = 9)
 function eraTypes(sim, state, species) {
-  const gen = state?.gen;
+  const gen = formatGen(stateFormat(state));
   if (!Number.isInteger(gen) || gen >= 9 || !(species.gen <= gen)) return species.types;
   const then = sim.Dex.forGen(gen).species.get(species.id);
   return then.exists && then.types?.length ? then.types : species.types;

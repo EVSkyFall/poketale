@@ -6,7 +6,7 @@ import { summaryView } from './summary.js';
 import { createLearnSteps, learnMoveOption, loadExpText } from './steps-exp.js';
 import { PLAYER_NAME, EV_TOTAL_MAX, sameNickname } from '../story/rules.mjs';
 import { DEFAULT_LANG } from './lang.js';
-import { DEFAULT_FORMAT } from '../engine/rules.mjs';
+import { DEFAULT_FORMAT, formatGen } from '../engine/rules.mjs';
 import { usesStatExp } from '../engine/stat-exp.mjs';
 import { enjoymentOf, fullnessOf, gameCandidates } from '../story/amie.mjs';
 import { GAMES, LEVELS } from '../story/amie-games.mjs';
@@ -69,6 +69,8 @@ export function outsideSummarySlot(ctx, mon) {
     const summary = summaryView(battle, ctx.names, entry, pokemon, options, langOf(ctx));
     if (fainted) summary.stats = { ...summary.stats, hp: 0 };
     if (effortOn(ctx.sim, format)) summary.evs = Object.fromEntries(STATS.map(s => [s, pokemon.set.evs?.[s] ?? 0]));
+    // Generation 1's one Special uses the higher of the two (engine/rules.mjs engineSet)
+    if (summary.evs && summary.oneSpecial) summary.evs.spa = Math.max(summary.evs.spa, summary.evs.spd);
     // Generations 1-2 have no cap on the total
     if (summary.evs && usesStatExp(battle.gen)) summary.evsUncapped = true;
 
@@ -252,7 +254,7 @@ export async function amieOutside({ view, ctx, mon, state = null, party = [], de
   try {
     const { spent, gains, friends, done, spin, train } = await view.startAmie({
       mon: plan.shown, num: plan.num, scene: scene ?? undefined, species: plan.ids, enjoy: enjoymentOf(mon), full: fullnessOf(mon), friendship: friendshipOf(ctx, mon),
-      party: others, foods, puffFood: id => food(puffFood(id, lang)), words, debug, records: state?.amieRecords ?? {}, spins: canSpin(ctx.sim.Dex, { species: mon.set.species, item: mon.set.item }),
+      party: others, foods, puffFood: id => food(puffFood(id, lang)), words, debug, records: state?.amieRecords ?? {}, spins: canSpin(ctx.sim.Dex, { species: mon.set.species, item: mon.set.item }, formatGen(ctx.battleFormat || DEFAULT_FORMAT)),
       awake, trainWhy: trainWhy ? say(`panel.trainWhy.${trainWhy}`) : null, lock: debug && lock ? { on: friendshipLocked(mon), set: lock } : null,
       onChange: now => Object.assign(result, { spent: now.spent, gains: now.gains, friends: now.friends ?? [], done: now.done }),
     });

@@ -161,7 +161,7 @@ export function createExpSteps({ battle, view, names, warn, ledger = createLedge
     if (onField(uid)) {
       await Promise.all([message, view.updateLevel(onField(uid), { level, hp: stats.hp, maxhp: stats.maxhp })]);
     } else await message;
-    await view.showLevelUpStats({ prev, next });
+    await view.showLevelUpStats({ prev, next, ...(battle.gen === 1 ? { special: screenSay(lang, 'stat.special') } : {}) });
   }
 
   function summaryMon(p) {

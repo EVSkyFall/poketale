@@ -1,10 +1,10 @@
-import { shopsIn, shopContext, shopStock, checkout, sellList, sellCheckout, shopAction } from '../../story/shop.mjs';
+import { shopsIn, shopContext, shopStock, checkout, sellList, sellCheckout, shopAction, premierGiven } from '../../story/shop.mjs';
 import { renderShopCard, renderShopInside, SHOP_MS, SPECIAL_TAB, cartMost } from '../../story/shop-card.mjs';
 import { itemIcon, itemLabel, bagGroup, BAG_GROUPS, namesFor } from '../../story/panel.mjs';
 import { WHAT, failureNote } from '../../story/failure.mjs';
 import { limitedBought, shopBalance } from '../../story/acts.mjs';
 import { rulesAt } from '../../story/setting-changes.mjs';
-import { placeGameAt } from '../../story/generation.mjs';
+import { placeEraAt } from '../../story/generation.mjs';
 
 function shopUsable(chat, at, key) {
   const messages = chat?.message ?? [];
@@ -37,15 +37,16 @@ export function createShopCards(host) {
     const ctx = shopContext(state, pass.chat, at, { compat: host.compat(pass), balance: shopBalance(pass.chat, { survey: pass.survey }) });
     const options = { compatMoney: ctx.money === null, budget: ctx.budget };
     const cart = mem?.carts[mem.mode] ?? {};
-    // The game the shop's place belongs to sets its prices and goods (story/shop.mjs)
-    const game = placeGameAt(pass.chat, at, ctx.region);
+    // The shop's place sets its prices and goods (story/shop.mjs), under the generation setting of now, where the cart is paid
+    const era = placeEraAt(pass.chat, -1, ctx.region);
+    const game = era?.game ?? null, world = era?.gen ?? null, gimmicks = host.eraGimmicks?.() ?? null;
     if (mem?.mode === 'sell') {
       const list = sellList(state, game);
       return { state, ctx, list, paid: sellCheckout(state, cart, list, options) };
     }
     const list = shopStock({ kind: shop.kind, region: ctx.region, period: ctx.period, badges: ctx.badges, town: ctx.town, bought: limitedBought(pass.chat, { survey: pass.survey }),
-      game, gimmicks: host.eraGimmicks?.() ?? null });
-    return { state, ctx, list, paid: checkout(state, cart, list, options) };
+      game, world, gimmicks });
+    return { state, ctx, list, paid: checkout(state, cart, list, { ...options, premier: premierGiven({ game, world, gimmicks }) }) };
   }
   async function viewOf(pass, found, { grow = false } = {}) {
     const { at, key, shop } = found;
@@ -60,6 +61,8 @@ export function createShopCards(host) {
 
     const all = list.map(s => ({ ...s, name: itemLabel(state, s.id, names, { bag: true }), icon: itemIcon(s.id, host.sim), count: cart[s.id] ?? 0,
       tab: s.limited ? SPECIAL_TAB : bagGroup(s.id, host.sim) }));
+    // The prices the card shows, checked again when the cart is paid
+    mem.shown = { mode: mem.mode, prices: Object.fromEntries(all.map(r => [r.id, r.price])) };
     const tabs = [...BAG_GROUPS, SPECIAL_TAB].filter(tab => all.some(r => r.tab === tab)).map(tab => ({ id: tab, dot: all.some(r => r.tab === tab && r.count) }));
     const tab = tabs.some(t => t.id === mem.tab) ? mem.tab : tabs[0]?.id ?? null;
     return { ...placed, phase: 'open', grow, money: ctx.money ?? ctx.budget, mode: mem.mode, tabs, tab, rows: all.filter(r => r.tab === tab),
@@ -97,8 +100,11 @@ export function createShopCards(host) {
   }
 
   async function pay(pass, shop, key, mem) {
-    const { paid } = await counter(pass, shop, mem);
-    if (paid.error) return swap(pass, shop);
+    const { list, paid } = await counter(pass, shop, mem);
+    // A price changed while the card stayed open (the generation or a setting changed): show the new prices instead of paying
+    const cart = mem.carts[mem.mode] ?? {};
+    const moved = mem.shown?.mode === mem.mode && Object.entries(cart).some(([id, n]) => n && list.find(r => r.id === id)?.price !== mem.shown.prices[id]);
+    if (paid.error || moved) return swap(pass, shop);
     try {
       await host.queue(shopAction(paid, key), pass.target);
     } catch (error) {

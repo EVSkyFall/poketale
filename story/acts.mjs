@@ -386,7 +386,7 @@ export function changesIn(text, chat, ctx, lang, { growing = false } = {}) {
   const world = discWorld(compatWorld(chat), generationsAt(chat)(index >= 0 ? index : messages.length),
     raiseGen(autoGenAt(chat, index >= 0 ? index : messages.length - 1), machineRegion));
   // Pokémon join and learn there as the fold has them (story/state.mjs computeState)
-  if (at) at.learning = learningAt({ setting: generationsAt(chat)(index >= 0 ? index : messages.length), world, region: machineRegion, by: at.learnMoves });
+  if (at) at.learning = learningAt({ setting: generationsAt(chat)(index >= 0 ? index : messages.length), world, region: machineRegion, by: at.learnMoves, rule: at.rule });
   const chatId = index >= 0 ? messageId(messages[index], index) : null;
   const held = index >= 0 ? heldChanges(chat, table ?? readTable(chat)) : new Set();
   const events = [], errors = [];
@@ -411,7 +411,7 @@ export function passingIn(chat, ctx, index) {
   const { state, status } = computeState(chat, ctx, { uptoIndex: index - 1 });
   const here = foldCtxAt(chat, ctx)(index), region = (statusIn(message) ?? status)?.region;
   const setting = generationsAt(chat)(index);
-  const learning = learningAt({ setting, world: discWorld(compatWorld(chat), setting, raiseGen(autoGenAt(chat, index), region)), region, by: here.learnMoves });
+  const learning = learningAt({ setting, world: discWorld(compatWorld(chat), setting, raiseGen(autoGenAt(chat, index), region)), region, by: here.learnMoves, rule: here.rule });
   return storyTick(state, messageId(message, index), { ...here, learning }).events;
 }
 

@@ -202,7 +202,7 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
   const generationAt = generationsAt(chat);
   const genAt = (i, auto) => battleGen(generationAt(i), auto);
   // Where Pokémon learn and join at each message (story/learning.mjs)
-  const learningOf = (i, region, auto, time) => learningAt({ setting: generationAt(i, time), world: discWorld(world, generationAt(i, time), auto), region, by: ctxAt(i, time).learnMoves });
+  const learningOf = (i, region, auto, time) => learningAt({ setting: generationAt(i, time), world: discWorld(world, generationAt(i, time), auto), region, by: ctxAt(i, time).learnMoves, rule: ctxAt(i, time).rule });
 
   const applyImportsAt = (i, start, at, reflected, seen, auto) => importsAt(i).reduce((cur, imp) => {
     // An import made after a change of the generation setting at the same message joins under the new one
@@ -1593,9 +1593,9 @@ function keepOrigins(before, after, learning) {
 }
 
 // Where the state stands, for battles and screens opened at that point (story/learning.mjs); chats kept on
-// generation 9 keep none, as they learn from the newest tables
+// generation 9 and Champions battles keep none, as they learn from the newest tables
 function withLearning(state, learning) {
-  const want = learning && !learning.legacy ? { place: learning.place, by: learning.by } : null;
+  const want = learning && !learning.newest ? { place: learning.place, by: learning.by } : null;
   const has = state.learning ?? null;
   if ((!has && !want) || (has && want && has.place === want.place && has.by === want.by)) return state;
   const next = clone(state);

@@ -359,7 +359,7 @@ const savedGender = pokemon => pokemon.m.start?.gender ?? pokemon.gender;
 function pastEvolutionLevel(battle, pokemon) {
 	return speciesOf(battle, pokemon).evos.some(id => {
 		const t = battle.dex.species.get(id);
-		return !t.evoType && t.evoLevel && t.evoLevel <= pokemon.level && genderAllows(savedGender(pokemon), t);
+		return inGeneration(t, battle.gen) && !t.evoType && t.evoLevel && t.evoLevel <= pokemon.level && genderAllows(savedGender(pokemon), t);
 	});
 }
 

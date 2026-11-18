@@ -26,10 +26,11 @@ function listAt(entries, gen, newest) {
   return !pick || pick[1] === 0 || !Array.isArray(pick[1]) ? newest : pick[1];
 }
 
-// The moves a Pokémon learns on evolving into a species with that list: its level-0 moves (evolution moves, from
-// generation 7), and, learning from an older generation's table, the moves the new species learns at its level (as the
-// games of generations 1-6 taught them: Charizard's Wing Attack at 36 in generation 3).
-const EVOLUTION_MOVES_GEN = 7;
+// The moves a Pokémon learns on evolving into a species with that list: its level-0 moves (evolution moves; Showdown
+// has them from generation 8), and, learning from an older generation's table, the moves the new species learns at its
+// level, as the games taught them (Charizard's Wing Attack at 36 in generation 3). Generation 7's evolution moves sit at
+// level 1 in Showdown's data, among the starting moves, so they cannot be told apart and are not taught.
+const EVOLUTION_MOVES_GEN = 8;
 export const evolutionLevelMoves = (list, level, gen) =>
   (list ?? []).filter(([at]) => at === 0 || (Number.isInteger(gen) && gen < EVOLUTION_MOVES_GEN && at === level)).map(([, move]) => move);
 

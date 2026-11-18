@@ -1954,6 +1954,7 @@ export async function writeGeneration(value, target) {
     return recordGenerationChange(chat, value);
   }, { vars: true, missing: true });
   if (wrote === HELD) throw failed('writeBlocked');
+  if (wrote) watchSoon();
 }
 
 export async function writeBotTravel(change, target) {
@@ -2053,9 +2054,10 @@ export function changeSettings(next) {
   const switched = botsSwitched(settings, next);
   const commands = commandsOn(settings) !== commandsOn(next);
   const tools = (settings.effectItems === true) !== (next.effectItems === true);
+  const era = settings.eraGimmicks !== next.eraGimmicks;
   settings = next;
   changed();
-  if (switched.length || commands || tools) watchSoon();
+  if (switched.length || commands || tools || era) watchSoon();
   return Promise.all(switched.map(s => reconcileBot(s.name, s.on)));
 }
 

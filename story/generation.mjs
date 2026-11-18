@@ -95,10 +95,15 @@ export function recordGenerationChange(chat, value, { now = Date.now() } = {}) {
 }
 
 // The game a place at that message belongs to, by the disc standards' rule (story/machine-standards.mjs regionStandard),
-// for what its shops sell and charge; null in chats kept on generation 9 and where no region with games is known (a
-// Pokémon Journeys story is Sword/Shield everywhere)
-export function placeGameAt(chat, index, region) {
-  const setting = generationsAt(chat)(index);
+// and the story's world generation there, for what its shops sell and charge: null in chats kept on generation 9; game
+// null where no region with games is known (a Pokémon Journeys story is Sword/Shield everywhere). index -1: now, after
+// the last message.
+export function placeEraAt(chat, index, region) {
+  const last = (chat?.message?.length ?? 0) - 1;
+  const setting = generationsAt(chat)(index >= 0 ? index : last + 1);
   if (setting === 'legacy') return null;
-  return regionStandard(region, discWorld(compatWorld(chat), setting, raiseGen(autoGenAt(chat, index), region)));
+  const world = discWorld(compatWorld(chat), setting, raiseGen(autoGenAt(chat, index >= 0 ? index : last), region));
+  return { game: regionStandard(region, world) ?? null, gen: Number.isInteger(world.gen) ? world.gen : null };
 }
+
+export const placeGameAt = (chat, index, region) => placeEraAt(chat, index, region)?.game ?? null;
