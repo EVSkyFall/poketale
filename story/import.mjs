@@ -6,7 +6,8 @@ import { dropOocs } from './chat.mjs';
 import { COMPAT_LINES, COMPAT_LINE_RE, COMPAT_FIELD_SEP, compatHead, compatFold, dropTaken } from './compat.mjs';
 import { readStored, isRecord, isUnreadable } from './stored.mjs';
 import { ruleNote, ruleError, refusal, failed } from './failure.mjs';
-import { clone, fillSet, rngFor, newMon, uniqueUid, hpFromPercent, hpPercentOf, markDex, toID, maxHp, healParty, friendshipOf, isEgg, tidyBreeding, stateFormat, stateGen } from './state.mjs';
+import { clone, fillSet, rngFor, newMon, uniqueUid, hpFromPercent, hpPercentOf, markDex, toID, maxHp, healParty, friendshipOf, isEgg, tidyBreeding, stateFormat, stateGen, keepOrigins } from './state.mjs';
+import { learnGen } from './learning.mjs';
 import { usesStatExp } from '../engine/stat-exp.mjs';
 import { hasOneSpecial } from '../engine/mon.mjs';
 import { FRIENDSHIP_MAX, friendshipLocked } from '../engine/friendship.mjs';
@@ -238,6 +239,9 @@ function usable(sim, species, field, value, range = HOLD_RANGE) {
   return false;
 }
 
+// A draft made at a place (state.learning) fills its new Pokémon's moves from that place's level-up table
+const learningCtx = (ctx, learning) => (learning && !ctx?.learning ? { ...ctx, learning } : ctx);
+
 function fillAuto(mon, ctx, fields, gen) {
   const { sim } = ctx;
   const refill = new Set(fields.filter(f => mon.from[f] === 'auto' && f !== 'species' && f !== 'level'));
@@ -266,7 +270,8 @@ function fillAuto(mon, ctx, fields, gen) {
   }
   let full;
   try {
-    full = fillSet(ctx, given, rngFor(sim, `import:${mon.seed}`), gen);
+    // A Pokémon already in the story (an update of its match) learns from its own origin under the "origin" setting
+    full = fillSet(ctx, given, rngFor(sim, `import:${mon.seed}`), gen, learnGen(ctx.learning, mon.action === 'update' ? mon.match : null));
   } catch (e) {
 
     mon.fillError = e.notes?.[0] ?? note('noMovesAtLevel', { species: species.name, level: mon.set.level, id: species.id });
@@ -374,7 +379,7 @@ function rematch(draft, ctx) {
   }
   for (const mon of draft.mons) {
     const hit = pairs.get(mon.key);
-    const match = hit ? { uid: hit.uid, place: hit.place, label: labelOf(hit) } : null;
+    const match = hit ? { uid: hit.uid, place: hit.place, label: labelOf(hit), ...(Number.isInteger(hit.metGen) ? { metGen: hit.metGen } : {}) } : null;
     if ((mon.match?.uid ?? null) === (match?.uid ?? null)) { mon.match = match; continue; }
     mon.match = match;
     if (mon.egg) mon.action = match ? 'update' : 'skip';
@@ -386,18 +391,19 @@ function rematch(draft, ctx) {
 export function makeDraft(chat, state, ctx, { seed = 0, format, found: given = null } = {}) {
   const found = given ?? readCompat(chat, ctx, format ? { format } : {});
   const pool = [...(state?.party ?? []).map(m => [m, 'party']), ...(state?.box ?? []).map(m => [m, 'box'])]
-    .map(([m, place]) => ({ uid: m.uid, place, species: m.set.species, name: m.set.name ?? '', level: m.set.level, now: valuesOf(ctx, state, m), ...(isEgg(m) ? { egg: true } : {}) }));
+    .map(([m, place]) => ({ uid: m.uid, place, species: m.set.species, name: m.set.name ?? '', level: m.set.level, now: valuesOf(ctx, state, m), ...(isEgg(m) ? { egg: true } : {}),
+      ...(Number.isInteger(m.metGen) ? { metGen: m.metGen } : {}) }));
   const bag = Object.fromEntries(Object.entries(state?.bag ?? {}).filter(([, n]) => n > 0).map(([id, n]) => [id, { count: n, from: 'current' }]));
 
   const customItems = Object.fromEntries(Object.keys(bag).filter(isCustomItem).map(id => [id, customInfo(state, id)]).filter(([, info]) => info));
-  const gen = stateGen(state);
+  const gen = stateGen(state), learning = state?.learning ?? null, here = learningCtx(ctx, learning);
   const draft = {
-    v: 1, gen,
-    mons: [...found.party.map((f, i) => draftMon(f, 'party', `p${i + 1}`, ctx, seed, gen)), ...found.box.map((f, i) => draftMon(f, 'box', `b${i + 1}`, ctx, seed, gen))],
+    v: 1, gen, ...(learning ? { learning } : {}),
+    mons: [...found.party.map((f, i) => draftMon(f, 'party', `p${i + 1}`, here, seed, gen)), ...found.box.map((f, i) => draftMon(f, 'box', `b${i + 1}`, here, seed, gen))],
     bag, warnings: found.warnings, pool, base: { bag: Object.fromEntries(Object.entries(bag).map(([id, e]) => [id, e.count])) }, customItems,
     ...(given?.source ? { source: given.source } : {}),
   };
-  rematch(draft, ctx);
+  rematch(draft, here);
   for (const mon of draft.mons) mon.problems = monProblems(mon, ctx, draft.kind, gen);
   return draft;
 }
@@ -471,12 +477,12 @@ export function handBack(chat, state, ctx, { lang = 'ko', now = Date.now() } = {
 
 export const DEBUG_KIND = 'debug';
 
-export function newMonDraft(ctx, { place = 'party', seed = 0, gen = null } = {}) {
+export function newMonDraft(ctx, { place = 'party', seed = 0, gen = null, learning = null } = {}) {
   const mon = blankMon('n1', place, seed);
   for (const f of ['species', 'name', 'level', 'place']) mon.from[f] = 'user';
-  fillAuto(mon, ctx, SET_FIELDS, gen);
+  fillAuto(mon, learningCtx(ctx, learning), SET_FIELDS, gen);
   mon.problems = monProblems(mon, ctx, DEBUG_KIND, gen);
-  return { v: 1, kind: DEBUG_KIND, gen, mons: [mon], bag: {}, warnings: [], pool: [], base: { bag: {} } };
+  return { v: 1, kind: DEBUG_KIND, gen, ...(learning ? { learning } : {}), mons: [mon], bag: {}, warnings: [], pool: [], base: { bag: {} } };
 }
 
 export function currentMonDraft(ctx, state, uid) {
@@ -485,10 +491,10 @@ export function currentMonDraft(ctx, state, uid) {
   const { set, hpPercent, status } = valuesOf(ctx, state, found);
   const debug = isEgg(found) ? { eggCycles: Math.ceil(found.egg.cycles) } : { friendship: friendshipOf(ctx, found), friendshipLocked: friendshipLocked(found) };
   const mon = { key: 'e1', place, set, hpPercent, status, ...debug, from: Object.fromEntries([...MON_FIELDS, ...Object.keys(debug)].map(f => [f, 'current'])),
-    match: { uid, place, label: labelOf(set) }, action: 'update', problems: [], seed: `0:e1` };
-  const gen = stateGen(state);
+    match: { uid, place, label: labelOf(set), ...(Number.isInteger(found.metGen) ? { metGen: found.metGen } : {}) }, action: 'update', problems: [], seed: `0:e1` };
+  const gen = stateGen(state), learning = state?.learning ?? null;
   mon.problems = monProblems(mon, ctx, DEBUG_KIND, gen);
-  return { v: 1, kind: DEBUG_KIND, gen, mons: [mon], bag: {}, warnings: [], pool: [], base: { bag: {} } };
+  return { v: 1, kind: DEBUG_KIND, gen, ...(learning ? { learning } : {}), mons: [mon], bag: {}, warnings: [], pool: [], base: { bag: {} } };
 }
 
 export const friendshipLockDraft = (ctx, state, uid, locked) => editMon(currentMonDraft(ctx, state, uid), 'e1', 'friendshipLocked', !!locked, ctx);
@@ -546,8 +552,8 @@ export function editMon(draft, key, field, value, ctx) {
   mon.from[field] = 'user';
 
   const blanks = SET_FIELDS.filter(f => mon.set[f] === null || (f === 'moves' && !mon.set.moves?.length));
-  fillAuto(mon, ctx, [...(field === 'species' ? BY_SPECIES : field === 'level' ? BY_LEVEL : []), ...blanks], next.gen);
-  if (['species', 'name', 'level'].includes(field)) rematch(next, ctx);
+  fillAuto(mon, learningCtx(ctx, next.learning), [...(field === 'species' ? BY_SPECIES : field === 'level' ? BY_LEVEL : []), ...blanks], next.gen);
+  if (['species', 'name', 'level'].includes(field)) rematch(next, learningCtx(ctx, next.learning));
   mon.problems = monProblems(mon, ctx, next.kind, next.gen);
   return next;
 }
@@ -574,7 +580,7 @@ export function refillMon(draft, key, ctx, { seed = 0 } = {}) {
   const next = clone(draft);
   const mon = monAt(next, key);
   mon.seed = `${seed}:${key}`;
-  fillAuto(mon, ctx, SET_FIELDS, next.gen);
+  fillAuto(mon, learningCtx(ctx, next.learning), SET_FIELDS, next.gen);
   mon.problems = monProblems(mon, ctx, next.kind, next.gen);
   return next;
 }
@@ -707,7 +713,8 @@ function updatedMon(ctx, old, set) {
 }
 
 export function applyImport(state, imp, ctx) {
-  if (imp.kind === HANDBACK_KIND) return clone(imp.state);
+  // A hand-back saved before Pokémon carried their origin keeps the ones the fold gave them
+  if (imp.kind === HANDBACK_KIND) return keepOrigins(state, clone(imp.state), ctx.learning);
   const { sim } = ctx;
   const next = clone(state);
   const partyOrder = [];

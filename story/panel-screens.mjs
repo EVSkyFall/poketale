@@ -82,13 +82,14 @@ function summaryView(screen, mon, env, t) {
 
     const modes = statModes(ctx).filter(mode => (mode === 'ivs' ? !!summary.ivs : mode === 'evs' ? !!summary.evs : true));
     const mode = modes.includes(screen.stat) ? screen.stat : modes[0];
-    const cells = STATS.map(stat => {
-      const cell = { stat, label: statName(stat, lang), up: mode === 'stats' && summary.nature?.plus === stat, down: mode === 'stats' && summary.nature?.minus === stat };
+    // Generation 1 has one Special (director/summary.js oneSpecial)
+    const cells = STATS.filter(stat => !(summary.oneSpecial && stat === 'spd')).map(stat => {
+      const cell = { stat, label: summary.oneSpecial && stat === 'spa' ? summary.oneSpecial.label : statName(stat, lang), up: mode === 'stats' && summary.nature?.plus === stat, down: mode === 'stats' && summary.nature?.minus === stat };
       if (mode === 'ivs') return { ...cell, value: summary.ivs[stat], of: MAX_IV, top: summary.ivs[stat] >= MAX_IV };
       if (mode === 'evs') return { ...cell, value: summary.evs[stat], of: EV_STAT_MAX, top: summary.evs[stat] >= EV_STAT_MAX };
       return { ...cell, value: stat === 'hp' ? `${summary.stats.hp}/${summary.stats.maxhp}` : summary.stats[stat] };
     });
-    const total = mode === 'evs' ? STATS.reduce((sum, stat) => sum + summary.evs[stat], 0) : 0;
+    const total = mode === 'evs' ? cells.reduce((sum, cell) => sum + summary.evs[cell.stat], 0) : 0;
     const exp = summary.exp && { total: summary.exp.total.toLocaleString(lang), next: summary.exp.next.toLocaleString(lang), ratio: summary.exp.ratio,
       level: shown.level, nextLevel: summary.exp.next ? shown.level + 1 : null };
     out.stats = { title: t('panel.sc.page.stats'), modes: modes.map(id => ({ id, label: t(`panel.sc.mode.${id}`) })), mode, cells,

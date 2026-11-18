@@ -417,7 +417,7 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
           const done = [];
           try {
             await screens.session(async open => {
-              for (const { step, mon } of steps) done.push({ step, mon, result: await open.evolution(mon, step.into, species => evolutionMoves(ctx, mon, species)) });
+              for (const { step, mon } of steps) done.push({ step, mon, result: await open.evolution(mon, step.into, species => evolutionMoves(ctx, mon, species, now.state.learning)) });
             });
           } finally {
             const action = evolveAction(effect, done);
@@ -464,8 +464,8 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
               const ctx = now.ctx;
               const lock = now.debug ? locked => debugLock(effect.uid, locked, target) : null;
               const pet = await open.amie(mon, { debug: now.debug, state: now.state, party: now.state.party, awake, trainWhy: trainBlock(mon, ctx), lock, scene });
-              const into = pet.spin ? spinInto(ctx, mon, pet.spin) : null;
-              const result = into ? { ...pet, evolution: { into, ...await open.evolution(mon, into, species => evolutionMoves(ctx, mon, species)) } } : pet;
+              const into = pet.spin ? spinInto(ctx, mon, pet.spin, now.state) : null;
+              const result = into ? { ...pet, evolution: { into, ...await open.evolution(mon, into, species => evolutionMoves(ctx, mon, species, now.state.learning)) } } : pet;
 
               const record = recordAction(result);
               if (record) await queue(record, undefined, target, lang);
@@ -569,7 +569,7 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
     let evolution = null;
     try {
       await screens.session(async open => {
-        evolution = { into: plan.evolve, ...await open.evolution(mon, plan.evolve, species => evolutionMoves(ctx, mon, species)) };
+        evolution = { into: plan.evolve, ...await open.evolution(mon, plan.evolve, species => evolutionMoves(ctx, mon, species, now.state.learning)) };
       });
     } finally {
       const action = evolution && levelUpAction(mon, { evolution });
@@ -598,7 +598,7 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
           }
         }
         if (plan.evolve) {
-          const result = await open.evolution(mon, plan.evolve, species => evolutionMoves(ctx, mon, species));
+          const result = await open.evolution(mon, plan.evolve, species => evolutionMoves(ctx, mon, species, now.state.learning));
           done.evolution = { into: plan.evolve, ...result };
         }
       });

@@ -40,7 +40,7 @@ import { DEFAULT_SETTINGS, DEFAULT_LOOK, settingsUnreadable, LANG_OPEN, hostLang
 import { mountImportScreen } from './import-screen.js';
 import { makeDraft, importOffer, importOfferAi, importTurn, handBack, commitImport, commitDebugHeal, commitDebugBadges, readImports, cancelImport, inForce, newMonDraft, currentMonDraft, friendshipLockDraft } from '../../story/import.mjs';
 import { importAiMessages, readAiParty, aiFailedFound } from '../../story/import-ai.mjs';
-import { readSettingChanges, recordSettingChange, settingsBehind, rulesAt } from '../../story/setting-changes.mjs';
+import { readSettingChanges, recordSettingChange, settingsBehind, rulesAt, foldValues } from '../../story/setting-changes.mjs';
 import { generationUnrecorded, recordGenerationStart, recordGenerationChange, readGeneration } from '../../story/generation.mjs';
 import { readBattlesOff, battlesOff, setBattlesOff } from '../../story/battles-off.mjs';
 import { loadPicture, savePicture, adoptOldPicture, entryMe } from './my-picture.js';
@@ -63,7 +63,7 @@ export const battleFormat = async () => {
   const party = await pendingParty().catch(() => null);
   return party ? stateFormat(party.state) : ruleFormat(settings.rule);
 };
-const storyCtx = () => ctxPromise ??= loadLevelUp().then(levelUp => (ctxNow = { sim, levelUp, exp: EXP_TABLE, folds: createFolds(), get friendshipRate() { return settings.friendshipRate; }, get hatchRate() { return settings.hatchRate; }, get tradeEvolution() { return settings.tradeEvolution; }, get rule() { return settings.rule; }, get eraGimmicks() { return settings.eraGimmicks; } }))
+const storyCtx = () => ctxPromise ??= loadLevelUp().then(levelUp => (ctxNow = { sim, levelUp, exp: EXP_TABLE, folds: createFolds(), get friendshipRate() { return settings.friendshipRate; }, get hatchRate() { return settings.hatchRate; }, get tradeEvolution() { return settings.tradeEvolution; }, get learnMoves() { return settings.learnMoves; }, get rule() { return settings.rule; }, get eraGimmicks() { return settings.eraGimmicks; } }))
   .catch(error => { ctxPromise = undefined; throw error; });
 let ctxNow = null;
 
@@ -133,7 +133,7 @@ function makePass(charIndex, chatIndex, chat, character, seq) {
     grows(text) { const bottom = String(chat.message?.at(-1)?.data ?? ''); return text.startsWith(bottom) && (bottom !== '' || quietIn(this.id) > 0); },
 
     get key() {
-      return memo('key', () => JSON.stringify([this.id, this.text,
+      return memo('key', () => JSON.stringify([this.id, this.text, foldValues(settings),
         Object.entries(chat.scriptstate ?? {}).filter(([k]) => k.startsWith('$pkb_') || stateVars().includes(k)).sort(([a], [b]) => (a < b ? -1 : 1))]));
     },
 
@@ -827,7 +827,7 @@ async function drawNotice(press, pass) {
   else if (view) await setTail(press, view);
 }
 
-const shops = createShopCards({ sim, doc: () => doc, lang: chat => currentLang(chat), compat: pass => compatBots.has(pass.target?.chaId), actionPass,
+const shops = createShopCards({ sim, doc: () => doc, lang: chat => currentLang(chat), compat: pass => compatBots.has(pass.target?.chaId), actionPass, eraGimmicks: () => settings.eraGimmicks,
   queue: (action, target) => queueAction(action, target), bindButtons });
 
 const forgeName = (id, key) => `${id}:${key}`;
@@ -1333,7 +1333,11 @@ async function writeResult(origin, { outcome, result, apply }) {
 
     const battles = [...battlesBefore(origin.stage), ...(apply ? [battleRecord(origin.stage, apply, outcome)] : [])];
 
-    const after = applyBattles(before, battles, { ...ctx, status: latestStatus(chat, blockAt) }, { battle: origin.battle });
+    // A Pokémon caught here comes from where the battle was: its message's region and world, under the generation setting
+    // the battle ran with (that of now, which cannot change while a battle is open), not from where the chat stands now
+    const status = latestStatus(chat, blockAt);
+    const learning = acts.learningIn(chat, ctx, chat.message.length, status?.region, { worldAt: blockAt });
+    const after = applyBattles(before, battles, { ...ctx, status, learning }, { battle: origin.battle });
     const tag = hashKey(`${origin.key}:${Date.now()}`);
 
     const caughtMon = result.captured ? [...after.party, ...after.box].find(m => ![...before.party, ...before.box].some(b => b.uid === m.uid)) : null;
@@ -1434,7 +1438,7 @@ const rematchEntries = (state, where) => (battlesOff(where.chat) ? [] : trainerL
 const writeStoryVars = (into, state, where) => [writeVars(into, varsOf(state, where)), writeTrainerLore(into, rematchEntries(state, where))].some(Boolean);
 
 const varsKey = where => JSON.stringify([where.id, where.text ?? textKey(where.chat), stateVars().map(name => where.chat?.scriptstate?.[name] ?? null),
-  battleForVars(where), currentLang(where.chat), settings.effectItems === true, battlesOff(where.chat)]);
+  battleForVars(where), currentLang(where.chat), settings.effectItems === true, battlesOff(where.chat), foldValues(settings)]);
 
 async function setVars(where) {
   const { state, table, changed } = acts.pendingState(where.chat, await storyCtx());
@@ -1954,6 +1958,7 @@ export async function writeGeneration(value, target) {
     return recordGenerationChange(chat, value);
   }, { vars: true, missing: true });
   if (wrote === HELD) throw failed('writeBlocked');
+  if (wrote) watchSoon();
 }
 
 export async function writeBotTravel(change, target) {
@@ -2053,9 +2058,14 @@ export function changeSettings(next) {
   const switched = botsSwitched(settings, next);
   const commands = commandsOn(settings) !== commandsOn(next);
   const tools = (settings.effectItems === true) !== (next.effectItems === true);
+  const era = settings.eraGimmicks !== next.eraGimmicks;
+  // The story folds with these (the battle rule, Level-Up Moves and the rest): its state and variables follow them
+  const fold = JSON.stringify(foldValues(settings)) !== JSON.stringify(foldValues(next));
   settings = next;
+  // The chat is read again under the new values (the pass keeps what it folded)
+  if (fold) lastPass = null;
   changed();
-  if (switched.length || commands || tools) watchSoon();
+  if (switched.length || commands || tools || era || fold) watchSoon();
   return Promise.all(switched.map(s => reconcileBot(s.name, s.on)));
 }
 
@@ -2178,7 +2188,7 @@ async function debugScreen(target, screen) {
 }
 
 export const debugAdd = (where, target) => debugScreen(target, ({ ctx, state }) => (where === 'bag' ? { mode: 'bag', state }
-  : { mode: 'create', draft: newMonDraft(ctx, { place: where, seed: freshSeed(), gen: stateGen(state) }) }));
+  : { mode: 'create', draft: newMonDraft(ctx, { place: where, seed: freshSeed(), gen: stateGen(state), learning: state.learning }) }));
 
 export const debugEdit = (uid, target) => debugScreen(target, ({ ctx, state }) => ({ mode: 'edit', draft: currentMonDraft(ctx, state, uid) }));
 

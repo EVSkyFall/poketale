@@ -6,6 +6,7 @@ import { failed } from './failure.mjs';
 import { anchorAtEnd, importPlace } from './import.mjs';
 import { statusIn, compatWorld } from './compat.mjs';
 import { DEFAULT_GEN, GENS, isGen } from '../engine/rules.mjs';
+import { regionStandard } from './machine-standards.mjs';
 
 export const GENERATION_VAR = '$pkb_generation';
 
@@ -61,7 +62,7 @@ export const journeyStarted = messages => messages.some((message, i) => i > 0 &&
 const firstOf = (first, messages) => first ?? (journeyStarted(messages) ? 'legacy' : 'auto');
 
 // The setting at message i: the first value, then each change from the message after the one it was made at (an
-// import at that message counts from its own time), like the setting-change records
+// import at that message counts from its own time, as the rule records of story/setting-changes.mjs do)
 export function generationsAt(chat) {
   const messages = chat?.message ?? [];
   const { first, changes } = readGeneration(chat);
@@ -92,3 +93,17 @@ export function recordGenerationChange(chat, value, { now = Date.now() } = {}) {
     changes: [...changes, { time: now, at: messages.length ? anchorAtEnd(messages) : null, value }] });
   return true;
 }
+
+// The game a place at that message belongs to, by the disc standards' rule (story/machine-standards.mjs regionStandard),
+// and the story's world generation there, for what its shops sell and charge: null in chats kept on generation 9; game
+// null where no region with games is known (a Pokémon Journeys story is Sword/Shield everywhere). index -1: now, after
+// the last message.
+export function placeEraAt(chat, index, region) {
+  const last = (chat?.message?.length ?? 0) - 1;
+  const setting = generationsAt(chat)(index >= 0 ? index : last + 1);
+  if (setting === 'legacy') return null;
+  const world = discWorld(compatWorld(chat), setting, raiseGen(autoGenAt(chat, index >= 0 ? index : last), region));
+  return { game: regionStandard(region, world) ?? null, gen: Number.isInteger(world.gen) ? world.gen : null };
+}
+
+export const placeGameAt = (chat, index, region) => placeEraAt(chat, index, region)?.game ?? null;

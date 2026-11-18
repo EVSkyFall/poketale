@@ -14,6 +14,8 @@ import { EGG_SPRITE } from '../../engine/breeding.mjs';
 import { isCustomItem, customText, DEFAULT_EMOJI, CUSTOM_EFFECTS, ownerName } from '../../story/custom-items.mjs';
 import { ITEM_EFFECTS_READY } from '../../story/item-effects.mjs';
 import { learnableTms } from '../../story/item-info.mjs';
+import { learnGen } from '../../story/learning.mjs';
+import { levelUpAt } from '../../engine/levelup.mjs';
 import { STATS, MAX_LEVEL, MAX_MOVES, MAX_IV, PARTY_MAX, STATUS_IDS, displayName, toID, spriteIdOf } from '../../engine/mon.mjs';
 import { EV_STAT_MAX, EV_TOTAL_MAX } from '../../engine/rules.mjs';
 import { usesStatExp } from '../../engine/stat-exp.mjs';
@@ -669,7 +671,7 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
       const put = value => { const next = [...moves]; next[i] = value; edit(m.key, 'moves', [...new Set(next.filter(Boolean))]); };
       grid.append(pickButton(move ? lists.moves.label(move) : '', { label: t('import.move', { n: i + 1 }), placeholder: t('import.moveEmpty', { n: i + 1 }), open: () => openPicker({
         title: t('import.pickMove', { n: i + 1 }), value: move, none: move ? t('import.emptySlot') : null, searchHint: t('import.otherMoves'),
-        groups: moveGroups(sim, ctx.levelUp, m.set.species, moves.filter((_, j) => j !== i), lang), pick: put,
+        groups: moveGroups(sim, levelUpAt(ctx.levelUp, learnGen(draft.learning, m.action === 'update' ? m.match : null)), m.set.species, moves.filter((_, j) => j !== i), lang), pick: put,
       }) }));
     }
     return grid;

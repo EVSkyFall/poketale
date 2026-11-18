@@ -3,9 +3,10 @@ import { friendlyExp, stepInBattle } from './friendship.mjs';
 import { setLevel, newMoveSlot } from './showdown-compat.mjs';
 import { formatRules, EV_STAT_MAX, EV_TOTAL_MAX } from './rules.mjs';
 import { MAX_LEVEL, STATS, NON_HP_STATS, toID } from './mon.mjs';
-import { genderAllows, everstoneStops, levelEvolution, battleEvolution, ABSENT_TRADE_EVOLUTION } from './evolution.mjs';
+import { genderAllows, everstoneStops, levelEvolution, battleEvolution, inGeneration, ABSENT_TRADE_EVOLUTION } from './evolution.mjs';
 import { winnerSide } from './winner.mjs';
 import { usesStatExp, statExpOf, statExpYield, gainStatExp } from './stat-exp.mjs';
+import { levelUpAt } from './levelup.mjs';
 
 const states = new WeakMap();
 
@@ -87,6 +88,9 @@ export function attachExperience(sim, battle, spec, { exp: table, levelUp }) {
 		if (pokemon.m.partner) continue;
 		const growth = growthOf(state.table, speciesOf(battle, pokemon));
 		pokemon.m.startLevel = pokemon.level;
+		// The generation whose level-up table this Pokémon learns from (story/learning.mjs); none: the newest
+		const learnGen = members.get(pokemon.m.uid)?.learnGen;
+		if (Number.isInteger(learnGen)) pokemon.m.learnGen = learnGen;
 		if (statExp) pokemon.m.statExp = statExpOf(members.get(pokemon.m.uid)?.statExp, pokemon.set.evs);
 		if (!growth) continue;
 
@@ -262,7 +266,7 @@ function gainEffort(pokemon, base) {
 }
 
 function learnLevelMoves(battle, state, pokemon) {
-	const learnset = state.levelUp[speciesOf(battle, pokemon).id] || [];
+	const learnset = levelUpAt(state.levelUp, pokemon.m.learnGen)[speciesOf(battle, pokemon).id] || [];
 	for (const [level, moveid] of learnset) {
 		if (level !== pokemon.level) continue;
 		const move = battle.dex.moves.get(moveid);
@@ -355,7 +359,7 @@ const savedGender = pokemon => pokemon.m.start?.gender ?? pokemon.gender;
 function pastEvolutionLevel(battle, pokemon) {
 	return speciesOf(battle, pokemon).evos.some(id => {
 		const t = battle.dex.species.get(id);
-		return !t.evoType && t.evoLevel && t.evoLevel <= pokemon.level && genderAllows(savedGender(pokemon), t);
+		return inGeneration(t, battle.gen) && !t.evoType && t.evoLevel && t.evoLevel <= pokemon.level && genderAllows(savedGender(pokemon), t);
 	});
 }
 
@@ -378,14 +382,14 @@ export function getEvolutions(battle) {
 		if (pokemon.fainted || pokemon.hp <= 0) continue;
 		const species = speciesOf(battle, pokemon);
 		const mon = evolvingMon(battle, pokemon);
-		const now = { ...world, level: pokemon.level, friendship: pokemon.m.friendship, party: own.filter(p => p !== pokemon).map(p => speciesOf(battle, p).name) };
+		const now = { ...world, gen: battle.gen, level: pokemon.level, friendship: pokemon.m.friendship, party: own.filter(p => p !== pokemon).map(p => speciesOf(battle, p).name) };
 		const entry = (to, extra) => ({ uid: pokemon.m.uid, from: species.name, to, ...extra });
 		const leveled = pokemon.level > pokemon.m.startLevel;
 		const byLevel = leveled ? levelEvolution(battle.dex, mon, now) : null;
 		const to = byLevel ?? battleEvolution(battle.dex, mon, { ...now, won });
 		if (to) list.push(entry(to, byLevel ? { level: pokemon.level } : {}));
 		else if (leveled && !everstoneStops(battle.dex, mon)) {
-			for (const t of species.evos.map(id => battle.dex.species.get(id)).filter(t => genderAllows(savedGender(pokemon), t))) {
+			for (const t of species.evos.map(id => battle.dex.species.get(id)).filter(t => inGeneration(t, battle.gen) && genderAllows(savedGender(pokemon), t))) {
 				if ((t.evoType || t.evoCondition || t.evoRegion || !t.evoLevel) && !(t.evoLevel > pokemon.level)) list.push(entry(t.name, { unsupported: conditionText(t) }));
 			}
 		}
