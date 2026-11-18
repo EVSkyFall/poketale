@@ -1333,9 +1333,9 @@ async function writeResult(origin, { outcome, result, apply }) {
 
     const battles = [...battlesBefore(origin.stage), ...(apply ? [battleRecord(origin.stage, apply, outcome)] : [])];
 
-    // A Pokémon caught here takes its origin from the fold at the battle's message (story/state.mjs keepOrigins), not from
-    // where the chat stands now
-    const after = applyBattles(before, battles, { ...ctx, status: latestStatus(chat, blockAt), learning: null }, { battle: origin.battle });
+    // A Pokémon caught here comes from where the battle was, not from where the chat stands now
+    const status = latestStatus(chat, blockAt);
+    const after = applyBattles(before, battles, { ...ctx, status, learning: acts.learningIn(chat, ctx, blockAt, status?.region) }, { battle: origin.battle });
     const tag = hashKey(`${origin.key}:${Date.now()}`);
 
     const caughtMon = result.captured ? [...after.party, ...after.box].find(m => ![...before.party, ...before.box].some(b => b.uid === m.uid)) : null;
@@ -2060,6 +2060,8 @@ export function changeSettings(next) {
   // The story folds with these (the battle rule, Level-Up Moves and the rest): its state and variables follow them
   const fold = JSON.stringify(foldValues(settings)) !== JSON.stringify(foldValues(next));
   settings = next;
+  // The chat is read again under the new values (the pass keeps what it folded)
+  if (fold) lastPass = null;
   changed();
   if (switched.length || commands || tools || era || fold) watchSoon();
   return Promise.all(switched.map(s => reconcileBot(s.name, s.on)));
@@ -2073,12 +2075,10 @@ let windowChanges = Promise.resolve();
 
 function changeInWindow(target, next) {
   const change = async () => {
-    // The new values first: writing the record sets the chat's variables, folded with them
-    changeSettings(next).catch(console.error);
     if (target) {
       try { await writeChat(target, chat => recordSettingChange(chat, next), { vars: true }); } catch (error) { console.error(error); }
     }
-    return isUnreadable(settingsStatus) ? undefined : saveSettingsInOrder(next);
+    return keepSettings(next);
   };
   return windowChanges = windowChanges.then(change, change);
 }

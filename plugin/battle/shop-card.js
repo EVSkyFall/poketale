@@ -1,5 +1,5 @@
 import { shopsIn, shopContext, shopStock, checkout, sellList, sellCheckout, shopAction, premierGiven } from '../../story/shop.mjs';
-import { renderShopCard, renderShopInside, SHOP_MS, SPECIAL_TAB, cartMost } from '../../story/shop-card.mjs';
+import { renderShopCard, renderShopInside, SHOP_MS, SPECIAL_TAB, cartMost, shownSelector } from '../../story/shop-card.mjs';
 import { itemIcon, itemLabel, bagGroup, BAG_GROUPS, namesFor } from '../../story/panel.mjs';
 import { WHAT, failureNote } from '../../story/failure.mjs';
 import { limitedBought, shopBalance } from '../../story/acts.mjs';
@@ -36,6 +36,10 @@ export function createShopCards(host) {
     for (const id of Object.keys(cart)) { const row = list.find(r => r.id === id); if (!row || row.soldOut) delete cart[id]; }
   };
 
+  // What a payment depends on, as the card shows it (story/shop-card.mjs shownSelector)
+  const shownOf = (mode, list, cart, paid) => ({ mode, prices: Object.fromEntries(list.map(r => [r.id, r.price])),
+    total: list.reduce((sum, r) => sum + r.price * (cart[r.id] ?? 0), 0), bonus: paid.error ? 0 : paid.bonus ?? 0 });
+
   async function counter(pass, { at, shop }, mem) {
     const state = await pass.state();
 
@@ -70,17 +74,12 @@ export function createShopCards(host) {
       tab: s.limited ? SPECIAL_TAB : bagGroup(s.id, host.sim) }));
     const tabs = [...BAG_GROUPS, SPECIAL_TAB].filter(tab => all.some(r => r.tab === tab)).map(tab => ({ id: tab, dot: all.some(r => r.tab === tab && r.count) }));
     const tab = tabs.some(t => t.id === mem.tab) ? mem.tab : tabs[0]?.id ?? null;
-    const total = all.reduce((sum, r) => sum + r.price * r.count, 0), bonus = paid.error ? 0 : paid.bonus ?? 0;
     return { ...placed, phase: 'open', grow, money: ctx.money ?? ctx.budget, mode: mem.mode, tabs, tab, rows: all.filter(r => r.tab === tab),
-      fill: Math.max(0, ...tabs.map(t => all.filter(r => r.tab === t.id).length)), total, bonus, why: paid.error ?? null, paid: !!mem.paid,
+      fill: Math.max(0, ...tabs.map(t => all.filter(r => r.tab === t.id).length)), total: all.reduce((sum, r) => sum + r.price * r.count, 0),
+      bonus: paid.error ? 0 : paid.bonus ?? 0, why: paid.error ?? null, paid: !!mem.paid,
       ...(mem.note ? { note: mem.note } : {}),
-      // What the card shows once drawn (markShown), checked again when the cart is paid
-      shown: { mode: mem.mode, prices: Object.fromEntries(all.map(r => [r.id, r.price])), total, bonus } };
+      shown: shownOf(mem.mode, list, cart, paid) };
   }
-  const markShown = (pass, view) => {
-    const mem = view.phase === 'open' && view.shown ? open.get(nameOf(pass, view.key)) : null;
-    if (mem) mem.shown = view.shown;
-  };
   const remember = (pass, view, at) => {
     const html = renderShopInside({ ...view, grow: false }, host.lang(pass.chat));
     drawn.set(nameOf(pass, view.key), { id: pass.id, key: view.key, at, html });
@@ -90,7 +89,6 @@ export function createShopCards(host) {
   async function draw(pass, at, piece) {
     const view = await viewOf(pass, { at, key: piece.key, shop: piece.shop });
     remember(pass, view, at);
-    markShown(pass, view);
     return renderShopCard(view, host.lang(pass.chat));
   }
 
@@ -98,11 +96,12 @@ export function createShopCards(host) {
     const view = await viewOf(pass, shop, extra);
     const doc = host.doc();
     const element = doc && await doc.querySelector(`.x-risu-pkbsh-${view.key}`);
-    if (!element) return;
-    const html = remember(pass, view, shop.at);
+    if (!element) return false;
+    const html = renderShopInside({ ...view, grow: false }, host.lang(pass.chat));
     await element.setInnerHTML(withIndex(extra?.grow ? renderShopInside(view, host.lang(pass.chat)) : html, shop.at));
-    markShown(pass, view);
+    drawn.set(nameOf(pass, view.key), { id: pass.id, key: view.key, at: shop.at, html });
     await host.bindButtons();
+    return true;
   }
 
   async function fold(pass, shop, key) {
@@ -115,12 +114,11 @@ export function createShopCards(host) {
 
   async function pay(pass, shop, key, mem) {
     const { list, paid } = await counter(pass, shop, mem);
-    // Pay only what the card shows: when a price, the total or the Premier Ball bonus changed since it was drawn (the
-    // generation or a setting changed while it stayed open), show the new ones instead of paying
-    const cart = mem.carts[mem.mode] ?? {}, shown = mem.shown;
-    const moved = !shown || shown.mode !== mem.mode || paid.total !== shown.total || (paid.bonus ?? 0) !== shown.bonus
-      || Object.entries(cart).some(([id, n]) => n && list.find(r => r.id === id)?.price !== shown.prices[id]);
-    if (paid.error || moved) return swap(pass, shop);
+    // Pay only what the card on screen shows: when its prices, total or Premier Ball bonus are not those of now (the
+    // generation or a setting changed while it stayed open, or the new card is not drawn yet), show the new ones instead
+    const doc = host.doc();
+    const showing = !paid.error && doc && await doc.querySelector(shownSelector(key, shownOf(mem.mode, list, mem.carts[mem.mode] ?? {}, paid)));
+    if (!showing) return swap(pass, shop);
     try {
       await host.queue(shopAction(paid, key), pass.target);
     } catch (error) {
@@ -149,7 +147,10 @@ export function createShopCards(host) {
     if (action === 'shopin') {
       if (mem) return;
       open.set(name, { mode: 'buy', tab: null, carts: { buy: {}, sell: {} } });
-      return swap(pass, shop, { grow: true });
+      // A card that could not be opened on screen stays closed, so the next press opens it again
+      let opened = false;
+      try { opened = await swap(pass, shop, { grow: true }); } finally { if (!opened) open.delete(name); }
+      return;
     }
     if (!mem) return swap(pass, shop);
     mem.busy = true;
@@ -185,15 +186,15 @@ export function createShopCards(host) {
       if (open.get(name)?.busy) continue;
       const view = await viewOf(pass, shop);
       const html = renderShopInside(view, host.lang(pass.chat));
-      if (html === card.html) { markShown(pass, view); continue; }
+      if (html === card.html) continue;
       try {
         const doc = host.doc();
         const element = doc && await doc.querySelector(`.x-risu-pkbsh-${card.key}`);
-        if (!element) continue;
+        // A press that started meanwhile, or opened or closed the card, draws it itself
+        if (!element || open.get(name)?.busy || (view.phase === 'open') !== open.has(name)) continue;
         await element.setInnerHTML(withIndex(html, shop.at));
         swapped = true;
         drawn.set(name, { ...card, at: shop.at, html });
-        markShown(pass, view);
       } catch (error) { console.warn('[poke-battle] 상점 카드를 바꿔 끼우지 못함', error); }
     }
     if (swapped) await host.bindButtons();

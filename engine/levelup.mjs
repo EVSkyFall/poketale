@@ -1,5 +1,5 @@
 // The level-up table (data/levelup.json) holds each species' newest list. The older generations' lists
-// (data/levelup-past.json: per species [[gen, list], ..., [newest, 0]], 0 standing for the newest list) ride on it as a
+// (data/levelup-past.json: per species [[gen, list or 0], ...] from its debut on, 0 standing for the newest list) ride on it as a
 // hidden property, so code reading `table[speciesId]` keeps the newest lists and only callers that know a generation
 // ask for another. A table without them (a copy made by JSON, an older bundle) gives the newest lists everywhere.
 const PAST = Symbol.for('pokebattle.levelUpPast');

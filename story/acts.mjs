@@ -410,9 +410,13 @@ export function passingIn(chat, ctx, index) {
   if (!ctx || message?.role !== 'char') return [];
   const { state, status } = computeState(chat, ctx, { uptoIndex: index - 1 });
   const here = foldCtxAt(chat, ctx)(index), region = (statusIn(message) ?? status)?.region;
-  const setting = generationsAt(chat)(index);
-  const learning = learningAt({ setting, world: discWorld(compatWorld(chat), setting, raiseGen(autoGenAt(chat, index), region)), region, by: here.learnMoves, rule: here.rule });
-  return storyTick(state, messageId(message, index), { ...here, learning }).events;
+  return storyTick(state, messageId(message, index), { ...here, learning: learningIn(chat, ctx, index, region) }).events;
+}
+
+// Where Pokémon join and learn at message index, in the region given, as the fold has it there (story/state.mjs)
+export function learningIn(chat, ctx, index, region) {
+  const setting = generationsAt(chat)(index), here = foldCtxAt(chat, ctx)(index);
+  return learningAt({ setting, world: discWorld(compatWorld(chat), setting, raiseGen(autoGenAt(chat, index), region)), region, by: here.learnMoves, rule: here.rule });
 }
 
 export function passingTold(chat, ctx, index) {

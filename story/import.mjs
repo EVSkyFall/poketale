@@ -270,8 +270,8 @@ function fillAuto(mon, ctx, fields, gen) {
   }
   let full;
   try {
-    // A Pokémon already in the story (its match) learns from its own origin under the "origin" setting
-    full = fillSet(ctx, given, rngFor(sim, `import:${mon.seed}`), gen, learnGen(ctx.learning, mon.match));
+    // A Pokémon already in the story (an update of its match) learns from its own origin under the "origin" setting
+    full = fillSet(ctx, given, rngFor(sim, `import:${mon.seed}`), gen, learnGen(ctx.learning, mon.action === 'update' ? mon.match : null));
   } catch (e) {
 
     mon.fillError = e.notes?.[0] ?? note('noMovesAtLevel', { species: species.name, level: mon.set.level, id: species.id });
