@@ -4,6 +4,7 @@ import { itemIcon, itemLabel, bagGroup, BAG_GROUPS, namesFor } from '../../story
 import { WHAT, failureNote } from '../../story/failure.mjs';
 import { limitedBought, shopBalance } from '../../story/acts.mjs';
 import { rulesAt } from '../../story/setting-changes.mjs';
+import { placeGameAt } from '../../story/generation.mjs';
 
 function shopUsable(chat, at, key) {
   const messages = chat?.message ?? [];
@@ -36,11 +37,14 @@ export function createShopCards(host) {
     const ctx = shopContext(state, pass.chat, at, { compat: host.compat(pass), balance: shopBalance(pass.chat, { survey: pass.survey }) });
     const options = { compatMoney: ctx.money === null, budget: ctx.budget };
     const cart = mem?.carts[mem.mode] ?? {};
+    // The game the shop's place belongs to sets its prices and goods (story/shop.mjs)
+    const game = placeGameAt(pass.chat, at, ctx.region);
     if (mem?.mode === 'sell') {
-      const list = sellList(state);
+      const list = sellList(state, game);
       return { state, ctx, list, paid: sellCheckout(state, cart, list, options) };
     }
-    const list = shopStock({ kind: shop.kind, region: ctx.region, period: ctx.period, badges: ctx.badges, town: ctx.town, bought: limitedBought(pass.chat, { survey: pass.survey }) });
+    const list = shopStock({ kind: shop.kind, region: ctx.region, period: ctx.period, badges: ctx.badges, town: ctx.town, bought: limitedBought(pass.chat, { survey: pass.survey }),
+      game, gimmicks: host.eraGimmicks?.() ?? null });
     return { state, ctx, list, paid: checkout(state, cart, list, options) };
   }
   async function viewOf(pass, found, { grow = false } = {}) {
@@ -136,7 +140,7 @@ export function createShopCards(host) {
       case 'shoptab': mem.tab = item; break;
       case 'shopadd': case 'shopsub': {
         const cart = mem.carts[mem.mode];
-        const row = mem.mode === 'sell' ? sellList(await pass.state()).find(s => s.id === item) : (await counter(pass, shop, mem)).list.find(s => s.id === item);
+        const row = (await counter(pass, shop, mem)).list.find(s => s.id === item);
         const most = cartMost(mem.mode, row);
         const next = Math.min(most, Math.max(0, (cart[item] ?? 0) + (action === 'shopadd' ? 1 : -1)));
         if (next) cart[item] = next; else delete cart[item];

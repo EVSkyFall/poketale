@@ -827,7 +827,7 @@ async function drawNotice(press, pass) {
   else if (view) await setTail(press, view);
 }
 
-const shops = createShopCards({ sim, doc: () => doc, lang: chat => currentLang(chat), compat: pass => compatBots.has(pass.target?.chaId), actionPass,
+const shops = createShopCards({ sim, doc: () => doc, lang: chat => currentLang(chat), compat: pass => compatBots.has(pass.target?.chaId), actionPass, eraGimmicks: () => settings.eraGimmicks,
   queue: (action, target) => queueAction(action, target), bindButtons });
 
 const forgeName = (id, key) => `${id}:${key}`;

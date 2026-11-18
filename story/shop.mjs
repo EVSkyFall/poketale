@@ -6,6 +6,7 @@ import { isBall } from '../engine/bag.mjs';
 import { OUTSIDE_ITEMS } from './items.mjs';
 import { norm, escapeRe } from './norm.mjs';
 import { isCustomItem } from './custom-items.mjs';
+import { MACHINE_STANDARDS } from './machine-standards.mjs';
 
 export { shopsIn, shopsInText };
 
@@ -16,7 +17,16 @@ const SHOP_KINDS = ['mart', 'department'];
 
 const priceIn = (table, id) => (Object.hasOwn(table, id) ? table[id] : null);
 
-export const shopPrice = id => priceIn(SHOP.prices, id);
+// game: the game the shop's place belongs to (story/generation.mjs placeGameAt), whose prices it charges where they
+// differ from today's (SHOP.games); null: today's prices
+export const shopPrice = (id, game = null) => (game ? priceIn(SHOP.games?.[game] ?? {}, id) : null) ?? priceIn(SHOP.prices, id);
+
+// Goods the game did not have yet (SHOP.since: the first generation an item appears in) are off the shelves while the
+// "Gimmicks Not in the Generation" setting is Disable; with Enable they stay, at today's price
+const onShelf = (game, gimmicks) => {
+  const gen = MACHINE_STANDARDS[game]?.gen;
+  return !gen || gimmicks === 'enable' ? () => true : id => !(SHOP.since?.[id] > gen);
+};
 
 const DAY = 86400000;
 
@@ -107,12 +117,12 @@ function weighted(list, seed) {
   return list.at(-1)[0];
 }
 
-function specialGoods(shop, seed) {
+function specialGoods(shop, seed, keep = () => true) {
   const { count, tiers } = SHOP.specials[shop];
   const out = [];
   for (let i = 0, n = weighted(count, `${seed}:sp`); i < n; i++) {
     const tier = tiers.find(t => t.tier === weighted(tiers.map(t => [t.tier, t.weight]), `${seed}:sp:${i}:tier`));
-    const left = tier.items.filter(id => !out.some(o => o.id === id));
+    const left = tier.items.filter(id => keep(id) && !out.some(o => o.id === id));
     if (!left.length) continue;
     const id = left[seededIndex(`${seed}:sp:${i}:item`, left.length)];
     out.push({ id, price: SHOP.specials.prices[id], special: true, limited: seed });
@@ -122,16 +132,17 @@ function specialGoods(shop, seed) {
 
 export const limitedKey = (seed, id) => `${seed}|${id}`;
 
-export function shopStock({ kind, region = null, period = null, badges = 0, town = [], bought = new Set() } = {}) {
+export function shopStock({ kind, region = null, period = null, badges = 0, town = [], bought = new Set(), game = null, gimmicks = null } = {}) {
   const shop = SHOP_KINDS.includes(kind) ? kind : 'mart';
   const seed = shelvesSeed({ kind: shop, region, period });
-  const basics = SHOP.mart.basics.filter(row => shop === 'department' || (badges ?? 0) >= row.badges).flatMap(row => row.items);
+  const keep = onShelf(game, gimmicks);
+  const basics = SHOP.mart.basics.filter(row => shop === 'department' || (badges ?? 0) >= row.badges).flatMap(row => row.items).filter(keep);
   const have = new Set(basics);
   const fresh = list => list.filter(id => !have.has(id) && (have.add(id), true));
   const { min, max, items } = shop === 'mart' ? SHOP.mart.picks : { ...SHOP.department.picks, items: SHOP.department.pools.flatMap(p => p.items) };
-  const picks = fresh(seededPick([...new Set(items)].filter(id => !have.has(id)), min + seededIndex(`${seed}:count`, max - min + 1), seed));
-  picks.push(...fresh(townSpecialties(town, region)));
-  const row = special => id => ({ id, price: SHOP.prices[id], special });
+  const picks = fresh(seededPick([...new Set(items)].filter(id => keep(id) && !have.has(id)), min + seededIndex(`${seed}:count`, max - min + 1), seed));
+  picks.push(...fresh(townSpecialties(town, region).filter(keep)));
+  const row = special => id => ({ id, price: shopPrice(id, game), special });
   let stock = [...basics.map(row(false)), ...picks.map(row(true))];
   const sale = SHOP.sale;
   const share = sale.shareMin + seededIndex(`${seed}:share`, sale.shareMax - sale.shareMin + 1);
@@ -141,7 +152,7 @@ export function shopStock({ kind, region = null, period = null, badges = 0, town
     const price = salePrice(entry.price, sale.offMin + seededIndex(`${seed}:off:${entry.id}`, sale.offMax - sale.offMin + 1));
     return price < entry.price ? { ...entry, price, was: entry.price } : entry;
   });
-  const specials = specialGoods(shop, seed).filter(entry => !have.has(entry.id))
+  const specials = specialGoods(shop, seed, keep).filter(entry => !have.has(entry.id))
     .map(entry => (bought.has(limitedKey(seed, entry.id)) ? { ...entry, soldOut: true } : entry));
   return [...stock, ...specials];
 }
@@ -178,15 +189,15 @@ export function checkout(state, cart, stock, { compatMoney = false, budget = nul
   return { ops, total, bonus };
 }
 
-export function sellPrice(id) {
+export function sellPrice(id, game = null) {
 
   if (isCustomItem(id) || (OUTSIDE_ITEMS[id]?.kind === 'key' && !Object.hasOwn(SHOP.sellPrices ?? {}, id))) return null;
-  const price = shopPrice(id) ?? priceIn(SHOP.specials.prices, id) ?? priceIn(SHOP.sellPrices, id);
+  const price = shopPrice(id, game) ?? priceIn(SHOP.specials.prices, id) ?? priceIn(SHOP.sellPrices, id);
   return Number.isFinite(price) && price > 0 ? Math.floor(price / 2) : null;
 }
 
-export const sellList = state => Object.entries(state?.bag ?? {}).filter(([id, n]) => n > 0 && sellPrice(id))
-  .map(([id, owned]) => ({ id, price: sellPrice(id), owned }));
+export const sellList = (state, game = null) => Object.entries(state?.bag ?? {}).filter(([id, n]) => n > 0 && sellPrice(id, game))
+  .map(([id, owned]) => ({ id, price: sellPrice(id, game), owned }));
 
 export function sellCheckout(state, cart, list, { compatMoney = false } = {}) {
   const lines = Object.entries(cart ?? {}).filter(([, count]) => count !== 0);

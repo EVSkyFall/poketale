@@ -6,6 +6,7 @@ import { failed } from './failure.mjs';
 import { anchorAtEnd, importPlace } from './import.mjs';
 import { statusIn, compatWorld } from './compat.mjs';
 import { DEFAULT_GEN, GENS, isGen } from '../engine/rules.mjs';
+import { regionStandard } from './machine-standards.mjs';
 
 export const GENERATION_VAR = '$pkb_generation';
 
@@ -91,4 +92,12 @@ export function recordGenerationChange(chat, value, { now = Date.now() } = {}) {
   chat.scriptstate[GENERATION_VAR] = JSON.stringify({ v: 1, first: firstOf(first, messages),
     changes: [...changes, { time: now, at: messages.length ? anchorAtEnd(messages) : null, value }] });
   return true;
+}
+
+// The game a place at that message belongs to, by the disc standards' rule (story/machine-standards.mjs regionStandard),
+// for what its shops sell and charge; null in chats kept on generation 9 and where no region with games is known
+export function placeGameAt(chat, index, region) {
+  const setting = generationsAt(chat)(index);
+  if (setting === 'legacy') return null;
+  return regionStandard(region, discWorld(compatWorld(chat), setting, raiseGen(autoGenAt(chat, index), region)));
 }

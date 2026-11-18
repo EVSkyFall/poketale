@@ -123,7 +123,9 @@ Move animation data, by upstream `battle-anims/REUSE.toml`:
 - License: BSD-3-Clause ([Appendix A](#a7-pokéapi); also `data/sources/pokeapi/LICENSE.md`).
 - What is included: Korean names, capture rates, effort values, the TM/HM/TR numbers of each region's
   game (with the version group table that names those games) and Korean item descriptions, as converted
-  into `data/names/*.json`, `data/catch-rates.json`, `data/exp.json` and `data/items-outside.json`.
+  into `data/names/*.json`, `data/catch-rates.json`, `data/exp.json` and `data/items-outside.json`;
+  item prices and the first generation each shop item appears in (`item_game_indices.csv`), in
+  `data/shop.json`.
 
 ### 1.8 Fonts (embedded as base64)
 
