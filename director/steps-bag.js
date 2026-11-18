@@ -1,5 +1,5 @@
 import { BAG_ITEMS } from '../engine/bag.mjs';
-import { statusNames, nameWithAffix } from './text.js';
+import { statusNames, nameWithAffix, hpLog } from './text.js';
 import { DEFAULT_LANG } from './lang.js';
 import { bagText } from './bag.js';
 import { sideOf, positionOf } from './read.js';
@@ -83,18 +83,19 @@ export function createBagSteps({ battle, view, names, ledger, bag, lang = DEFAUL
     }
     case '-heal': {
       const { hp, maxhp } = ledger.get(a[0]), item = sourceItem(kw.from), name = ledger.get(a[0]).name;
+      const log = hpLog(affix(name, positionOf(a[0])), event.before, hp, maxhp);
       if (sideOf(a[0]) === 'enemy') {
 
         if (!ledger.onField(a[0])) return;
         await view.playCommon('health-up', positionOf(a[0]));
-        await view.hpChange(positionOf(a[0]), hp, maxhp, { cause: 'other', effectiveness: 'normal' });
+        await view.hpChange(positionOf(a[0]), hp, maxhp, { cause: 'other', effectiveness: 'normal', log });
         return;
       }
 
       if (!ledger.onField(a[0])) { await say(BAG_ITEMS[item]?.revive ? 'own.revived' : 'battle.regainHealth', { pokemonName: name }); return; }
 
       await view.playCommon('health-up', positionOf(a[0]));
-      await view.hpChange(positionOf(a[0]), hp, maxhp, { cause: 'other', effectiveness: 'normal' });
+      await view.hpChange(positionOf(a[0]), hp, maxhp, { cause: 'other', effectiveness: 'normal', log });
       await say('battle.regainHealth', { pokemonName: name });
       return;
     }

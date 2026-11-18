@@ -77,5 +77,26 @@ export function nameWithAffix(lang = DEFAULT_LANG, wild = false) {
   return (name, position) => (teamOf(position) === 'enemy' && name !== undefined ? text(wild ? 'battle.wildPokemonWithAffix' : 'battle.foePokemonWithAffix', { pokemonName: name }, lang) : name);
 }
 
+const percent = (hp, maxhp) => Math.round(hp / maxhp * 100);
+
+// Not shown on screen: the screen log keeps it so the "log" send format says what each HP bar did
+export function hpLog(name, before, hp, maxhp) {
+  if (!name || !(maxhp > 0) || !Number.isFinite(hp)) return null;
+  const was = before?.maxhp > 0 && Number.isFinite(before.hp) ? percent(before.hp, before.maxhp) : null;
+  if (was === percent(hp, maxhp)) return null;
+  return `${name} HP ${was === null ? '' : `${was}% → `}${percent(hp, maxhp)}%`;
+}
+
+// The lines a screen log keeps from view calls: the message box, and where an HP bar went
+export function screenLine(key, args) {
+  if (key === 'message') return typeof args[0] === 'string' ? args[0].replace(/\n/g, ' ') : null;
+  if (key === 'hpChange') return typeof args[3]?.log === 'string' ? args[3].log : null;
+  return null;
+}
+
+// A view that draws nothing and only keeps the screen log
+export const recordingView = push => new Proxy({}, { get: (_, key) => (key === 'then' ? undefined
+  : async (...args) => { const line = screenLine(key, args); if (line !== null) push(line); }) });
+
 export const statusNames = { par: 'paralysis', brn: 'burn', psn: 'poison', tox: 'toxic', slp: 'sleep', frz: 'freeze' };
 export const commonNames = { ...statusNames, tox: 'poison', frz: 'frozen' };
