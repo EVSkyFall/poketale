@@ -38,7 +38,13 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
     const [player, letter, name] = identOf(ident);
     return (letter && at.get(player + letter)) || named(player, name) || meet(player, name);
   };
-  const ref = mon => ({ species: mon.species, nick: nickOf(mon), side: mon.side, seat: mon.seat });
+  // Every name shown so far, also before `from`, so each part of a long battle tells the same Pokémon apart the same way
+  const shown = new Map();
+  const ref = mon => {
+    const r = { species: mon.species, nick: nickOf(mon), side: mon.side, seat: mon.seat };
+    shown.set(`${r.side} ${r.seat} ${r.species} ${r.nick}`, r);
+    return r;
+  };
   const setHp = (mon, text) => {
     const [hp, maxhp] = String(text).split(' ')[0].split('/').map(Number);
     const before = mon.maxhp ? mon.hp / mon.maxhp : null;
@@ -322,7 +328,7 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
       later.set(to, mover ?? null);
     } else if (cmd === 'replace') for (const guard of later.get(player + letter)?.guards ?? []) guard.state = 'disguised';
   }
-  return { turns: turns.filter(t => t.events.length), summary, players, illusion: [...illusion] };
+  return { turns: turns.filter(t => t.events.length), summary, players, illusion: [...illusion], mons: [...shown.values()] };
 }
 
 function causeOf(cmd, args, types) {
@@ -593,9 +599,23 @@ function fromText(from, namer) {
 
 const hpText = (name, x) => `${name} HP ${x.before === null || x.before === undefined ? '' : `${x.before}% → `}${x.hp}%`;
 
-function sidesOf(read, sides = {}) {
-  return { mine: USER, theirs: sides.theirs || read.players?.theirs || 'Opponent', wild: !!sides.wild,
+function sidesOf(read, sides = {}, namer = null) {
+  const who = { mine: USER, theirs: sides.theirs || read.players?.theirs || 'Opponent', wild: !!sides.wild,
     partner: sides.partner ?? null, second: sides.second ?? null };
+  return { ...who, clash: namer ? clashesOf(read, namer, who) : new Set() };
+}
+
+// Compared by the name the narrator reads, without touching the namer's first-mention record
+const nameKey = (m, namer) => plain(m.nick ?? (namer.plainSpecies ? namer.plainSpecies(m.species) : m.species));
+
+// Names that stand for Pokémon of two or more owners (both sides sent out Alakazam): those need saying whose
+function clashesOf(read, namer, sides) {
+  const owners = new Map();
+  for (const m of read?.mons ?? []) {
+    const key = nameKey(m, namer);
+    owners.set(key, (owners.get(key) ?? new Set()).add(ownerOf(m, sides)));
+  }
+  return new Set([...owners].filter(([, set]) => set.size > 1).map(([key]) => key));
 }
 
 const OWNERS = ['mine', 'partner', 'theirs', 'second'];
@@ -615,9 +635,19 @@ function sentOutText(owner, mons, sides) {
   return `${ownerName(owner, sides)} sent out ${mons}`;
 }
 
+const ownedText = (m, name, sides) => {
+  const owner = ownerOf(m, sides);
+  return owner === 'theirs' && sides.wild ? `Wild ${name}` : `${ownerName(owner, sides)}'s ${name}`;
+};
+
+function monName(m, namer, sides) {
+  const name = monText(m, namer);
+  return m && sides.clash?.has(nameKey(m, namer)) ? ownedText(m, name, sides) : name;
+}
+
 function userText(m, namer, sides) {
   const owner = ownerOf(m, sides);
-  return owner === 'partner' || owner === 'second' ? `${ownerName(owner, sides)}'s ${monText(m, namer)}` : monText(m, namer);
+  return owner === 'partner' || owner === 'second' ? ownedText(m, monText(m, namer), sides) : monName(m, namer, sides);
 }
 
 const zMoveName = (move, namer) => (/^Z-./.test(move) ? namer.zStatus(move.slice(2)) : namer.moves(move));
@@ -682,9 +712,10 @@ function reasonCtx(read, battle, own = null) {
 }
 
 function eventText(e, namer, sides, ctx = reasonCtx(null, null)) {
-  const mon = m => monText(m, namer);
+  const mon = m => monName(m, namer, sides);
   switch (e.type) {
-  case 'switch': return sentOutText(ownerOf(e.mon, sides), mon(e.mon), sides);
+  // These sentences already say whose Pokémon it is
+  case 'switch': return sentOutText(ownerOf(e.mon, sides), monText(e.mon, namer), sides);
   case 'move': {
 
     if (e.reveal?.length) {
@@ -707,7 +738,7 @@ function eventText(e, namer, sides, ctx = reasonCtx(null, null)) {
   case 'status': return `${mon(e.mon)} ${STATUS_EN[e.status] ?? `got ${e.status}`}`;
   case 'faint': return `${mon(e.mon)} fainted`;
   case 'ball': return `${namer.items(e.ball)} thrown at ${mon(e.mon)} → ${e.result === 'caught' ? 'caught' : e.result === 'blocked' ? 'blocked' : 'broke free'}`;
-  case 'item': return `${ownerName(ownerOf(e.mon, sides), sides)} used ${e.label ?? namer.items(e.item)} on ${mon(e.mon)}`;
+  case 'item': return `${ownerName(ownerOf(e.mon, sides), sides)} used ${e.label ?? namer.items(e.item)} on ${monText(e.mon, namer)}`;
   case 'tool': return toolText(e, mon, sides);
   case 'run': return e.result === 'escaped' ? 'Got away safely' : 'Could not get away';
   case 'levelup': return `${mon(e.mon)} grew to Lv${e.level}`;
@@ -747,7 +778,7 @@ function toolText(e, mon, sides) {
 }
 
 export function keyLines(read, namer, sides = {}, { battle = null, own = null } = {}) {
-  const who = sidesOf(read, sides);
+  const who = sidesOf(read, sides, namer);
   const ctx = reasonCtx(read, battle, own);
   const byTurn = new Map();
   for (const t of read.turns) {
@@ -767,7 +798,7 @@ export function turnSpan(read) {
 
 export function summaryLine(read, namer, { evolutions = [], sides = {} } = {}) {
   const s = read.summary;
-  const who = sidesOf(read, sides);
+  const who = sidesOf(read, sides, namer);
   const list = mons => mons.map(m => monText(m, namer)).join(', ') || '-';
   const parts = [];
   for (const owner of OWNERS) {
@@ -775,15 +806,17 @@ export function summaryLine(read, namer, { evolutions = [], sides = {} } = {}) {
     if (sent.length) parts.push(`${sentOutText(owner, list(sent), who)}.`);
   }
   for (const e of s.gimmicks ?? []) parts.push(`${gimmickText(e, namer, who)}.`);
-  const facts = endFacts(read, namer, { evolutions });
+  const facts = endFacts(read, namer, { evolutions, sides });
   return [...parts, ...(facts ? [facts] : [])].join(' ');
 }
 
-export function endFacts(read, namer, { evolutions = [] } = {}) {
+export function endFacts(read, namer, { evolutions = [], sides = {} } = {}) {
   const s = read.summary;
+  const who = sidesOf(read, sides, namer);
+  const mon = m => monName(m, namer, who);
   const parts = [];
-  if (s.fainted.length) parts.push(`Fainted: ${s.fainted.map(m => monText(m, namer)).join(', ')}.`);
-  if (s.caught) parts.push(`Caught: ${monText(s.caught.mon, namer)} with ${namer.items(s.caught.ball)}.`);
+  if (s.fainted.length) parts.push(`Fainted: ${s.fainted.map(mon).join(', ')}.`);
+  if (s.caught) parts.push(`Caught: ${mon(s.caught.mon)} with ${namer.items(s.caught.ball)}.`);
   else if (s.ran) parts.push('Ran away.');
   const evolved = evolutions.filter(e => e?.evolved === true);
   if (evolved.length) parts.push(`Evolved: ${evolved.map(e => `${namer.species(e.from)} → ${namer.species(e.to)}`).join(', ')}.`);

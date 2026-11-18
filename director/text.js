@@ -4,7 +4,7 @@ import en from './text-en.json' with { type: 'json' };
 import { checkLang, DEFAULT_LANG, LANGS } from './lang.js';
 import { ownTemplate } from './own-text.js';
 
-const RULES = { ko: { particles: true, affix: false }, en: { particles: false, affix: true } };
+const RULES = { ko: { particles: true, affix: true }, en: { particles: false, affix: true } };
 const BASE = { ko, en };
 
 const pairs = [['은', '는'], ['이', '가'], ['을', '를'], ['으로', '로'], ['과', '와'], ['이랑', '랑']];
