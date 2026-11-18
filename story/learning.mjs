@@ -7,8 +7,8 @@ export const DEFAULT_LEARN = 'location';
 
 // A place's generation: that of its region's game at the story's world generation, by the disc standards' rule
 // (story/machine-standards.mjs regionStandard: Kanto is Red/Blue in a generation-1 world, FireRed/LeafGreen in a
-// generation-3 one), else the world generation where no region with games is known (before the first Status Window,
-// Hisui)
+// generation-3 one; Pokémon Journeys is Sword/Shield everywhere), else the world generation where no region with games
+// is known (before the first Status Window, Hisui)
 export const placeGen = (region, world) => MACHINE_STANDARDS[regionStandard(region, world)]?.gen ?? (Number.isInteger(world?.gen) ? world.gen : null);
 
 // setting: the chat's generation setting at that message (story/generation.mjs). Chats kept on generation 9 learn as

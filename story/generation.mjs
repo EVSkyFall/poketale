@@ -95,7 +95,8 @@ export function recordGenerationChange(chat, value, { now = Date.now() } = {}) {
 }
 
 // The game a place at that message belongs to, by the disc standards' rule (story/machine-standards.mjs regionStandard),
-// for what its shops sell and charge; null in chats kept on generation 9 and where no region with games is known
+// for what its shops sell and charge; null in chats kept on generation 9 and where no region with games is known (a
+// Pokémon Journeys story is Sword/Shield everywhere)
 export function placeGameAt(chat, index, region) {
   const setting = generationsAt(chat)(index);
   if (setting === 'legacy') return null;
