@@ -1149,8 +1149,10 @@ function sameSlotAbility(from, ability, to) {
   return to.abilities[slot] ?? to.abilities['0'];
 }
 
-// ctx without a place (the panel's evolution preview) learns where the state stands
-function evolve(state, given, mon, target, { decoration } = {}) {
+// ctx without a place (the panel's evolution preview) learns where the state stands. taught: an evolution at the end of a
+// battle, whose evolution screen already offered the new species' moves (director/steps-exp.js evolveScreen) from the
+// table the battle learned from; the ones turned down there stay turned down.
+function evolve(state, given, mon, target, { decoration, taught = false } = {}) {
   const ctx = given.learning || !state.learning ? given : { ...given, learning: state.learning };
   const { sim } = ctx;
   const from = sim.Dex.species.get(mon.set.species);
@@ -1164,7 +1166,7 @@ function evolve(state, given, mon, target, { decoration } = {}) {
   delete mon.counts;
   mon.pending.evolve = null;
 
-  for (const moveid of evolutionLevelMoves(levelUpMoves(ctx, to.name, mon), mon.set.level, learnGen(ctx.learning, mon))) {
+  for (const moveid of taught ? [] : evolutionLevelMoves(levelUpMoves(ctx, to.name, mon), mon.set.level, learnGen(ctx.learning, mon))) {
     if (mon.set.moves.includes(moveid) || mon.pending.moves.includes(moveid)) continue;
     mon.pending.moves.push(moveid);
   }
@@ -1241,7 +1243,7 @@ export function applyBattleResult(before, result, ctx, { battle = null, outcome 
 
     const evolution = sameSpecies ? evolutions.get(member.uid) : null;
     if (evolution?.evolved === true) {
-      evolve(state, ctx, mon, evolution.to);
+      evolve(state, ctx, mon, evolution.to, { taught: true });
       mon.pending.moves = mon.pending.moves.filter(id => !mon.set.moves.includes(id));
     } else if (evolution && evolution.evolved === undefined) {
       mon.pending.evolve = evolution.to;
@@ -1353,9 +1355,12 @@ export function nextStageSpec(spec, result, state, ctx, { seed }) {
   const before = [...battlesBefore(spec), battleRecord(spec, ended)];
   const now = inRule(ctx.sim, applyBattles(state, before, ctx), formatRule(spec.formatid), formatGen(spec.formatid) ?? stateGen(state));
   const { foePartner, double, partner, ...same } = spec;
-  // The table each Pokémon learned from in the first battle, where the state cannot tell it
+  // Each Pokémon keeps the table it learned from in the first battle (none: the newest), whatever the settings are now
   const learned = new Map(spec.p1.team.map(member => [member.uid, member.learnGen]));
-  const team = playerTeam(now).map(member => (member.learnGen === undefined && Number.isInteger(learned.get(member.uid)) ? { ...member, learnGen: learned.get(member.uid) } : member));
+  const team = playerTeam(now).map(({ learnGen: own, ...member }) => {
+    const gen = learned.has(member.uid) ? learned.get(member.uid) : own;
+    return Number.isInteger(gen) ? { ...member, learnGen: gen } : member;
+  });
   return { ...same, seed: [...seed], p1: { ...spec.p1, team }, p2: waiting,
     ...(spec.bag ? { bag: { ...otherBag(spec.bag), ...battleBag(now, toolsIn(spec)), caughtSpecies: [...now.dex.caught] } } : {}), teraOrb: hasTeraOrb(now), before };
 }
@@ -1581,7 +1586,7 @@ function shareOf(hp, was, max) {
 // when at or over the new maximum) follow
 // A battle snapshot saved before Pokémon carried their origin keeps the one the fold gave them; one that joined in that
 // battle comes from where the battle was. after is a fresh copy.
-function keepOrigins(before, after, learning) {
+export function keepOrigins(before, after, learning) {
   const known = new Map([...before.party, ...before.box].filter(mon => Number.isInteger(mon.metGen)).map(mon => [mon.uid, mon.metGen]));
   const met = metGenOf(learning);
   for (const mon of [...after.party ?? [], ...after.box ?? []]) {

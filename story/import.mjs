@@ -6,7 +6,8 @@ import { dropOocs } from './chat.mjs';
 import { COMPAT_LINES, COMPAT_LINE_RE, COMPAT_FIELD_SEP, compatHead, compatFold, dropTaken } from './compat.mjs';
 import { readStored, isRecord, isUnreadable } from './stored.mjs';
 import { ruleNote, ruleError, refusal, failed } from './failure.mjs';
-import { clone, fillSet, rngFor, newMon, uniqueUid, hpFromPercent, hpPercentOf, markDex, toID, maxHp, healParty, friendshipOf, isEgg, tidyBreeding, stateFormat, stateGen } from './state.mjs';
+import { clone, fillSet, rngFor, newMon, uniqueUid, hpFromPercent, hpPercentOf, markDex, toID, maxHp, healParty, friendshipOf, isEgg, tidyBreeding, stateFormat, stateGen, keepOrigins } from './state.mjs';
+import { learnGen } from './learning.mjs';
 import { usesStatExp } from '../engine/stat-exp.mjs';
 import { hasOneSpecial } from '../engine/mon.mjs';
 import { FRIENDSHIP_MAX, friendshipLocked } from '../engine/friendship.mjs';
@@ -269,7 +270,8 @@ function fillAuto(mon, ctx, fields, gen) {
   }
   let full;
   try {
-    full = fillSet(ctx, given, rngFor(sim, `import:${mon.seed}`), gen);
+    // A Pokémon already in the story (its match) learns from its own origin under the "origin" setting
+    full = fillSet(ctx, given, rngFor(sim, `import:${mon.seed}`), gen, learnGen(ctx.learning, mon.match));
   } catch (e) {
 
     mon.fillError = e.notes?.[0] ?? note('noMovesAtLevel', { species: species.name, level: mon.set.level, id: species.id });
@@ -377,7 +379,7 @@ function rematch(draft, ctx) {
   }
   for (const mon of draft.mons) {
     const hit = pairs.get(mon.key);
-    const match = hit ? { uid: hit.uid, place: hit.place, label: labelOf(hit) } : null;
+    const match = hit ? { uid: hit.uid, place: hit.place, label: labelOf(hit), ...(Number.isInteger(hit.metGen) ? { metGen: hit.metGen } : {}) } : null;
     if ((mon.match?.uid ?? null) === (match?.uid ?? null)) { mon.match = match; continue; }
     mon.match = match;
     if (mon.egg) mon.action = match ? 'update' : 'skip';
@@ -389,7 +391,8 @@ function rematch(draft, ctx) {
 export function makeDraft(chat, state, ctx, { seed = 0, format, found: given = null } = {}) {
   const found = given ?? readCompat(chat, ctx, format ? { format } : {});
   const pool = [...(state?.party ?? []).map(m => [m, 'party']), ...(state?.box ?? []).map(m => [m, 'box'])]
-    .map(([m, place]) => ({ uid: m.uid, place, species: m.set.species, name: m.set.name ?? '', level: m.set.level, now: valuesOf(ctx, state, m), ...(isEgg(m) ? { egg: true } : {}) }));
+    .map(([m, place]) => ({ uid: m.uid, place, species: m.set.species, name: m.set.name ?? '', level: m.set.level, now: valuesOf(ctx, state, m), ...(isEgg(m) ? { egg: true } : {}),
+      ...(Number.isInteger(m.metGen) ? { metGen: m.metGen } : {}) }));
   const bag = Object.fromEntries(Object.entries(state?.bag ?? {}).filter(([, n]) => n > 0).map(([id, n]) => [id, { count: n, from: 'current' }]));
 
   const customItems = Object.fromEntries(Object.keys(bag).filter(isCustomItem).map(id => [id, customInfo(state, id)]).filter(([, info]) => info));
@@ -488,7 +491,7 @@ export function currentMonDraft(ctx, state, uid) {
   const { set, hpPercent, status } = valuesOf(ctx, state, found);
   const debug = isEgg(found) ? { eggCycles: Math.ceil(found.egg.cycles) } : { friendship: friendshipOf(ctx, found), friendshipLocked: friendshipLocked(found) };
   const mon = { key: 'e1', place, set, hpPercent, status, ...debug, from: Object.fromEntries([...MON_FIELDS, ...Object.keys(debug)].map(f => [f, 'current'])),
-    match: { uid, place, label: labelOf(set) }, action: 'update', problems: [], seed: `0:e1` };
+    match: { uid, place, label: labelOf(set), ...(Number.isInteger(found.metGen) ? { metGen: found.metGen } : {}) }, action: 'update', problems: [], seed: `0:e1` };
   const gen = stateGen(state), learning = state?.learning ?? null;
   mon.problems = monProblems(mon, ctx, DEBUG_KIND, gen);
   return { v: 1, kind: DEBUG_KIND, gen, ...(learning ? { learning } : {}), mons: [mon], bag: {}, warnings: [], pool: [], base: { bag: {} } };
@@ -710,7 +713,8 @@ function updatedMon(ctx, old, set) {
 }
 
 export function applyImport(state, imp, ctx) {
-  if (imp.kind === HANDBACK_KIND) return clone(imp.state);
+  // A hand-back saved before Pokémon carried their origin keeps the ones the fold gave them
+  if (imp.kind === HANDBACK_KIND) return keepOrigins(state, clone(imp.state), ctx.learning);
   const { sim } = ctx;
   const next = clone(state);
   const partyOrder = [];

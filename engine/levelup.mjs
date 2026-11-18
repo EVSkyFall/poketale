@@ -9,7 +9,8 @@ const MADE = Symbol.for('pokebattle.levelUpByGen');
 const hidden = (target, key, value) => Object.defineProperty(target, key, { value, configurable: true });
 
 export function withPastLevelUp(table, past) {
-  if (table && typeof table === 'object' && past && typeof past === 'object') hidden(table, PAST, past);
+  // New lists drop the generation tables made from the old ones
+  if (table && typeof table === 'object' && past && typeof past === 'object') { hidden(table, PAST, past); hidden(table, MADE, null); }
   return table;
 }
 

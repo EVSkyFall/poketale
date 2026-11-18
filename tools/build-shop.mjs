@@ -134,8 +134,9 @@ for (const { tiers } of Object.values(SPECIALS)) {
 }
 
 // Prices by game (data/sources/game-prices.json, keyed by the disc standards of story/machine-standards.mjs) for the
-// everyday goods; held items, town specialties and the special goods keep PokéTale's own prices. Kept only where they
-// differ from today's.
+// everyday goods (herbs, drinks and stones included); held items, priced town specialties and the Premier Ball keep
+// PokéTale's own prices, and so do the special goods but the Vitamins (story/shop.mjs specialGoods). Kept only where
+// they differ from today's.
 const GAME_PRICES = JSON.parse(read('data/sources/game-prices.json'));
 const ownPriced = new Set([...HELD_CHEAP, ...SPECIALTIES.filter(s => s.price).map(s => s.item), PREMIER]);
 const games = {};
@@ -163,7 +164,7 @@ const sellPrices = Object.fromEntries(Object.keys(NAMES).sort()
 
 writeFileSync(new URL('data/shop.json', root), `${JSON.stringify({
 	source: `PokeAPI ${source.commit.slice(0, 12)} data/v2/csv/${FILE} cost and item_game_indices.csv; prices by game: data/sources/game-prices.json (tools/build-shop.mjs)`,
-	note: '도구 id(Showdown) → 값. fixed = PokeAPI 값이 0 이라 정한 값(FIXED_PRICE)을 쓴 도구. sellPrices = 진열·특별 상품에 없는 도구의 원래 값(팔 때 반값). 진열 규칙은 story/shop.mjs',
+	note: '도구 id(PokéTale 가방 id, data/names/items.json — 대개 Showdown id와 같음) → 값. games = 게임별 값(오늘 값과 다른 것만, data/sources/game-prices.json), since = 그 도구가 처음 나온 세대(PokeAPI item_game_indices.csv, 파는 기술머신은 9). fixed = PokeAPI 값이 0 이라 정한 값(FIXED_PRICE)을 쓴 도구. sellPrices = 진열·특별 상품에 없는 도구의 원래 값(팔 때 반값). 진열 규칙은 story/shop.mjs',
 	fixedPrice: FIXED_PRICE,
 	fixed,
 	premier: PREMIER,

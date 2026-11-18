@@ -671,7 +671,7 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
       const put = value => { const next = [...moves]; next[i] = value; edit(m.key, 'moves', [...new Set(next.filter(Boolean))]); };
       grid.append(pickButton(move ? lists.moves.label(move) : '', { label: t('import.move', { n: i + 1 }), placeholder: t('import.moveEmpty', { n: i + 1 }), open: () => openPicker({
         title: t('import.pickMove', { n: i + 1 }), value: move, none: move ? t('import.emptySlot') : null, searchHint: t('import.otherMoves'),
-        groups: moveGroups(sim, levelUpAt(ctx.levelUp, learnGen(draft.learning)), m.set.species, moves.filter((_, j) => j !== i), lang), pick: put,
+        groups: moveGroups(sim, levelUpAt(ctx.levelUp, learnGen(draft.learning, m.match)), m.set.species, moves.filter((_, j) => j !== i), lang), pick: put,
       }) }));
     }
     return grid;

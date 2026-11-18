@@ -62,7 +62,7 @@ export const journeyStarted = messages => messages.some((message, i) => i > 0 &&
 const firstOf = (first, messages) => first ?? (journeyStarted(messages) ? 'legacy' : 'auto');
 
 // The setting at message i: the first value, then each change from the message after the one it was made at (an
-// import at that message counts from its own time), like the setting-change records
+// import at that message counts from its own time, as the rule records of story/setting-changes.mjs do)
 export function generationsAt(chat) {
   const messages = chat?.message ?? [];
   const { first, changes } = readGeneration(chat);

@@ -49,9 +49,10 @@ for (const species of [...Dex.species.all()].sort((a, b) => a.id < b.id ? -1 : a
 		return [[level, move]];
 	});
 
-	// Older generations from the species' own debut on, where the list changes; the last entry, [newest, 0], stands for
-	// the levelup.json list.
+	// Older generations from the species' own debut on, where the list changes; 0 stands for the levelup.json list (an
+	// older generation that already had it, and the last entry). A species whose lists never differed from it is left out.
 	if (!gen) continue;
+	const newest = JSON.stringify(levelUp[species.id]);
 	const older = species.gen <= 2 ? sourcesFor(GEN2.species.get(species.id), GEN2).filter(source => source.gen <= 2) : [];
 	const all = [...older, ...sources.filter(source => source.gen < gen)];
 	const entries = [];
@@ -61,10 +62,10 @@ for (const species of [...Dex.species.all()].sort((a, b) => a.id < b.id ? -1 : a
 		if (!list.length) continue;
 		const made = pastList(list), key = JSON.stringify(made);
 		if (key === last) continue;
-		entries.push([g, made]);
+		entries.push([g, key === newest ? 0 : made]);
 		last = key;
 	}
-	if (entries.length) past[species.id] = [...entries, [gen, 0]];
+	if (entries.some(([, list]) => list !== 0)) past[species.id] = [...entries, ...(last === newest ? [] : [[gen, 0]])];
 }
 
 const outputDir = new URL('../data/', import.meta.url);

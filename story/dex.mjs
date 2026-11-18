@@ -91,10 +91,11 @@ export function dexFill(state, sim, regions = [], mentions = []) {
   return { seen, caught };
 }
 
-// state.gen is the battle generation (story/state.mjs stateGen; none = 9)
+// The types the state's battles use: those of its battle format's generation (none and Champions: today's). Showdown's
+// older generations know later species too, with the types of the time (Cleffa is Normal in a generation 1 battle).
 function eraTypes(sim, state, species) {
   const gen = formatGen(stateFormat(state));
-  if (!Number.isInteger(gen) || gen >= 9 || !(species.gen <= gen)) return species.types;
+  if (!Number.isInteger(gen) || gen >= 9) return species.types;
   const then = sim.Dex.forGen(gen).species.get(species.id);
   return then.exists && then.types?.length ? then.types : species.types;
 }

@@ -40,7 +40,7 @@ import { DEFAULT_SETTINGS, DEFAULT_LOOK, settingsUnreadable, LANG_OPEN, hostLang
 import { mountImportScreen } from './import-screen.js';
 import { makeDraft, importOffer, importOfferAi, importTurn, handBack, commitImport, commitDebugHeal, commitDebugBadges, readImports, cancelImport, inForce, newMonDraft, currentMonDraft, friendshipLockDraft } from '../../story/import.mjs';
 import { importAiMessages, readAiParty, aiFailedFound } from '../../story/import-ai.mjs';
-import { readSettingChanges, recordSettingChange, settingsBehind, rulesAt } from '../../story/setting-changes.mjs';
+import { readSettingChanges, recordSettingChange, settingsBehind, rulesAt, foldValues } from '../../story/setting-changes.mjs';
 import { generationUnrecorded, recordGenerationStart, recordGenerationChange, readGeneration } from '../../story/generation.mjs';
 import { readBattlesOff, battlesOff, setBattlesOff } from '../../story/battles-off.mjs';
 import { loadPicture, savePicture, adoptOldPicture, entryMe } from './my-picture.js';
@@ -133,7 +133,7 @@ function makePass(charIndex, chatIndex, chat, character, seq) {
     grows(text) { const bottom = String(chat.message?.at(-1)?.data ?? ''); return text.startsWith(bottom) && (bottom !== '' || quietIn(this.id) > 0); },
 
     get key() {
-      return memo('key', () => JSON.stringify([this.id, this.text,
+      return memo('key', () => JSON.stringify([this.id, this.text, foldValues(settings),
         Object.entries(chat.scriptstate ?? {}).filter(([k]) => k.startsWith('$pkb_') || stateVars().includes(k)).sort(([a], [b]) => (a < b ? -1 : 1))]));
     },
 
@@ -1333,7 +1333,9 @@ async function writeResult(origin, { outcome, result, apply }) {
 
     const battles = [...battlesBefore(origin.stage), ...(apply ? [battleRecord(origin.stage, apply, outcome)] : [])];
 
-    const after = applyBattles(before, battles, { ...ctx, status: latestStatus(chat, blockAt), learning: before.learning }, { battle: origin.battle });
+    // A Pokémon caught here takes its origin from the fold at the battle's message (story/state.mjs keepOrigins), not from
+    // where the chat stands now
+    const after = applyBattles(before, battles, { ...ctx, status: latestStatus(chat, blockAt), learning: null }, { battle: origin.battle });
     const tag = hashKey(`${origin.key}:${Date.now()}`);
 
     const caughtMon = result.captured ? [...after.party, ...after.box].find(m => ![...before.party, ...before.box].some(b => b.uid === m.uid)) : null;
@@ -1434,7 +1436,7 @@ const rematchEntries = (state, where) => (battlesOff(where.chat) ? [] : trainerL
 const writeStoryVars = (into, state, where) => [writeVars(into, varsOf(state, where)), writeTrainerLore(into, rematchEntries(state, where))].some(Boolean);
 
 const varsKey = where => JSON.stringify([where.id, where.text ?? textKey(where.chat), stateVars().map(name => where.chat?.scriptstate?.[name] ?? null),
-  battleForVars(where), currentLang(where.chat), settings.effectItems === true, battlesOff(where.chat)]);
+  battleForVars(where), currentLang(where.chat), settings.effectItems === true, battlesOff(where.chat), foldValues(settings)]);
 
 async function setVars(where) {
   const { state, table, changed } = acts.pendingState(where.chat, await storyCtx());
@@ -2055,9 +2057,11 @@ export function changeSettings(next) {
   const commands = commandsOn(settings) !== commandsOn(next);
   const tools = (settings.effectItems === true) !== (next.effectItems === true);
   const era = settings.eraGimmicks !== next.eraGimmicks;
+  // The story folds with these (the battle rule, Level-Up Moves and the rest): its state and variables follow them
+  const fold = JSON.stringify(foldValues(settings)) !== JSON.stringify(foldValues(next));
   settings = next;
   changed();
-  if (switched.length || commands || tools || era) watchSoon();
+  if (switched.length || commands || tools || era || fold) watchSoon();
   return Promise.all(switched.map(s => reconcileBot(s.name, s.on)));
 }
 
@@ -2069,10 +2073,12 @@ let windowChanges = Promise.resolve();
 
 function changeInWindow(target, next) {
   const change = async () => {
+    // The new values first: writing the record sets the chat's variables, folded with them
+    changeSettings(next).catch(console.error);
     if (target) {
       try { await writeChat(target, chat => recordSettingChange(chat, next), { vars: true }); } catch (error) { console.error(error); }
     }
-    return keepSettings(next);
+    return isUnreadable(settingsStatus) ? undefined : saveSettingsInOrder(next);
   };
   return windowChanges = windowChanges.then(change, change);
 }
