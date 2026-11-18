@@ -892,7 +892,7 @@ export default Object.freeze({
   'settings.row.rule': '규칙',
   'settings.help.rule': '새로 시작하는 배틀부터 적용됩니다.\n챔피언스 규칙에는 노력치가 없습니다.',
   'settings.row.expShare': '학습장치',
-  'settings.help.expShare': '세대: 세대 별 학습장치 성능을 따라갑니다.\n기본: 기본적으로 엔트리의 포켓몬을 상대로 활성화됩니다.\n도구: 가방에 학습장치가 있을 때만 배틀에 나가지 않은 포켓몬도 경험치를 받습니다.\n새로 시작하는 배틀부터 적용됩니다.',
+  'settings.help.expShare': '세대: 세대 별 학습장치 성능을 따라갑니다.\n기본: 기본적으로 엔트리의 포켓몬을 상대로 활성화됩니다.\n도구: 학습장치가 가방에 있거나 포켓몬이 지니고 있을 때만 배틀에 나가지 않은 포켓몬도 경험치를 받습니다.\n새로 시작하는 배틀부터 적용됩니다.',
   'settings.row.expRate': '경험치 배율',
   'settings.help.expRate': '획득 경험치 배율',
   'settings.row.friendshipRate': '친밀도 배율',
